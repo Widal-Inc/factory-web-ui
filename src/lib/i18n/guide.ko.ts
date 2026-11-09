@@ -12,7 +12,6 @@ export const GUIDE_KO: Record<string, string> = {
   "Skip setup": "안내 건너뛰기",
   "Already installed one?": "이미 설치하셨나요?",
   "Look again": "다시 확인",
-  "This browser is paired first: other browsers now need pairing too.": "이 브라우저를 먼저 연결했어요. 이제 다른 브라우저도 연결이 필요해요.",
   "You're set up": "준비됐어요",
   "Ovis found these on this PC. Start opens your first project with the one picked.": "이 PC에서 찾았어요. 시작하면 고른 에이전트로 첫 프로젝트가 열려요.",
   "Pick an AI coding helper": "AI 코딩 도우미를 고르세요",
@@ -23,7 +22,6 @@ export const GUIDE_KO: Record<string, string> = {
   "Ovis finds or installs an AI coding helper and opens your first project.": "Ovis가 AI 코딩 도우미를 찾거나 설치하고 첫 프로젝트를 열어요.",
   "Plan usage will show in the sidebar for your signed-in accounts.": "로그인된 계정의 요금제 사용량이 사이드바에 표시돼요.",
   "Start with {agent}": "{agent}로 시작",
-  "Connect your phone": "폰 연결하기",
   "{agent} can't start from here. Open a workspace from the sidebar instead.": "여기서는 {agent}를 시작할 수 없어요. 사이드바에서 워크스페이스를 여세요.",
   "Checking this PC…": "이 PC를 확인하는 중…",
   "Looking for AI coding helpers that are already installed.": "이미 설치된 AI 코딩 도우미를 찾고 있어요.",
@@ -35,5 +33,4 @@ export const GUIDE_KO: Record<string, string> = {
   "The workspace opened, but {agent} did not start. Open it to see why in its terminal.": "워크스페이스는 열었지만 {agent}가 시작되지 않았어요. 열어서 터미널에서 이유를 확인하세요.",
   "Open the workspace": "워크스페이스 열기",
   "{agent} is not signed in yet.": "{agent}에 아직 로그인하지 않았습니다.",
-  "Open this address on your phone": "폰에서 이 주소를 여세요",
 };

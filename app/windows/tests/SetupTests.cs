@@ -210,15 +210,6 @@ namespace Ovis
                     Equal(@"D:\state\herdr\plugins\devswha.herdr-web-ui", Setup.HerdrPluginStateDir(Links.LegacyPluginId, name => windows.ContainsKey(name) ? windows[name] : null));
                     Equal(@"C:\Users\u\AppData\Local\herdr\plugins\devswha.herdr-web-ui", Setup.HerdrPluginStateDir(Links.LegacyPluginId, name => name == "USERPROFILE" ? @"C:\Users\u" : null));
                 }),
-                Case("the phone step: a server behind a token the app could not read is not told to install Tailscale", () =>
-                {
-                    Equal(PhoneStep.TokenNeeded, Setup.Phone(null, null, true));
-                    Equal(PhoneStep.Qr, Setup.Phone("https://pc.tail1.ts.net", "running", false));
-                    Equal(PhoneStep.MakeAddress, Setup.Phone(null, "running", false));
-                    Equal(PhoneStep.SignInTailscale, Setup.Phone(null, "stopped", false));
-                    Equal(PhoneStep.InstallTailscale, Setup.Phone(null, "missing", false));
-                    Equal(PhoneStep.InstallTailscale, Setup.Phone(null, null, false));
-                }),
                 Case("Windows PowerShell started as the app starts it writes its host, warning and error lines as text, not CLIXML", () =>
                 {
                     // each word one argument, as cmd hands the app's words over

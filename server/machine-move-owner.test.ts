@@ -8,51 +8,35 @@ import { unitHerdrOnly } from "../scripts/test-herdr.ts";
 import { createServer } from "./index.ts";
 import type { MachineManager } from "./machines.ts";
 
-// Another PC's move is the owner's, from any device the owner signed in or paired: this PC itself, the
-// token, a paired device that drives, or a relay device that drives (the owner's phone, another of the
-// owner's PCs). Never an open LAN visitor or a device that only watches. The PC behind the proxy is offline here, so the owner's requests end at
+// Another PC's move is for whoever got in: this PC itself or the token's holder. Never a visitor from
+// another address with no token. The PC behind the proxy is offline here, so the owner's requests end at
 // "disconnected", and nobody else's gets that far.
 afterAll(unitHerdrOnly());
 const root = mkdtempSync(join(tmpdir(), "ovis-move-owner-"));
 const TOKEN = "fictional-owner-token";
-// tokenless and ungated: this PC itself, and an open LAN window
+// tokenless: this PC itself, and a visitor from the network
 const open = createServer({ port: 0, hostname: "0.0.0.0", stateDir: join(root, "open"), token: "", machines: false, sidecar: false });
-// with a token and paired devices, which close the open LAN
+// with a token, which gates everything
 const secured = createServer({ port: 0, hostname: "0.0.0.0", stateDir: join(root, "secured"), token: TOKEN, machines: false, sidecar: false });
 afterAll(() => { open.stop(); secured.stop(); rmSync(root, { recursive: true, force: true }); });
 const pcs: Pick<Machine, "id" | "kind">[] = [{ id: "pc", kind: "ssh" }];
 const manager = { list: () => pcs, endpoint: () => undefined, retryNow: () => {}, moveOfferSoon: () => {} } as unknown as MachineManager;
-const store = secured.context.services.devices;
-// a first pairing counts once its device has come back with its cookie (server/devices.ts), before the next one
-const pairDevice = (label: string, role: "drive" | "watch"): string => {
-  const token = store.pair(store.startPairing().code, label, role)!.token;
-  store.match(token);
-  return token;
-};
-const driveDevice = pairDevice("Owner's laptop", "drive");
-const watchDevice = pairDevice("Wall screen", "watch");
 
-const OWNERS = ["this PC", "the token", "a paired device that drives"] as const;
-const OTHERS = ["an open LAN visitor", "a paired device that watches"] as const;
+const OWNERS = ["this PC", "the token"] as const;
+const OTHERS = ["a visitor with no token"] as const;
 type Kind = typeof OWNERS[number] | typeof OTHERS[number];
 const lan = { address: "192.168.0.20", family: "IPv4", port: 1 };
 const loopback = { address: "127.0.0.1", family: "IPv4", port: 1 };
 
 function contextFor(kind: Kind): ServerContext {
-  const onOpen = kind === "this PC" || kind === "an open LAN visitor";
-  const app = onOpen ? open : secured;
+  const app = kind === "the token" ? secured : open;
   const base = { ...app.context, services: { ...app.context.services, core: { ...app.context.services.core, machines: manager } }, timeout: () => {} };
   return { ...base, requestIP: () => kind === "this PC" ? loopback : lan };
 }
 function headersFor(kind: Kind, extra: Record<string, string>): Record<string, string> {
   // a request with no Host came through a proxy (access.ts cameThroughProxy): this PC's own browser names it
   const origin = { origin: "http://127.0.0.1", host: "127.0.0.1", "x-herdr-machine": "1", "content-type": "application/json", ...extra };
-  switch (kind) {
-    case "the token": return { ...origin, authorization: `Bearer ${TOKEN}` };
-    case "a paired device that drives": return { ...origin, cookie: `ovis_device=${driveDevice}` };
-    case "a paired device that watches": return { ...origin, cookie: `ovis_device=${watchDevice}` };
-    default: return origin;
-  }
+  return kind === "the token" ? { ...origin, authorization: `Bearer ${TOKEN}` } : origin;
 }
 const ask = async (kind: Kind, path: string, method = "GET", extra: Record<string, string> = {}, body?: unknown) => {
   const response = await handleRequest(new Request(`http://127.0.0.1/api/machines/${path}`, { method, headers: headersFor(kind, extra), ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), contextFor(kind));
@@ -69,13 +53,12 @@ const bodyFor = (path: string, method: string) => method === "GET" ? undefined :
 it("each kind of access is the one it names", async () => {
   const auth = async (kind: Kind) => {
     const response = await handleRequest(new Request("http://127.0.0.1/api/health?scope=bridge", { headers: headersFor(kind, {}) }), contextFor(kind));
-    const { via, role } = (await response!.json() as { auth: { via: string; role: string } }).auth;
-    return `${via}/${role}`;
+    return (await response!.json() as { auth: { via: string } }).auth.via;
   };
-  expect(await Promise.all([...OWNERS, ...OTHERS].map(auth))).toEqual(["local/drive", "token/drive", "device/drive", "open/drive", "device/watch"]);
+  expect(await Promise.all(OWNERS.map(auth))).toEqual(["local", "token"]);
 });
 
-it("lets the owner from this PC, the token, a paired or a relay device that drives move another PC or every PC; never an open LAN visitor or a device that watches", async () => {
+it("lets this PC and the token's holder move another PC or every PC; never a visitor with no token", async () => {
   for (const kind of OWNERS) {
     for (const [path, method] of ROUTES) {
       // as far as the PC, which is offline here; move-all answers for it
@@ -86,13 +69,13 @@ it("lets the owner from this PC, the token, a paired or a relay device that driv
   for (const kind of OTHERS) {
     for (const [path, method] of ROUTES) {
       const [status] = await ask(kind, path, method, update, bodyFor(path, method));
-      expect([kind, path, method, status]).toEqual([kind, path, method, 403]);
+      expect([kind, path, method, status]).toEqual([kind, path, method, 401]);
     }
   }
 });
 
 it("takes the owner's change to another PC's move only from this app's own page, with no query", async () => {
-  for (const kind of ["this PC", "a paired device that drives"] as const) {
+  for (const kind of OWNERS) {
     expect(await ask(kind, "pc/runtime/move", "POST", {}, { revision: "shown" })).toEqual([403, "forbidden"]);
     expect(await ask(kind, "runtime/move-all", "POST", {}, plans)).toEqual([403, "forbidden"]);
     // refused by the one guard over every change to this PC's PCs (machine-api.ts), as an update with a query is

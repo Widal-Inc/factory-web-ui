@@ -1255,8 +1255,8 @@ it("shows a connected PC's move to herdr-core on its roster, one read at a time,
   answer = { available: true, plan: { workspaces: [], panes: [], ready: true, revision: "r2" }, status: { state: "rolled_back", reason: `could not start ${secret}`, left: [{ pane_id: "w1:p1", agent: "claude", why: `${secret} is gone` }] } };
   await until(() => f.runtime.machine.runtime_move?.status.state === "rolled_back");
   expect(f.runtime.machine.runtime_move?.status).toEqual({ state: "rolled_back", left: 1 });
-  const watched = await handleMachineRequest(new Request("http://127.0.0.1/api/machines"), f.manager, undefined, undefined, true);
-  expect(await watched.text()).not.toContain("secret-project");
+  const roster = await handleMachineRequest(new Request("http://127.0.0.1/api/machines"), f.manager);
+  expect(await roster.text()).not.toContain("secret-project");
   // a move that ended is read every minute; a change sent from here reads it at once
   // a reason this version does not know is not carried: it could be any words of that PC's
   answer = { available: false, reason: `cannot move ${secret}`, status: { state: "idle" } };

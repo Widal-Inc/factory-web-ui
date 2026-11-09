@@ -5,7 +5,6 @@ import "./SettingsDialog.css";
 
 import type { AddPcPreset, AppActions } from "../lib/actions.ts";
 import { useInstallPrompt } from "../lib/install.ts";
-import { changePc, inNativeApp } from "../lib/nativeApp.ts";
 import { canReuseExternalLinkTab } from "../lib/terminalFileLinks.ts";
 import { SHORTCUTS, bindingDisplayKeys, formatKeys, isMacPlatform, setShortcutRecording, shortcutDisplayKeys, shortcutKeys, shortcutConflict, type ShortcutId } from "../lib/shortcuts.ts";
 import { MENU_SHORTCUT_KEYS, recordShortcut, shortcutMatchesQuery } from "../lib/shortcutRecorder.ts";
@@ -37,19 +36,19 @@ import { LOCAL_MACHINE, type HerdrCoreFacts, type HerdrRuntimeFacts, type Machin
 import { canHideMachine, isMachineShown, setHiddenMachines, useHiddenMachines, withMachineHidden } from "../lib/hiddenMachines.ts";
 import { alertFiltersChanged, updateAlertFilters, useAlertFilters } from "../lib/alertFilters.ts";
 import { fetchRemoteAccess, fetchVoiceStatus, machineRequest, saveVoiceConfig, switchRuntime, fetchBridgeHealth } from "../lib/api.ts";
-import { isLoopbackHost, phonePlan } from "../lib/phone.ts";
+import { phonePlan } from "../lib/phone.ts";
 import type { PushActionResult } from "../lib/pushHealth.ts";
-import type { HealthAuth, PluginActions, RemoteAccess } from "../../shared/protocol.ts";
+import type { PluginActions, RemoteAccess } from "../../shared/protocol.ts";
 import type { SecurityFacts } from "../lib/useAccess.ts";
 import { useMachineApi } from "../lib/machineContext.tsx";
 import type { VoiceStatus } from "../../shared/voice.ts";
 import { dictationLocale, VOICE_CONFIG_EVENT } from "../lib/voice.ts";
-import { DevicesPanel } from "./DevicesPanel.tsx";
+import "./PcList.css";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { RuntimeMove } from "./RuntimeMove.tsx";
 import { SignOutRow } from "./SignOutRow.tsx";
 import { STATE_WORD } from "./MachineSidebar.tsx";
-import { ConnectPhoneDialog } from "./ConnectPhoneDialog.tsx";
+import { AddConnectionDialog } from "./AddConnectionDialog.tsx";
 import { PushTestControls } from "./PushTestControls.tsx";
 import { AlertWebhookGroup } from "./AlertWebhookGroup.tsx";
 import { previewAlertSound, unlockAlertSound } from "../lib/alertSound.ts";
@@ -82,8 +81,6 @@ export interface SettingsDialogProps {
   onOpenPane: (machineId: string, paneId: string) => void;
   actions: AppActions;
   updates: UpdatesModel;
-  /** how this browser got in, from the last health check */
-  auth: HealthAuth | null;
   /** the herdr this app's server talks to, from the last health check */
   herdrVersion: string | null;
   /** which runtime that is (herdr's TUI server, or herdr-core: the Herdr app's), from the same check; null before one answered */
@@ -1159,16 +1156,11 @@ function AccessFacts({ facts }: { facts: SecurityFacts }) {
     );
   }
   const { summary } = facts;
-  const gate = summary.pairing_gate;
   const bind = summary.bind_scope;
   const ingress = summary.observed_ingress;
   return (
     <SettingsGroup title={t("Access")} section="access" note={t("What this server reports about how it is reached. Each line is one fact, not a safety rating.")}>
       {fact(t("Access token"), summary.token_configured ? t("Set") : t("Not set"), t("Whether the server has a token configured. Its value is never shown."))}
-      {fact(t("Pairing gate"), gate === "open" ? t("Not yet closed") : gate === "closed" ? t("Closed") : t("Unavailable"),
-        gate === "open" ? t("No device has been paired yet, so no pairing code is asked for.")
-          : gate === "closed" ? t("A new browser needs a pairing code or the token.")
-          : t("The device list cannot be read, so no new device can pair. This PC and the token still work."))}
       {fact(t("Listens on"), bind === "loopback" ? t("Loopback") : bind === "tailnet" ? t("Tailscale address") : t("Other address"),
         bind === "other" ? t("A network address, every interface or a host name: other devices on that network may reach it.")
           : t("The address the server listens on. A proxy on this PC can still forward other traffic to it."))}
@@ -1183,37 +1175,22 @@ function AccessFacts({ facts }: { facts: SecurityFacts }) {
 }
 
 /**
- * Groups of Devices and PCs that merged into My devices (Connect a device holds the ways in),
+ * Groups of Devices and PCs that merged into My devices (Add a connection holds the ways in),
  * by their old link names (`?settings=devices&section=…`).
  */
 const MOVED_GROUPS: Readonly<Record<string, string>> = { phone: "devices", remote: "devices", "chat-more": "conversation" };
 
 /**
- * What a paired device is, read from the label the app first gave it (lib/phone.ts deviceLabel, "iPhone · Safari");
- * a device renamed since says nothing of what it is, so its row carries no pill rather than a guess.
+ * Settings → Devices and PCs: one list of the PCs this one uses (this PC, then the other PCs shown here), with
+ * one Add a connection whose dialog holds every way in. What few people change waits in More settings.
  */
-function deviceKind(label: string, t: ReturnType<typeof useT>): string | null {
-  const named = /^(iPhone|iPad|Android|Mac|Windows|Chromebook|Linux|Device)( · (Edge|Firefox|Chrome|Safari))?$/.exec(label);
-  if (named === null) return null;
-  if (named[1] === "iPhone" || named[1] === "Android") return t("Phone");
-  if (named[1] === "iPad") return t("Tablet");
-  return t("Browser");
-}
-
-/**
- * Settings → Devices and PCs, as WhatsApp's Linked devices: one list of everything that uses or joins this PC
- * (this PC, the other PCs shown here, then the paired phones and browsers), with one Connect a device whose dialog
- * holds every way in. What few people change waits in More settings.
- */
-function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSettings, pcSettingsError, onPcSettings, openAddPc, connectPc }: {
-  auth: HealthAuth | null; security: SecurityFacts; onSignOut: (() => Promise<void>) | null; onRevokedAll: () => void;
+function DevicesPage({ security, onSignOut, machines, pcSettings, pcSettingsError, onPcSettings, openAddPc, connectPc }: {
+  security: SecurityFacts; onSignOut: (() => Promise<void>) | null;
   machines: readonly Machine[]; pcSettings: MachineSettings | null; pcSettingsError: string | null; onPcSettings: (patch: Partial<MachineSettings>) => void; openAddPc: (preset?: AddPcPreset) => void; connectPc: (machine: Machine) => void;
 }) {
   const { settings, update } = useSettings();
   const t = useT();
   const installPrompt = useInstallPrompt();
-  // the iOS app (app/) holds this page: its way back to the app's list of PCs
-  const nativeApp = inNativeApp();
   // the server says what Tailscale on its PC already serves
   const [access, setAccess] = useState<RemoteAccess | null | undefined>(undefined);
   const loadAccess = useCallback(() => {
@@ -1222,28 +1199,21 @@ function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSett
   }, []);
   useEffect(() => { loadAccess(); }, [loadAccess]);
   const plan = phonePlan({ protocol: window.location.protocol, hostname: window.location.hostname, origin: window.location.origin, secure: window.isSecureContext }, access ?? null);
-  // where a phone can open this app now, for the pairing QR code: the served address, else this one when it is not loopback
-  const pairUrl = plan.kind === "here" || plan.kind === "served" ? plan.url : isLoopbackHost(window.location.hostname) ? null : window.location.origin;
   // what keeps the switch from working here, only while it does (lib/wakeLock.ts asks for the same two)
   const wakeLockProblem = !window.isSecureContext ? t("Needs HTTPS or localhost.") : !("wakeLock" in navigator) ? t("This browser can't keep the screen on.") : null;
-  const readOnly = auth?.role === "watch";
   const [connecting, setConnecting] = useState(false);
   const searching = useContext(SettingsQuery).length > 0;
-  /** More settings' place for the device list's notes and Revoke every device (DevicesPanel `more`) */
-  const [devicesMore, setDevicesMore] = useState<HTMLDivElement | null>(null);
   const closeConnect = useCallback(() => setConnecting(false), []);
   return (
     <>
-      {/* what is connected to this PC: its name atop one list of the other PCs, phones and browsers, the one in use first */}
+      {/* what is connected to this PC: its name atop one list of the other PCs */}
       <SettingsGroup section="devices">
         <div className="settings-item my-devices">
-          <MyPcRows machines={machines} watching={readOnly}>
-            <DevicesPanel onDevicePaired={closeConnect} auth={auth} onRevokedAll={onRevokedAll} kindOf={(label) => deviceKind(label, t)} more={devicesMore} />
-          </MyPcRows>
+          <MyPcRows machines={machines} />
         </div>
         {/* how anything else gets connected: one button, its sheet picks the way; a search finds it as a row by every way it holds */}
         {searching ? (
-          <SettingsRow label={t("Add a connection")} keywords={t("phone browser PC pair pairing code QR Tailscale Wi-Fi SSH add PC remote PCs")}>
+          <SettingsRow label={t("Add a connection")} keywords={t("phone browser PC QR Tailscale Wi-Fi SSH add PC remote PCs")}>
             <button type="button" className="btn btn-primary" onClick={() => setConnecting(true)}><Plus aria-hidden="true" />{t("Add a connection")}</button>
           </SettingsRow>
         ) : (
@@ -1255,16 +1225,7 @@ function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSett
       </SettingsGroup>
 
       <SettingsFold kind="more" keys={["keepScreenOn", "pcLoad"]}>
-        {nativeApp && (
-          <SettingsGroup title={t("This app")} section="this-app">
-            <SettingsRow label={t("Change PC")} description={window.location.protocol === "capacitor:" ? t("This is the demo. Go back to the app's list of PCs to open yours.") : t("This app shows {address}. Go back to its list of PCs to open another.", { address: window.location.host })}>
-              <button type="button" className="btn" onClick={() => void changePc()}>{t("Change PC")}</button>
-            </SettingsRow>
-          </SettingsGroup>
-        )}
-
         <SettingsGroup title={t("Devices and access")} section="devices-more">
-          <div className="settings-item" ref={setDevicesMore} />
           {onSignOut && <SignOutRow onSignOut={onSignOut} label={t("Sign out of this PC")} />}
         </SettingsGroup>
         <SettingsGroup title={t("This device")} section="phone-more">
@@ -1282,7 +1243,7 @@ function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSett
       </SettingsFold>
 
       {connecting && (
-        <ConnectPhoneDialog plan={plan} pairUrl={pairUrl} readOnly={readOnly}
+        <AddConnectionDialog plan={plan}
           onAddPc={(preset) => { setConnecting(false); openAddPc(preset); }} machines={machines}
           onConnectMachine={(machine) => { setConnecting(false); connectPc(machine); }} onClose={closeConnect} />
       )}
@@ -1297,11 +1258,7 @@ const removablePc = (machine: Machine): boolean => machine.state !== "connected"
  * The PCs at the top of My devices: this PC, then the PCs this app shows (SSH, herdr-core machines). Removing a PC stays
  * in the sidebar's PC menu, which moves the selection off it first and knows the PCs herdr manages.
  */
-function MyPcRows({ machines, watching, children }: { machines: readonly Machine[];
-  /** a watching device: the server refuses it the removal, so it is not offered */
-  watching: boolean;
-  /** the paired phones and browsers, the one in use first: right under this PC, above the other PCs */
-  children?: ReactNode }) {
+function MyPcRows({ machines }: { machines: readonly Machine[] }) {
   const t = useT();
   // a PC that is not connected, offered for removal from its own row (the sidebar's PC menu removes it too)
   const [removing, setRemoving] = useState<Machine | null>(null);
@@ -1318,7 +1275,6 @@ function MyPcRows({ machines, watching, children }: { machines: readonly Machine
         </li>
       </ul>
     )}
-    {children}
     <ul className="devices-list my-pcs">
       {others.map((machine) => (
         <li key={machine.id} className={machine.state === "connected" ? "devices-row" : "devices-row is-away"}>
@@ -1326,7 +1282,7 @@ function MyPcRows({ machines, watching, children }: { machines: readonly Machine
             <span className="settings-label">{machine.name}<span className="devices-kind">PC</span></span>
             <span className="settings-description">{t(STATE_WORD[machine.state])}</span>
           </div>
-          {!watching && removablePc(machine) && (
+          {removablePc(machine) && (
             <div className="devices-actions">
               <button type="button" className="icon-button" aria-label={t("Remove PC {name}", { name: machine.name })} onClick={() => setRemoving(machine)}><Trash2 aria-hidden="true" /></button>
             </div>
@@ -1625,7 +1581,7 @@ function SaveFailure({ error, paused, retrying, onRetry }: { error: UserError; p
   </div>;
 }
 
-function OpenSettingsDialog({ section = null, linkPage = null, linkSection = null, onPage, onClose, onUsageLogin, onOpenPane, actions, updates, auth, herdrVersion, herdrRuntime = null, herdrCore = null, herdrRuntimeFacts = null, picturesByDefault = false, bootId = null, onServerRestarted, security, onEnableNotifications, saveError, savePaused, saveRetrying, onRetrySave, overPreview = false, machines = [] }: SettingsDialogProps) {
+function OpenSettingsDialog({ section = null, linkPage = null, linkSection = null, onPage, onClose, onUsageLogin, onOpenPane, actions, updates, herdrVersion, herdrRuntime = null, herdrCore = null, herdrRuntimeFacts = null, picturesByDefault = false, bootId = null, onServerRestarted, security, onEnableNotifications, saveError, savePaused, saveRetrying, onRetrySave, overPreview = false, machines = [] }: SettingsDialogProps) {
   const t = useT();
   const narrow = useNarrow();
   // opened by Forward, the dialog shows what that entry of the history showed
@@ -1808,10 +1764,9 @@ function OpenSettingsDialog({ section = null, linkPage = null, linkSection = nul
       case "chat": return <ChatPage />;
       case "terminal": return <TerminalPage keyBarButtonRef={keyBarButtonRef} onEditKeyBar={openKeyBar} picturesByDefault={picturesByDefault} />;
       case "alerts": return <AlertsPage onEnableNotifications={onEnableNotifications} machines={machines} />;
-      case "agents": return <AgentsSettings watching={auth?.role === "watch"} onLocalLogin={onUsageLogin} onOpenPane={onOpenPane} onOpenGuide={onClose} />;
+      case "agents": return <AgentsSettings onLocalLogin={onUsageLogin} onOpenPane={onOpenPane} onOpenGuide={onClose} />;
       case "shortcuts": return <ShortcutsPage />;
-      // after every device went, its own pairing included, a browser asks the server where it stands: the roster answers, or the gate does
-      case "devices": return <DevicesPage auth={auth} security={security} onSignOut={actions.lock} onRevokedAll={actions.refresh} openAddPc={actions.openAddPc} connectPc={actions.connectPc}
+      case "devices": return <DevicesPage security={security} onSignOut={actions.lock} openAddPc={actions.openAddPc} connectPc={actions.connectPc}
         machines={machines} pcSettings={pcSettings} pcSettingsError={pcSettingsError} onPcSettings={(patch) => void updatePcSettings(patch)} />;
       case "experimental": return <ExperimentalPage />;
       case "about": return <AboutPage updates={updates} herdrVersion={herdrVersion} herdrRuntime={herdrRuntime} herdrCore={herdrCore} herdrRuntimeFacts={herdrRuntimeFacts} bootId={bootId} onServerRestarted={onServerRestarted} onOpenPane={onOpenPane} bridgesFollow={pcSettings?.auto_update_bridges === true} />;

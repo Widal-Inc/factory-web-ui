@@ -30,11 +30,10 @@ export type SocketHandler = Omit<WebSocketHandler<SocketData>, "open" | "message
 /** The frames of the connection itself: its liveness, its watches and its role. */
 type ConnectionFrame = "ping" | "watch" | "unwatch" | "role" | "machine-events";
 
-export function createSocket({ clients, present, stopped, admit, setRole, watchable, terminalHistory, watchPane, unwatchPane, end, holdPending, attachments, clientSnapshot, herdrLifetime, browserSnapshot, countVisit, drainOutput, frames }: {
+export function createSocket({ clients, present, stopped, setRole, watchable, terminalHistory, watchPane, unwatchPane, end, holdPending, attachments, clientSnapshot, herdrLifetime, browserSnapshot, countVisit, drainOutput, frames }: {
   clients: Set<Client>;
   present: Set<Client>;
   stopped: () => boolean;
-  admit: (client: Client) => boolean;
   setRole: (client: Client, mode: ClientRole) => void;
   /**
    * whether a watch can be drawn here: herdr-core has no view drawn for a viewer's grid (`hc attach
@@ -101,7 +100,6 @@ export function createSocket({ clients, present, stopped, admit, setRole, watcha
         send(client, { type: "error", code: "invalid_role", message: "mode must be interact or observe" });
         return;
       }
-      if (client.data.readOnly) message.mode = "observe";
       if (message.mode === "observe") holdPending(client);
       setRole(client, message.mode);
       send(client, { type: "role-ack", mode: message.mode });
@@ -129,7 +127,6 @@ export function createSocket({ clients, present, stopped, admit, setRole, watcha
       drainOutput(client);
     },
     async open(client) {
-      if (!admit(client)) return;
       if (client.data.relay) { client.data.relay.bind(relayClient(client)); return; }
       clients.add(client);
       // before the snapshot, which waits on herdr (seconds after a restart or under load, or never when the
@@ -140,9 +137,8 @@ export function createSocket({ clients, present, stopped, admit, setRole, watcha
       const features: ServerFeature[] = watchable() ? [...SERVER_FEATURES] : SERVER_FEATURES.filter((feature) => feature !== "watch");
       if (terminalHistory()) features.push("terminal-history");
       if (client.data.machineEvents) features.push("machine-events");
-      // a folder OVIS_PASTE_DIR names lets the page read an upload's path whole through it (#2771); a
-      // watch-only connection, which may list no folder, is not told where it is
-      const pasteDir = client.data.readOnly ? undefined : pasteDirectoryForAll();
+      // a folder OVIS_PASTE_DIR names lets the page read an upload's path whole through it (#2771)
+      const pasteDir = pasteDirectoryForAll();
       send(client, { type: "features", features, connection: client.data.connectionId, ...(lifetime === undefined ? {} : { herdr_lifetime: lifetime }), ...(pasteDir === undefined ? {} : { paste_dir: pasteDir }) });
       const snapshot = clientSnapshot();
       countVisit(snapshot, { surface: client.data.surface, ingress: client.data.ingress });

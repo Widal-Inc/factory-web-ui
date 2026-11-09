@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
-import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +12,6 @@ import type { MachineManager } from "./machines.ts";
 
 const BROWSER_TOKEN = "catalog-browser-token";
 const BRIDGE_TOKEN = "c".repeat(64);
-const WATCH_TOKEN = "w".repeat(64);
 
 describe("GET /api/agent-catalog", () => {
   let server: ReturnType<typeof createServer>;
@@ -29,8 +27,6 @@ describe("GET /api/agent-catalog", () => {
     mkdirSync(bin);
     const state = join(root, "state");
     mkdirSync(state);
-    // one paired device that may only watch
-    writeFileSync(join(state, "devices.json"), JSON.stringify({ gate_closed_at: new Date().toISOString(), devices: [{ id: "0123456789abcdef", label: "Watch fixture", role: "watch", token_hash: createHash("sha256").update(WATCH_TOKEN).digest("hex"), created_at: new Date().toISOString(), last_seen_at: null }] }), { mode: 0o600 });
     // installer folders are looked for in an empty home, never this PC's own
     const home = join(root, "home");
     mkdirSync(home);
@@ -62,14 +58,10 @@ describe("GET /api/agent-catalog", () => {
     expect([muse.install, typeof muse.no_install]).toEqual([null, "string"]);
   });
 
-  it("answers a watch device and the connection server's bridge token, and refuses no credential and a write", async () => {
+  it("answers the connection server's bridge token, and refuses no credential and a wrong method", async () => {
     process.env["PATH"] = bin;
     expect((await fetch(url("/api/agent-catalog"))).status).toBe(401);
-    const watched = await fetch(url("/api/agent-catalog"), { headers: { cookie: `ovis_device=${WATCH_TOKEN}`, "x-forwarded-for": "100.64.0.9" } });
-    expect(watched.status).toBe(200);
     expect((await fetch(url("/api/agent-catalog"), { headers: bearer(BRIDGE_TOKEN) })).status).toBe(200);
-    const watchPost = await fetch(url("/api/agent-catalog"), { method: "POST", headers: { cookie: `ovis_device=${WATCH_TOKEN}`, "x-forwarded-for": "100.64.0.9", origin: url("") } });
-    expect([watchPost.status, ((await watchPost.json()) as { error: { code: string } }).error.code]).toEqual([403, "read_only"]);
     const post = await fetch(url("/api/agent-catalog"), { method: "POST", headers: { ...bearer(BROWSER_TOKEN), origin: url("") } });
     expect([post.status, ((await post.json()) as { error: { code: string } }).error.code]).toEqual([400, "method_not_allowed"]);
   });

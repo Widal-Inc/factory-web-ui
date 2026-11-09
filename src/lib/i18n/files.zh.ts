@@ -199,7 +199,6 @@ export const FILES_ZH: Record<string, string> = {
   "This file mixes line endings. Edit it in the terminal.": "此文件混用了多种换行符。请在终端中编辑。",
   "Saving files from the app isn't available on this PC yet.": "这台电脑暂不支持从应用保存文件。",
   "This file can't be written here.": "无法在这里写入此文件。",
-  "Only a device that drives this PC can edit its files.": "只有能操作这台电脑的设备才能编辑其文件。",
   "The file could not be saved.": "无法保存文件。",
   "Text of {name}": "{name} 的内容",
   "Documents": "文档",

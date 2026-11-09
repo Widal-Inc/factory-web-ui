@@ -1,8 +1,8 @@
 import { subscribeMachineEvents } from "./machine-events.ts";
-import type { DevicePairedEvent, DeviceRemovedEvent, MachineRoster, PcInstallJob, PcInstallRequest, PcUpdateAll, PcUpdateStarted, SetupAction, SetupRequest } from "../shared/machines.ts";
+import type { MachineRoster, PcInstallJob, PcInstallRequest, PcUpdateAll, PcUpdateStarted, SetupAction, SetupRequest } from "../shared/machines.ts";
 import type { AgentRowTokens } from "../shared/pane-tokens.ts";
 import type { SharedPreferences } from "../shared/preferences.ts";
-import type { PanePromptResponse, SessionSnapshot } from "../shared/protocol.ts";
+import type { SessionSnapshot } from "../shared/protocol.ts";
 import type { SeenFinish } from "../shared/seen.ts";
 import { MachineActionRequired, MachineManager, PcUpdateRefused } from "./machines.ts";
 import { canSendSecret, sameOrigin } from "./machine-security.ts";
@@ -15,11 +15,10 @@ import { answerCode, moveAll, moveAllPlans, PC_MOVE_PATH, PC_UPDATE_REQUIRED, to
 
 const fail = (code: string, message: string, status: number) => jsonResponse({ error: { code, message } }, status);
 /**
- * Updating this PC's PCs, as switching its own runtime (dispatch.ts): only its owner, from this app's own page (the
+ * Updating this PC's PCs, as switching its own runtime (dispatch.ts): only from this app's own page (the
  * update header, same origin, no query).
  */
-const OWNER_ONLY = "Only the owner's own signed-in or paired devices can change this PC's PCs, from this app's own page.";
-const MOVE_OWNER_ONLY = "Only the owner, from a device signed in or paired to drive this PC, can move another PC";
+const OWNER_ONLY = "Only this app's own page can change this PC's PCs.";
 const MOVE_FROM_PAGE = "A move must come from this app's own page";
 
 /**
@@ -32,7 +31,7 @@ const MOVE_FROM_PAGE = "A move must come from this app's own page";
 export const MACHINE_EVENTS_QUEUE_BYTES = 4 * 1024 * 1024;
 /**
  * What every machine events stream together may hold, every queued byte counted, large frames and
- * watching devices included. Past it, the streams that stopped reading are ended, the one holding
+ * Past it, the streams that stopped reading are ended, the one holding
  * the most first: a stream whose browser has taken nothing from its queue for MACHINE_EVENTS_STALL_MS.
  * One that reads on is never that, however much it has waiting, and one that has just been sent its
  * roster has not stopped reading either, so neither is ended nor ends another.
@@ -118,14 +117,10 @@ function unusableAnswer(id: string, path: string, error: RemoteResponseTooLarge 
   return fail(tooLarge ? "remote_response_too_large" : "remote_response_invalid", error.message, 502);
 }
 
-export async function handleMachineRequest(request: Request, manager: MachineManager, onRevoke?: (close: () => void) => () => void,
-  preferences?: { get(): SharedPreferences; subscribe(listener: (preferences: SharedPreferences) => void): () => void }, readOnly = false,
+export async function handleMachineRequest(request: Request, manager: MachineManager,
+  preferences?: { get(): SharedPreferences; subscribe(listener: (preferences: SharedPreferences) => void): () => void },
   herdrSidebar?: { get(): AgentRowTokens | null; subscribe(listener: (agents: AgentRowTokens | null) => void): () => void },
-  seen?: { list(): SeenFinish[]; subscribe(listener: (finish: SeenFinish) => void): () => void },
-  /** durable device enrollments (server/devices.ts), already without the ones this stream's own device made */
-  pairings?: { subscribe(listener: (event: DevicePairedEvent | DeviceRemovedEvent) => void): () => void },
-  /** this PC's owner (access.ts ownerAccess): only they may start or stop updates of its PCs */
-  owner = false): Promise<Response> {
+  seen?: { list(): SeenFinish[]; subscribe(listener: (finish: SeenFinish) => void): () => void }): Promise<Response> {
   const url = new URL(request.url);
   // A PC's file opens as this PC's /api/fs/file does, from any navigation: reading it changes
   // nothing, and Chrome on Android shows a PDF in the viewer's frame as an "Open" button whose
@@ -139,10 +134,10 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
   if (nonCanonicalPath(url.pathname)) return fail("not_found", "not found", 404);
   const parts = url.pathname.slice("/api/machines".length).split("/").filter(Boolean);
   // one rule for every change to this PC's PCs (adding, setting up, approving, updating, turning on or off, removing,
-  // its settings): the owner from any device he signed in or paired himself, from this app's own page. A PC's own
+  // its settings): from this app's own page. A PC's own
   // routes (its panes, workspaces and files, MACHINE_PROXY_PATH) are driven as this PC's are, and keep their rules
   const managing = !["GET", "HEAD", "OPTIONS"].includes(request.method) && !(parts.length >= 2 && MACHINE_PROXY_PATH.test(parts.slice(1).join("/")));
-  if (managing && !(owner && updateRequestAllowed(request))) return fail("forbidden", OWNER_ONLY, 403);
+  if (managing && !updateRequestAllowed(request)) return fail("forbidden", OWNER_ONLY, 403);
   try {
     if (!parts.length && request.method === "GET") {
       setRequestRoute("/api/machines");
@@ -165,7 +160,6 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
     if (parts[0] === "events" && parts.length === 1 && request.method === "GET") {
       setRequestRoute("/api/machines/events");
       let stop: (() => void) | undefined;
-      let unwatchDevice: (() => void) | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       let close = () => {};
       let drop = () => {};
@@ -173,7 +167,7 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
       // the browser went away: what still waits for it is dropped, not kept for a reader that is gone
       const aborted = () => drop();
       const cleanup = () => {
-        stop?.(); unwatchDevice?.(); clearInterval(heartbeat);
+        stop?.(); clearInterval(heartbeat);
         request.signal.removeEventListener("abort", aborted);
         if (queue) forgetQueue(queue);
       };
@@ -184,9 +178,6 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
           close = () => { if (closed) return; closed = true; cleanup(); try { controller.close(); } catch {} };
           // fallen behind, refused or gone: an error, not a close, so what waits is dropped instead of still delivered
           drop = () => { if (closed) return; closed = true; cleanup(); try { controller.error(new Error("machine events: stream ended")); } catch {} };
-          // a revoked device that keeps up gets a clean end; one with a backlog waiting is not reading it, so that is dropped
-          unwatchDevice = onRevoke?.(() => { if ((queue?.queued() ?? 0) > 0) drop(); else close(); });
-          if (closed) return;
           const queued = () => MACHINE_EVENTS_QUEUE_BYTES - (controller.desiredSize ?? MACHINE_EVENTS_QUEUE_BYTES);
           // frames larger than the bound, by where they end in the stream: each counts only until it has left the queue
           let written = 0;
@@ -231,7 +222,7 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
             if (bytes.byteLength > MACHINE_EVENTS_QUEUE_BYTES) large.push({ end: written, bytes: bytes.byteLength });
             retell();
           };
-          stop = subscribeMachineEvents({ manager, preferences, herdrSidebar, seen, pairings },
+          stop = subscribeMachineEvents({ manager, preferences, herdrSidebar, seen },
             (event) => send(`data: ${JSON.stringify(event)}\n\n`));
           if (closed) { cleanup(); return; }
           heartbeat = machineEventsClock.heartbeat(() => send(": heartbeat\n\n"));
@@ -244,8 +235,6 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
     }
     if (parts[0] === "ssh-candidates" && parts.length === 1) {
       setRequestRoute("/api/machines/ssh-candidates");
-      // adding a PC is a driving device's; a watching one is not told which hosts this PC knows either
-      if (readOnly) return fail("read_only", "this device can only watch", 403);
       if (request.method !== "GET") return fail("method_not_allowed", "Use GET", 405);
       return jsonResponse({ pcs: await manager.listSshCandidates() }, 200, { "cache-control": "no-store" });
     }
@@ -253,7 +242,7 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
       if (parts.length === 1 && request.method === "POST") {
         setRequestRoute("/api/machines/setup");
         const body = await request.json() as SetupRequest;
-        // a setup that updates what runs there is an update of that PC: the owner's only, as above
+        // a setup that updates what runs there is an update of that PC: from this app's own page only, as above
         // the addresses its one-job-per-PC check compares, resolved first (ssh -G, off the event loop, 3 s at most)
         await manager.resolveFor(body);
         return jsonResponse(manager.setup(body), 202);
@@ -281,8 +270,6 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
       return jsonResponse(manager.updateSettings(patch));
     }
     if (parts[0] === "install" && parts.length <= 2) {
-      // its jobs name SSH addresses and PCs: read by the owner only (the change itself takes the guard above)
-      if (!owner) return fail("forbidden", OWNER_ONLY, 403);
       if (parts.length === 1) {
         setRequestRoute("/api/machines/install");
         if (request.method !== "POST") return fail("method_not_allowed", "Use POST", 405);
@@ -308,8 +295,6 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
     }
     if (parts[0] === "runtime" && parts[1] === "move-all" && parts.length === 2) {
       setRequestRoute("/api/machines/runtime/move-all");
-      if (readOnly) return fail("read_only", "this device can only watch", 403);
-      if (!owner) return fail("forbidden", MOVE_OWNER_ONLY, 403);
       if (request.method !== "POST") return fail("method_not_allowed", "Use POST", 405);
       if (!updateRequestAllowed(request)) return fail("forbidden", MOVE_FROM_PAGE, 403);
       const plans = moveAllPlans(await request.json().catch(() => null), manager.list().length);
@@ -352,23 +337,13 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
     }
     if (parts.length === 1 && request.method === "DELETE") { setRequestRoute("/api/machines/:machine_id"); manager.remove(id); return jsonResponse({ ok: true }); }
     const path = parts.slice(1).join("/");
-    // earlier sessions carry their first prompts, and a folder's command files name what is in it (the new-tab
-    // dialog's agent commands, a pane's command rows), as do the paths under a pane's folder and a plugin run's
-    // output, and a repository's checkouts: never asked for a watching device with the PC's credential
-    if (readOnly && (path === "sessions/history" || path === "agent/commands" || path === "pane/commands" || path === "pane/files" || path === "pane/docs" || path === "plugin/action" || path === "worktree/list" || path === "worktree/inventory")) return fail("read_only", "this device can only watch", 403);
     const movePath = PC_MOVE_PATH.test(path);
-    // a move's plan names every pane's folder and conversation, and the rest move or end them: a driving device's only
-    if (readOnly && movePath) return fail("read_only", "this device can only watch", 403);
-    if (movePath && !owner) return fail("forbidden", MOVE_OWNER_ONLY, 403);
     // that PC refuses a move route with a query (updateRequestAllowed), which would read as an Ovis too old below
     if (movePath && url.search !== "") return fail("invalid_query", "The move routes take no query", 400);
     if (movePath && request.method !== "GET" && !updateRequestAllowed(request)) return fail("forbidden", MOVE_FROM_PAGE, 403);
     if (MACHINE_PROXY_PATH.test(path) || movePath) {
       // `path` is a finite endpoint literal, never the machine id or an arbitrary suffix.
       setRequestRoute(`/api/machines/:machine_id/${path}`);
-      // a connection that may only watch is refused here as well as at the access check, by the same rule
-      // (index.ts `mutating`): it writes nothing on another PC
-      if (readOnly && !["GET", "HEAD", "OPTIONS"].includes(request.method)) return fail("read_only", "this device can only watch", 403);
       const endpoint = manager.endpoint(id);
       if (!endpoint) {
         // a chat opened while the PC waits to reconnect asks it to try now, not after its delay
@@ -401,11 +376,7 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
           return new Response(response.body, { status: response.status, headers: passed });
         } catch (error) { return transportFailure(id, path, error); }
       }
-      // A watching device gets a plan card as the PC's screen shows it, never Claude's plan file:
-      // the PC is asked for that (`plan=0`), and a PC that ignores the ask loses the file here.
-      const watchedPrompt = readOnly && path === "pane/prompt";
       const target = new URL(`${endpoint.url}/api/${path}${url.search}`);
-      if (watchedPrompt) target.searchParams.set("plan", "0");
       const untrack = manager.trackTerminal(id, () => abort.abort());
       // a move's PC reads its roster again once the move is confirmed, so its receipt is soon shown
       const moved = path === "workspace/move" && request.method === "POST" ? manager.refreshAfterMove(id) : null;
@@ -419,20 +390,9 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
         const serverTime = response.headers.get("x-server-time");
         // a PC's "try again in a moment" (a 503 file_busy: its file threads or a commands scan were busy)
         const retryAfter = response.status === 503 ? response.headers.get("retry-after") : null;
-        // held whole before it is passed on (and parsed, for a watcher's prompt), so only up to a size
-        let body: Uint8Array<ArrayBuffer> | null = response.status === 304 ? null : await readCapped(response, watchedPrompt ? REMOTE_LIMITS.watchedPrompt : REMOTE_LIMITS.proxy);
+        // held whole before it is passed on, so only up to a size
+        let body: Uint8Array<ArrayBuffer> | null = response.status === 304 ? null : await readCapped(response, REMOTE_LIMITS.proxy);
         if (movePath && tooOldToMove(manager.list().find((machine) => machine.id === id)?.kind, response.status, answerCode(body))) return fail("pc_update_required", PC_UPDATE_REQUIRED, 409);
-        if (watchedPrompt && response.ok && body) {
-          const answer = parseJson<PanePromptResponse>(body);
-          if (answer.prompt?.plan_file !== undefined) {
-            // the body is the plan file's text and the screen's is not in the answer: the card keeps
-            // its question and options, without a body
-            const { plan_file: _planFile, ...card } = answer.prompt;
-            answer.prompt = { ...card, body: null };
-          }
-          if (answer.outcomes) answer.outcomes = answer.outcomes.map(({ preview: _preview, result_text: _resultText, ...outcome }) => outcome);
-          body = new TextEncoder().encode(JSON.stringify(answer));
-        }
         // a PC's session as the roster tells it, without the token values this server's rows hide (#2160)
         // any method the PC answers with a body (its route takes them all); a HEAD's is empty
         if (path === "session" && response.ok && body && body.byteLength > 0) {

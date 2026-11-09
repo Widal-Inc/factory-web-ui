@@ -102,7 +102,7 @@ export type SessionSnapshot = Omit<HerdrSnapshot, "panes"> & {
 };
 export type { WorkspaceMoved } from "./workspace-lifecycle.ts";
 
-export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, MachineRoster, PaneTarget, SetupJob, SetupRequest, SetupAction, BridgeIdentity, BridgeHealth } from "./machines.ts";
+export type { Machine, MachineEvent, MachineRoster, PaneTarget, SetupJob, SetupRequest, SetupAction, BridgeIdentity, BridgeHealth } from "./machines.ts";
 
 /** Machine API (same token gate; mutations require X-Herdr-Machine: 1 + same origin)
  * GET /api/health?scope=bridge -> BridgeHealth, never waits for herdr (a driving owner is told herdr_runtime too)
@@ -140,7 +140,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *                                          lifetime's id, the supervisor's when managed; older servers sent null unmanaged)
  *  GET    /api/session                   -> { snapshot: SessionSnapshot }
  *  POST   /api/runtime                   -> 202 { accepted: true }; body { runtime: "herdr" | "herdr-core" }, X-Herdr-Update: 1,
- *         a driving owner only (not watch, not an open install's stranger): saves the choice (runtime-<port>.json) and has
+ *         the owner only: saves the choice (runtime-<port>.json) and has
  *         the launcher restart the server on it (server/herdr-core/runtime-choice.ts); 409 runtime_locked (OVIS_RUNTIME,
  *         no launcher, the OS), runtime_unavailable (this PC lacks it, or serves it already), runtime_switching
  *  GET    /api/herdr-ui                  -> HerdrUiConfig (this server PC's herdr [ui] copy_on_select and
@@ -164,7 +164,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *         Update POSTs require X-Herdr-Update: 1, same-origin browser requests,
  *         and the usual token gate. Managed starts only; status is polled during restart.
  *  POST   /api/connection-diagnostics    -> 204; ClientConnectionTrace, metadata only, same-origin
- *         and authenticated (watch devices included). 400 invalid_trace, 408 trace_timeout (the
+ *         and authenticated. 400 invalid_trace, 408 trace_timeout (the
  *         body took over 10 s to arrive), 413 trace_too_large, 429 trace_rate_limited. At most 16
  *         events and 8192 bytes; never input or credentials.
  *  GET    /api/telemetry                 -> TelemetryStatus (shared/telemetry.ts), no-store
@@ -182,7 +182,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *         0 (5 s limit, longer where the entry sets detect.version_timeout_ms; kept until the
  *         executable file changes; a flag that fails, version_error "failed", or hangs, "timeout", is
  *         asked again after a minute, and such an agent does not run: agentRuns). Read only,
- *         no-store; a watch device may read it. A remote PC
+ *         no-store. A remote PC
  *         from before the endpoint answers 404 through /api/machines/<id>/agent-catalog)
  *  POST   /api/agent-catalog/install { agent, alternative? } -> { pane_id, workspace_id, command,
  *         shell } (opens a tab and types that agent's official command for this PC's platform into its
@@ -197,7 +197,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *  POST   /api/agent-catalog/sign-in { agent } -> the same (a tab running the agent's own sign-in
  *         command, or the agent itself when it signs in inside; 400 unknown_field; 409 no_sign_in,
  *         not_installed, shell_unknown). Both
- *         are mutations: a watch device gets 403 read_only; another PC's go through the PC proxy
+ *         are mutations; another PC's go through the PC proxy
  *  GET    /api/integrations              -> IntegrationsResponse (herdr's `integration.list`, in
  *         herdr's order; read only: nothing here installs or removes one, Settings shows the
  *         `herdr integration install` command instead)
@@ -218,13 +218,13 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *         plugin_log_not_found once herdr's log no longer holds it)
  *  GET    /api/sessions/history?workspace_id=&agent=&pane_id= -> SessionHistoryResponse (earlier
  *         sessions of one agent in the workspace's folder, newest first, from the agent's own store;
- *         at most 50. First messages are prompt text: a watch-only device gets 403 read_only. 400
+ *         at most 50. First messages are prompt text. 400
  *         missing_workspace_id / invalid_agent / invalid_pane_id / pane_not_in_workspace, 404
  *         workspace_not_found, 409 no_folder. Claude with `pane_id`: the store of that pane's Claude,
  *         each row's resume carrying its `source`; 409 claude_store_unknown when it cannot be told)
  *  POST   /api/sessions/resume  SessionResumeRequest -> SessionResumeResponse (a listed Claude
  *         session started in the store it was listed from, or the workspace's pane that already
- *         shows it on that store. 403 read_only; 400 invalid_agent / invalid_session_id /
+ *         shows it on that store. 400 invalid_agent / invalid_session_id /
  *         invalid_store_key / pane_not_in_workspace; 404 workspace_not_found / session_not_found;
  *         409 stale_source / claude_store_unknown / launch_unsupported / no_folder, each before any
  *         tab is made)
@@ -341,8 +341,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *         invalid_scope / invalid_revision / invalid_cwd / missing_directory, 404
  *         revision_not_found, 409 not_a_repository / unborn_head (branch: no commit to compare
  *         from) / no_common_ancestor (branch: `base` and HEAD share no history; nothing is
- *         compared in its place), 503 git_unavailable, 504 git_timeout; 403 read_only for a
- *         watching device, as a file read)
+ *         compared in its place), 503 git_unavailable, 504 git_timeout)
  *  GET    /api/workspace/diff/file?pane_id=&directory=&scope=&base=&head=&comparison=&path=&old_path=
  *         -> RepoDiffFilePatch (one file of that comparison as a standard `diff --git` unified
  *         patch; `path` and, for a rename, `old_path` are the list's own, relative to the
@@ -375,7 +374,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *         that PC's own `gh` sign-in: title, state, checks failing first with their Actions job ids,
  *         the unresolved review threads, whether GitHub would merge now and with which default
  *         method. 409 gh_missing / gh_signed_out / no_github_remote / not_a_repository, 404
- *         no_pull_request, 502 gh_failed, 504 gh_timeout. A watching device is refused, as for diffs)
+ *         no_pull_request, 502 gh_failed, 504 gh_timeout)
  *  GET    /api/workspace/pr/log?pane_id=&directory=&job_id=&host= -> PullRequestCheckLog (the last
  *         lines of that Actions job's log, timestamps and colour codes removed, asked of the pull
  *         request's host: github.com when absent; 400 invalid_job / invalid_host)
@@ -433,44 +432,28 @@ export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, Mach
  *         checkout and closes its workspace, keeps the branch; a dirty checkout is refused without force:
  *         dirty_worktree_requires_force)
  *  POST   /api/auth        { token }     -> 204 + Set-Cookie ovis_token (401 invalid_token on mismatch)
- *  DELETE /api/auth                      -> 204, clears the token and the device cookies
- *  GET    /api/devices                   -> { devices: PairedDevice[] } (the paired devices; `current` marks the caller's,
- *         `connection` how one with an encrypted session up reaches the PC; `?check=1` measures their round trips first, within 3 s)
- *  POST   /api/devices/pair/start        -> PairingCode: a six-digit code good for ten minutes, replacing any pending one
- *         (X-Herdr-Machine: 1 + same origin, from a client with full access)
- *  POST   /api/devices/pair { code, label? } -> 204 + Set-Cookie ovis_device (public, like /api/auth;
- *         401 invalid_code when the code is wrong, spent after five tries, or expired). With
- *         `Accept: application/json` (a script, never the browser app): 200 DevicePairToken + the same
- *         Set-Cookie; the script then sends `Authorization: Device <token>` in place of the cookie,
- *         under the same role, last-seen and revocation
- *  PATCH  /api/devices/:id  { label }    -> PairedDevice;  DELETE /api/devices/:id -> 204 (revoked at its next request)
- *  POST   /api/devices/revoke-all        -> DevicesRevokedAll + Set-Cookie clearing ovis_device and its old name
- *         (X-Herdr-Machine: 1 + same origin, a client that can drive: 403 invalid_origin / read_only;
- *         500 internal_error when the write fails, and then nothing was revoked)
+ *  DELETE /api/auth                      -> 204, clears the token cookie
  *  GET    /api/push                      -> PushKey (the VAPID application server key)
- *  POST   /api/push/subscribe { subscription }  -> 204 (a browser PushSubscription JSON; upsert by endpoint;
- *         a browser without a stream key is issued one: "Browser stream keys" below)
+ *  POST   /api/push/subscribe { subscription }  -> 204 (a browser PushSubscription JSON; upsert by endpoint)
  *         | 410 subscription_gone (its push service answered 404/410 for that endpoint since the server
  *         started: the browser must unsubscribe and subscribe anew; an older server never says it)
  *  DELETE /api/push/subscribe { endpoint }      -> 204
  *  POST   /api/push/test      { endpoint }      -> 204 | 404 subscription_not_found | 410 subscription_gone | 502 push_failed
  *  POST   /api/push/status    { subscription }  -> PushSubscriptionStatus: this browser's own subscription (its JSON, never an
- *         endpoint in a URL or a list); 404 subscription_not_found alike for an unknown one, another owner's
- *         and one whose keys do not match, so nothing is enumerated; 403 status_unavailable to the open LAN, which
- *         signs in as no device and so owns no record (asked before any subscription is looked at)
+ *         endpoint in a URL or a list); 404 subscription_not_found alike for an unknown one
+ *         and one whose keys do not match, so nothing is enumerated
  *  GET    /api/usage[?refresh=1]         -> UsageReport (plan limits of the AI subscriptions signed in on this PC)
  *  DELETE /api/usage/accounts { account } -> 204 (removed from Ovis, CLI sign-in untouched) | 404 account_not_found
  *  POST   /api/usage/accounts { account } -> 204 (a removed account listed again)
  *  Errors: non-2xx with { error: { code, message } }
  *
- *  Access: every route above except /api/health, /api/auth and /api/devices/pair, plus the
- *  /ws upgrade, needs the request to be one of: from this PC itself (no proxy in front); a paired
- *  device's cookie; or the shared token (OVIS_TOKEN) as cookie or `Authorization: Bearer <token>`.
- *  With a token configured, this PC stops counting: only the token and a paired device do. A
- *  request that came through a proxy or Tailscale Funnel (a forwarding header) is let in only with
- *  one of those. Without a token, and while no device is paired, a direct connection is let in as
- *  before (the startup warning says so). Refusals answer 401 `unauthorized`; the upgrade is
- *  refused. Static files are always public.
+ *  Access: every route above except /api/health and /api/auth, plus the
+ *  /ws upgrade, needs the request to be one of: from this PC itself (no proxy in front) while no
+ *  token is configured; or the shared token (OVIS_TOKEN) as cookie or `Authorization: Bearer <token>`.
+ *  With a token configured, this PC stops counting: only the token does. A request that came
+ *  through a proxy or Tailscale Funnel (a forwarding header), or from another address, is let in only
+ *  with the token. Refusals answer 401 `unauthorized`; the upgrade is refused. Static files are
+ *  always public.
  */
 export interface ApiError {
   error: { code: string; message: string };
@@ -482,50 +465,8 @@ export type { UsageProviderId, UsageWindow, UsageResets, UsageCredits, UsageProb
 
 export type { CLIProxyStatus, CLIProxyProvider, CLIProxyLogin, CLIProxyLoginStatus } from "./cliproxy.ts";
 
-export type { AccessVia, AccessRefusal, DeviceRole, HealthAuth, LanExposure, BindScope, ObservedIngress, SecuritySummary, PairedDevice, PairingCode, TailscaleAccess } from "./access.ts";
+export type { AccessVia, AccessRefusal, HealthAuth, BindScope, ObservedIngress, SecuritySummary, TailscaleAccess } from "./access.ts";
 export type { RemoteAccess } from "./access.ts";
-
-/**
- * Browser stream keys: how the server tells one browser from another without a credential, so a
- * device a browser pairs itself is not announced back to it (`DevicePairedEvent`, and the push
- * "New device paired" notice).
- *
- * - Issuance: an answer to GET /api/machines/events or POST /api/push/subscribe that is served
- *   (2xx) to a request carrying no valid key adds one: `Set-Cookie: ovis_stream_<key>=1;
- *   Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000` (plus `Secure` over https), `<key>` 32
- *   lowercase hex characters from 16 random bytes. A request that carries one is issued nothing.
- * - Format: the key is in the cookie's NAME and the value is always `1`. Tabs that open at once,
- *   before the browser held a key, each get one; since the names differ the browser keeps them
- *   all, and every later request carries every key. At most eight are read from one request. A
- *   cookie with the prefix whose key is not 32 lowercase hex, or whose value is not `1`, is not a
- *   key and is ignored (never refused); a request with none is treated as a browser without one.
- * - Lifetime: one year, like the device cookie, so a push subscription and the browser that made
- *   it keep matching. Nothing revokes a key: it names a browser and grants nothing.
- * - No authority: a key never lets a request in, never selects an owner or a role, and is not read
- *   by the gate. Losing one only means that browser may hear of its own next pairing.
- * - Role in POST /api/devices/pair: the keys the pairing request carries are the enrollment's
- *   origin (kept with a first-pair credential until its first return). The `device-paired` event
- *   then skips every machines event stream opened with one of those keys, and the push notice
- *   skips every subscription registered with one, whatever access it came through (token, this
- *   PC or a paired device).
- */
-export const STREAM_COOKIE_PREFIX = "ovis_stream_";
-
-/** POST /api/devices/pair's answer to a request that accepts JSON: the device's own credential. */
-export interface DevicePairToken {
-  readonly token: string;
-}
-
-/**
- * POST /api/devices/revoke-all: every paired device lost its pairing access in one durable write,
- * the caller's own included (its device cookie is cleared by the answer). Only pairing ends: the
- * access token and this PC itself get in as before, and the gate stays
- * closed to strangers.
- */
-export interface DevicesRevokedAll {
-  /** how many devices were paired before */
-  readonly revoked: number;
-}
 
 export type { PushAction, PushDeliveryFailure, PushKey, PushPayload, PushSubscriptionStatus } from "./push.ts";
 
@@ -1026,7 +967,7 @@ export interface PromptAnswer {
 /** A connection's authority over the shared ptys: `interact` types and resizes, `observe` only watches. */
 export type ClientRole = "interact" | "observe";
 
-/** A pending message's outcome. `resumed`: replayed after a reconnect, only to the device and browser
+/** A pending message's outcome. `resumed`: replayed after a reconnect, only to the browser
  * (`receipt_resume_id`) that sent it, for its exact id; it settles a saved copy and never sends input. */
 export interface PendingRemoval { id: string; outcome: "sent" | "discarded" | "consumed" | "dismissed"; resumed?: true }
 

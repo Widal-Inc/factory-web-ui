@@ -9,6 +9,7 @@ import * as herdr from "../herdr/client.ts";
 import * as pi from "../pi.ts";
 import type { SightingFacts } from "../input-guard.ts";
 import { connectionData, type Client } from "./connections.ts";
+import { observing } from "./connections.fake.ts";
 import { createPendingDelivery } from "./pending.ts";
 import { isDshProcess } from "../dsh.ts";
 import { SHELL_AGENTS } from "../shell-agent.ts";
@@ -69,7 +70,7 @@ it.each(["delivery first", "withdrawal first", "ambiguous delivery first", "ambi
   const frames = new Map<Client, ServerMessage[]>(), clients = new Set<Client>();
   const client = (): Client => {
     const output: ServerMessage[] = [];
-    const owner = { data: connectionData({ deviceId: "device", readOnly: false }), getBufferedAmount: () => 0,
+    const owner = { data: connectionData({}), getBufferedAmount: () => 0,
       send: (value: string) => { output.push(JSON.parse(value)); return 1; } } as Client;
     clients.add(owner); frames.set(owner, output); return owner;
   };
@@ -130,8 +131,8 @@ it.each(["delivery first", "withdrawal first", "ambiguous delivery first", "ambi
   }
 });
 
-it.each(["same browser", "no device", "wrong browser", "wrong device", "read-only", "revoked", "no resume id", "expired", "uncertain",
-  "settled after reattach", "late wrong browser", "late wrong device", "late read-only", "late revoked"] as const)(
+it.each(["same browser", "wrong browser", "read-only", "unauthorized", "no resume id", "expired", "uncertain",
+  "settled after reattach", "late wrong browser", "late read-only", "late unauthorized"] as const)(
   "replays a follow-up's exact receipt only to the browser that sent it (#2421): %s", (name) => {
     // "late": the reload attaches before the Enter's reply settles the send, so the receipt is pushed to it
     const late = name === "settled after reattach" || name.startsWith("late ");
@@ -139,21 +140,21 @@ it.each(["same browser", "no device", "wrong browser", "wrong device", "read-onl
     let now = Date.now();
     const clock = spyOn(Date, "now").mockImplementation(() => now);
     try {
-      const token = crypto.randomUUID(), frames = new Map<Client, ServerMessage[]>(), clients = new Set<Client>(), revoked = new Set<Client>();
-      const client = (deviceId: string | undefined, receiptResumeId: string | undefined, readOnly = false): Client => {
+      const token = crypto.randomUUID(), frames = new Map<Client, ServerMessage[]>(), clients = new Set<Client>(), unauthorized = new Set<Client>();
+      const client = (receiptResumeId: string | undefined, readOnly = false): Client => {
         const output: ServerMessage[] = [];
-        const owner = { data: connectionData({ deviceId, readOnly }), getBufferedAmount: () => 0,
+        const owner = { data: connectionData({}), getBufferedAmount: () => 0,
           send: (value: string) => { output.push(JSON.parse(value)); return 1; } } as Client;
+        if (readOnly) observing(owner);
         owner.data.attached.set("p", { keepSize: false, receiptResumeId });
         clients.add(owner); frames.set(owner, output); return owner;
       };
-      const device = scenario === "no device" ? undefined : "device";
-      const first = client(device, scenario === "no resume id" ? undefined : token);
+      const first = client(scenario === "no resume id" ? undefined : token);
       const delivery = createPendingDelivery({
         options: {}, clients, attachments: new Map(), serialize: async (_pane, task) => task(), lastTyped: new Map(),
         sight: () => { throw new Error("a receipt replay takes no input lease"); },
         submitText: async () => { throw new Error("a receipt replay never types"); },
-        authorizeSocket: (owner) => { if (revoked.has(owner)) throw new Error("revoked"); },
+        authorizeSocket: (owner) => { if (unauthorized.has(owner)) throw new Error("unauthorized"); },
         clientSnapshot: async () => ({ panes: [] }) as unknown as SessionSnapshot,
         omo: { sessionOf: () => null }, SUBMIT_DEADLINE_MS: 45_000, SUBMIT_DELAY_MS: 0, TYPED_SETTLE_MS: 0,
       });
@@ -165,30 +166,31 @@ it.each(["same browser", "no device", "wrong browser", "wrong device", "read-onl
       clients.delete(first); delivery.closeConnection(first);
       if (scenario === "uncertain") { now += 60_001; delivery.pending.expire(); }
       if (scenario === "expired") now += 10 * 60 * 1000 + 1;
-      const resumed = client(scenario === "wrong device" ? "other" : device, scenario === "wrong browser" ? crypto.randomUUID() : token, scenario === "read-only");
-      if (scenario === "revoked") revoked.add(resumed);
+      const resumed = client(scenario === "wrong browser" ? crypto.randomUUID() : token, scenario === "read-only");
+      if (scenario === "unauthorized") unauthorized.add(resumed);
       delivery.attached(resumed, "p");
       if (late) delivery.pending.settle(item);
       const removed = frames.get(resumed)!.flatMap((frame) => frame.type === "pending-messages" ? frame.removed ?? [] : []);
-      expect(removed).toEqual(["same browser", "no device", "settled after reattach"].includes(scenario) ? [{ id: item.message.id, outcome: "sent", resumed: true }] : []);
+      expect(removed).toEqual(["same browser", "settled after reattach"].includes(scenario) ? [{ id: item.message.id, outcome: "sent", resumed: true }] : []);
     } finally { clock.mockRestore(); }
   });
 
-it.each(["before close", "after close", "overlapping reload", "same live browser", "no device", "read-only", "detach", "wrong browser", "wrong device", "revoked", "expired", "pending cap", "completed cap", "confirmation budget"] as const)(
+it.each(["before close", "after close", "overlapping reload", "same live browser", "read-only", "detach", "wrong browser", "unauthorized", "expired", "pending cap", "completed cap", "confirmation budget"] as const)(
   "resumes only exact, authorized Pi presentation receipts: %s", async (when) => {
     const root = mkdtempSync(join(tmpdir(), "ovis-pi-resume-")); roots.push(root);
     const path = join(root, "session.jsonl"); paths.set("p", path);
     writeFileSync(path, JSON.stringify({ type: "session", version: 3, id: "session" }) + "\n"
       + JSON.stringify({ type: "message", id: "base", parentId: null, message: { role: "assistant", content: [] } }) + "\n");
     const token = crypto.randomUUID(), frames = new Map<Client, ServerMessage[]>(), clients = new Set<Client>();
-    const client = (deviceId: string | undefined = when === "no device" ? undefined : "device", receiptResumeId: string = token, readOnly = false): Client => {
+    const client = (receiptResumeId: string = token, readOnly = false): Client => {
       const output: ServerMessage[] = [];
-      const owner = { data: connectionData({ deviceId, readOnly }), getBufferedAmount: () => 0,
+      const owner = { data: connectionData({}), getBufferedAmount: () => 0,
         send: (value: string) => { output.push(JSON.parse(value)); return 1; } } as Client;
+      if (readOnly) observing(owner);
       owner.data.attached.set("p", { keepSize: false, receiptResumeId });
       clients.add(owner); frames.set(owner, output); return owner;
     };
-    const first = client(), typed: string[] = [], revoked = new Set<Client>();
+    const first = client(), typed: string[] = [], unauthorized = new Set<Client>();
     let queue = Promise.resolve<unknown>(undefined);
     const serialize = <T>(_pane: string, task: () => T | Promise<T>): Promise<T> => {
       const next = queue.catch(() => {}).then(task); queue = next; return next;
@@ -197,7 +199,7 @@ it.each(["before close", "after close", "overlapping reload", "same live browser
       options: { piReceiptLimit: 1 }, clients, attachments: new Map(), serialize, lastTyped: new Map(),
       sight: () => { throw new Error("presentation never takes an input lease"); },
       submitText: async (_pane, text) => { typed.push(text); },
-      authorizeSocket: (owner) => { if (revoked.has(owner)) throw new Error("revoked"); },
+      authorizeSocket: (owner) => { if (unauthorized.has(owner)) throw new Error("unauthorized"); },
       clientSnapshot: async () => ({ panes: [{ pane_id: "p", terminal_id: "p", agent: "pi", agent_status: "idle" }] }) as SessionSnapshot,
       omo: { sessionOf: () => null }, SUBMIT_DEADLINE_MS: 45_000, SUBMIT_DELAY_MS: 0, TYPED_SETTLE_MS: 0,
     });
@@ -231,12 +233,12 @@ it.each(["before close", "after close", "overlapping reload", "same live browser
       let lastToken = "";
       for (let index = 0; index < 1025; index++) {
         lastToken = crypto.randomUUID();
-        const owner = client("device", lastToken);
+        const owner = client(lastToken);
         await delivery.pendingFrames.submit(owner, { type: "submit", id: index + 10, pane_id: "p", text: "waiting", payload: "waiting", delivery: "immediate" });
         await serialize("p", () => {});
         clients.delete(owner); delivery.closeConnection(owner);
       }
-      const dropped = client("device", lastToken);
+      const dropped = client(lastToken);
       delivery.attached(dropped, "p");
       await serialize("p", () => {});
       expect(frames.get(dropped)!.filter((frame) => frame.type === "pending-messages")).toEqual([]);
@@ -264,7 +266,7 @@ it.each(["before close", "after close", "overlapping reload", "same live browser
       return;
     }
     if (when === "before close") { append(); await delivery.reconcilePiDeliveries("p"); }
-    if (when === "revoked") revoked.add(first);
+    if (when === "unauthorized") unauthorized.add(first);
     const overlap = when === "overlapping reload" ? client() : undefined;
     if (overlap) delivery.attached(overlap, "p");
     if (when === "detach") first.data.attached.delete("p");
@@ -275,7 +277,7 @@ it.each(["before close", "after close", "overlapping reload", "same live browser
       try { await delivery.reconcilePiDeliveries("p"); } finally { Date.now = original; }
     }
     if (when !== "before close" && when !== "after close") append();
-    const next = when === "detach" ? first : overlap ?? client(when === "wrong device" ? "different" : when === "no device" ? undefined : "device", when === "wrong browser" ? crypto.randomUUID() : token, when === "read-only");
+    const next = when === "detach" ? first : overlap ?? client(when === "wrong browser" ? crypto.randomUUID() : token, when === "read-only");
     if (when === "detach") first.data.attached.set("p", { keepSize: false, receiptResumeId: token });
     delivery.attached(next, "p");
     await serialize("p", () => {});
@@ -287,7 +289,7 @@ it.each(["before close", "after close", "overlapping reload", "same live browser
     await delivery.reconcilePiDeliveries("p");
     const consumed = frames.get(next)!.flatMap((frame) => frame.type === "pending-messages" ? frame.removed ?? [] : [])
       .filter((item) => item.id === sent.id && item.outcome === "consumed");
-    expect(consumed.length > 0).toBe(["before close", "after close", "overlapping reload", "no device", "detach"].includes(when));
+    expect(consumed.length > 0).toBe(["before close", "after close", "overlapping reload", "detach"].includes(when));
     if (when === "same live browser") expect(frames.get(next)!.flatMap((frame) => frame.type === "pending-messages" ? frame.messages : [])).toEqual([]);
     expect(typed).toEqual(["same"]);
     if (when === "after close") {
@@ -307,7 +309,7 @@ it.each(["identity", "transcript"] as const)("does not release another pane's sl
   }
   const frames: ServerMessage[] = [], typed: string[] = [];
   const owner = {
-    data: connectionData({ deviceId: undefined, readOnly: false }),
+    data: connectionData({}),
     getBufferedAmount: () => 0,
     send: (value: string) => { frames.push(JSON.parse(value)); return 1; },
   } as Client;
@@ -370,7 +372,7 @@ it.each([
   let snapshots = 0, leaveAt = 0, left: Processes | null = null;
   const frames: ServerMessage[] = [];
   const owner = {
-    data: connectionData({ deviceId: undefined, readOnly: false }),
+    data: connectionData({}),
     getBufferedAmount: () => 0,
     send: (value: string) => { frames.push(JSON.parse(value)); return 1; },
   } as Client;
@@ -441,7 +443,7 @@ it.each([
 ] as const)("a first message queued before herdr names its agent, with in front %s", async (_case, front, next, later, code) => {
   let named: string | null = null;
   const frames: ServerMessage[] = [];
-  const owner = { data: connectionData({ deviceId: undefined, readOnly: false }), getBufferedAmount: () => 0,
+  const owner = { data: connectionData({}), getBufferedAmount: () => 0,
     send: (value: string) => { frames.push(JSON.parse(value)); return 1; } } as Client;
   owner.data.attached.set("L", { keepSize: false });
   let queue = Promise.resolve<unknown>(undefined);
@@ -483,7 +485,7 @@ it.each([
   try {
     let named: string | null = namedAtQueue;
     const frames: ServerMessage[] = [];
-    const owner = { data: connectionData({ deviceId: undefined, readOnly: false }), getBufferedAmount: () => 0,
+    const owner = { data: connectionData({}), getBufferedAmount: () => 0,
       send: (value: string) => { frames.push(JSON.parse(value)); return 1; } } as Client;
     owner.data.attached.set("L", { keepSize: false });
     let queue = Promise.resolve<unknown>(undefined);
@@ -520,7 +522,7 @@ it.each([
 
 it("keeps the owner's held row sendable when its own Send now fails before anything is typed", async () => {
   const output: ServerMessage[] = [];
-  const owner = { data: connectionData({ deviceId: "device", readOnly: false }), getBufferedAmount: () => 0,
+  const owner = { data: connectionData({}), getBufferedAmount: () => 0,
     send: (value: string) => { output.push(JSON.parse(value)); return 1; } } as Client;
   owner.data.attached.set("p", { keepSize: false });
   let queue = Promise.resolve<unknown>(undefined);
@@ -560,7 +562,7 @@ it.skipIf(Boolean(process.env["CLAUDE_CONFIG_DIR"]))("holds a message queued for
     return null;
   });
   const output: ServerMessage[] = [];
-  const owner = { data: connectionData({ deviceId: "device", readOnly: false }), getBufferedAmount: () => 0,
+  const owner = { data: connectionData({}), getBufferedAmount: () => 0,
     send: (value: string) => { output.push(JSON.parse(value)); return 1; } } as Client;
   owner.data.attached.set("p", { keepSize: false });
   let queue = Promise.resolve<unknown>(undefined);

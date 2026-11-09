@@ -12,7 +12,6 @@ export const GUIDE_ZH: Record<string, string> = {
   "Skip setup": "跳过设置",
   "Already installed one?": "已经装好了一个?",
   "Look again": "重新检查",
-  "This browser is paired first: other browsers now need pairing too.": "已先配对此浏览器：其他浏览器现在也需要配对。",
   "You're set up": "已准备就绪",
   "Ovis found these on this PC. Start opens your first project with the one picked.": "Ovis 在本机找到了这些。点开始会用选中的那个打开你的第一个项目。",
   "Pick an AI coding helper": "选择一个 AI 编程助手",
@@ -23,7 +22,6 @@ export const GUIDE_ZH: Record<string, string> = {
   "Ovis finds or installs an AI coding helper and opens your first project.": "Ovis 会找到或安装一个 AI 编程助手,并打开你的第一个项目。",
   "Plan usage will show in the sidebar for your signed-in accounts.": "已登录账号的套餐用量会显示在侧边栏。",
   "Start with {agent}": "用 {agent} 开始",
-  "Connect your phone": "连接手机",
   "{agent} can't start from here. Open a workspace from the sidebar instead.": "无法从这里启动 {agent}。请从侧边栏打开工作区。",
   "Checking this PC…": "正在检查本机…",
   "Looking for AI coding helpers that are already installed.": "正在查找已安装的 AI 编程助手。",
@@ -35,5 +33,4 @@ export const GUIDE_ZH: Record<string, string> = {
   "The workspace opened, but {agent} did not start. Open it to see why in its terminal.": "工作区已打开,但 {agent} 没有启动。打开它,在终端里查看原因。",
   "Open the workspace": "打开工作区",
   "{agent} is not signed in yet.": "{agent} 尚未登录。",
-  "Open this address on your phone": "在手机上打开此地址",
 };

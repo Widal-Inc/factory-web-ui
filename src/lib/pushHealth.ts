@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { PushDeliveryFailure, PushSubscriptionStatus } from "../../shared/protocol.ts";
-import { ApiError, fetchPushKey, fetchPushSubscriptionStatus, routeMissing } from "./api.ts";
+import { fetchPushKey, fetchPushSubscriptionStatus, routeMissing } from "./api.ts";
 import { notificationState, type NotificationState } from "./notifications.ts";
 import { currentPushOperation, heldPushSubscription, pushSubscriptionEpoch, pushSupported, sameServerKey } from "./push.ts";
 
@@ -74,9 +74,9 @@ export function classifyPushHealth(input: PushHealthInput): PushHealth {
     const failure = status.last_failure!;
     // the push service refused the server's signature (401/403). With the browser's key proven the server's
     // own above, subscribing anew would make the same subscription, so it is told as a refusal. A key nobody
-    // can read (the phone app's, or a browser that does not say) is most likely the old one, after the
+    // can read (a browser that does not say) is most likely the old one, after the
     // server's key changed and a registration with the new one failed: subscribing anew replaces a
-    // subscription whose key is not proven (lib/push.ts, and the app's plugin on a changed key), so it mends it
+    // subscription whose key is not proven (lib/push.ts), so it mends it
     if (failure === "key-mismatch") return input.keyMatches === null ? { problem: "key-mismatch", repair: true, transient: null } : { problem: "rejected", repair: false, transient: null };
     if (permanent(failure)) return { problem: failure, repair: failure === "gone", transient: null };
     return { problem: status.registered ? null : "missing", repair: !status.registered, transient: failure };
@@ -87,10 +87,10 @@ export function classifyPushHealth(input: PushHealthInput): PushHealth {
 
 /**
  * What Send test or a repair came to, for Settings' line (components/PushTestControls.tsx). A repair
- * that made no subscription says why: the browser (or the app) would not make one ("refused"), the
+ * that made no subscription says why: the browser would not make one ("refused"), the
  * page's service worker never came up ("no-worker"), or the PC did not take it ("unregistered").
  */
-export type PushActionResult = "sent" | "unsupported" | "permission" | "missing" | "gone" | "read-only" | "refused" | "no-worker" | "unregistered" | "failed";
+export type PushActionResult = "sent" | "unsupported" | "permission" | "missing" | "gone" | "refused" | "no-worker" | "unregistered" | "failed";
 
 const REPAIR_FAILURES: ReadonlySet<PushActionResult> = new Set(["refused", "no-worker", "unregistered"]);
 
@@ -208,10 +208,9 @@ async function observe(wanted: boolean): Promise<{ input: PushHealthInput; reach
     if (input.keyMatches === false) return { input, reached: true, endpoint };
     input.status = (await fetchPushSubscriptionStatus(subscription.json)) ?? "unknown";
   } catch (error) {
-    // a server from before the question answers 404 for the route, and the open LAN, which signs in as no
-    // device, 403 status_unavailable: nothing to go on, and nothing wrong. Any other failure (a 5xx, the PC
-    // out of reach) proves nothing either way: what was known stands
-    const answered = routeMissing(error) || error instanceof ApiError && error.code === "status_unavailable";
+    // a server from before the question answers 404 for the route: nothing to go on, and nothing wrong. Any
+    // other failure (a 5xx, the PC out of reach) proves nothing either way: what was known stands
+    const answered = routeMissing(error);
     return { input, reached: answered, endpoint };
   }
   return { input, reached: true, endpoint };

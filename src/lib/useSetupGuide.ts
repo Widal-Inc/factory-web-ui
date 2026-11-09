@@ -14,9 +14,6 @@ export interface SetupGuideFacts {
   enabled: boolean;
   /** this PC's workspaces once the roster has them; null before */
   workspaces: number | null;
-  /** undefined until the server's access facts and this device's role are both known; null when it sent none */
-  pairingGate: "open" | "closed" | "unavailable" | null | undefined;
-  watching: boolean;
 }
 
 /**
@@ -26,7 +23,7 @@ export interface SetupGuideFacts {
  * workspace, an alert, the tab the guide opened): the guide steps aside, still mounted, for it. The
  * app's own fallback pick of a first pane is no pick, and leaves it in front.
  */
-export function useSetupGuide({ enabled, workspaces, pairingGate, watching }: SetupGuideFacts) {
+export function useSetupGuide({ enabled, workspaces }: SetupGuideFacts) {
   // read before this page saves anything: a save made by the guide itself must not count
   const [savedSettings] = useState(() => { try { return storage()?.getItem(SETTINGS_STORAGE_KEY) != null; } catch { return true; } });
   const [record] = useState(() => { const store = storage(); return store === null ? null : readGuide(store); });
@@ -40,10 +37,6 @@ export function useSetupGuide({ enabled, workspaces, pairingGate, watching }: Se
   const openedHere = useRef(false);
   // the record this tab wrote last: a close that storage no longer holds is older than it
   const lastWrite = useRef<string | null>(null);
-  // a watching device sets nothing up: no guide is restored, reopened or kept for it (the server refuses
-  // its installs and workspaces anyway, as #2330's Settings hides Install for it)
-  const watchingRef = useRef(watching);
-  watchingRef.current = watching;
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
@@ -54,15 +47,15 @@ export function useSetupGuide({ enabled, workspaces, pairingGate, watching }: Se
   }, [enabled]);
 
   useEffect(() => {
-    if (decided.current || !enabled || pairingGate === undefined) return;
+    if (decided.current || !enabled) return;
     if (workspaces === null || sharedRevision === null) return;
     decided.current = true;
-    if (autoOpen({ workspaces, savedSettings, sharedRevision, pairingGate, watching })) { openedHere.current = true; setGuide(WELCOME); }
-  }, [enabled, workspaces, sharedRevision, pairingGate, watching, savedSettings]);
+    if (autoOpen({ workspaces, savedSettings, sharedRevision })) { openedHere.current = true; setGuide(WELCOME); }
+  }, [enabled, workspaces, sharedRevision, savedSettings]);
 
   useEffect(() => {
     const reopen = () => {
-      if (watchingRef.current || !enabledRef.current) return;
+      if (!enabledRef.current) return;
       decided.current = true; openedHere.current = true; setGuide(REOPENED); setPaused(false);
     };
     // closed in another tab of this browser: closed here too, read from the event itself (storage may
@@ -92,7 +85,7 @@ export function useSetupGuide({ enabled, workspaces, pairingGate, watching }: Se
 
 
   const openRef = useRef(false);
-  openRef.current = guide !== null && !watching;
+  openRef.current = guide !== null;
   // the tabs the guide asked to show: every one asked for before the guide went away is void
   const tickets = useRef(0);
   const wasOpen = useRef(false);
@@ -112,9 +105,6 @@ export function useSetupGuide({ enabled, workspaces, pairingGate, watching }: Se
     if (store !== null) saveGuide(store, null);
   }, []);
   const resume = useCallback(() => { pausedRef.current = false; setPaused(false); }, []);
-  // turned into a watching device (its pairing changed): an open guide goes, without closing it for this browser
-  useEffect(() => { if (watching) { setGuide(null); setPaused(false); } }, [watching]);
-  // and the render that brings the role already shows none
   // the first workspace opened from the guide: the guide closes, and its pane is shown only when the
   // user stayed on the guide, not over a pane they went to while it was being made
   const finish = useCallback((select: () => void) => {
@@ -129,7 +119,7 @@ export function useSetupGuide({ enabled, workspaces, pairingGate, watching }: Se
     return () => tickets.current === mine && openRef.current;
   }, []);
   const voidTickets = useCallback(() => { tickets.current += 1; }, []);
-  return { guide: watching ? null : guide, paused, dispatch, close, resume, stepAside, finish, ticket, voidTickets };
+  return { guide, paused, dispatch, close, resume, stepAside, finish, ticket, voidTickets };
 }
 
 /**

@@ -72,8 +72,8 @@ On a first install it mentions a GitHub star, once, unless the account the [gh C
 <details>
 <summary>Other ways to install</summary>
 
-**The plugin alone**, when herdr, Bun and Node are there already. After installing, choose
-the plugin's **Phone setup** action inside herdr to see the address, QR and a pairing code.
+**The plugin alone**, when herdr, Bun and Node are there already. After installing, run
+`bun scripts/plugin.ts phone` (see [In a terminal](#in-a-terminal)) to see the phone address and its QR code.
 
 ```bash
 herdr plugin install devswha/ovis
@@ -92,7 +92,7 @@ You need herdr 0.9.0+ and Bun 1.4+, and for attached terminals either the Rust P
 
 </details>
 
-**2. Open it** at **http://127.0.0.1:7317**, the address the installer opened. On a slow link, such as a phone on mobile data, a spinner shows while the app downloads. The installed app belongs to that exact address: `localhost:7317` is another address to the browser, so a tab there is not the installed app, and Settings → Phone & devices → Install there still offers to install it (an **Install app** button when the browser can, its steps otherwise). Every workspace of your herdr session is a row in the sidebar, as in herdr's own, led by its project's icon when its folder keeps one (a favicon in the folder, `public/` or `static/`; else an app icon such as Next.js's `app/icon.*` or Electron's `build/icon.png`; else a logo such as `logo.svg` or `assets/logo.png`; the folder is the worktree checkout, or else the pane's working folder, so a pane that has `cd`'d into `src/` looks there) and a folder glyph otherwise (a repository row with worktrees under it is also its fold button: the folder opens and closes with it, and an icon turns into that folder under the pointer; the worktree rows nested under it have no mark); its tabs are always shown in a strip, and the active tab shows all its split panes together. Pick one, start a new agent with **New workspace**, or add a tab to a workspace with **New tab** (the strip's `+`, a tab's right-click menu, or the command palette on a wider screen or with a keyboard). Right-click a tab to rename or close it; on a phone, tap the selected tab’s **⋯** for a trimmed menu with pane actions, Rename tab and Close tab. A focused tab also opens its menu with Shift+F10, and double-click still renames it.
+**2. Open it** at **http://127.0.0.1:7317**, the address the installer opened. On a slow link, such as a phone on mobile data, a spinner shows while the app downloads. The installed app belongs to that exact address: `localhost:7317` is another address to the browser, so a tab there is not the installed app, and Settings → Devices and PCs → More settings → Install there still offers to install it (an **Install app** button when the browser can, its steps otherwise). Every workspace of your herdr session is a row in the sidebar, as in herdr's own, led by its project's icon when its folder keeps one (a favicon in the folder, `public/` or `static/`; else an app icon such as Next.js's `app/icon.*` or Electron's `build/icon.png`; else a logo such as `logo.svg` or `assets/logo.png`; the folder is the worktree checkout, or else the pane's working folder, so a pane that has `cd`'d into `src/` looks there) and a folder glyph otherwise (a repository row with worktrees under it is also its fold button: the folder opens and closes with it, and an icon turns into that folder under the pointer; the worktree rows nested under it have no mark); its tabs are always shown in a strip, and the active tab shows all its split panes together. Pick one, start a new agent with **New workspace**, or add a tab to a workspace with **New tab** (the strip's `+`, a tab's right-click menu, or the command palette on a wider screen or with a keyboard). Right-click a tab to rename or close it; on a phone, tap the selected tab’s **⋯** for a trimmed menu with pane actions, Rename tab and Close tab. A focused tab also opens its menu with Shift+F10, and double-click still renames it.
 
 Drag a tab to change its order within the workspace, or choose **Move tab left / right** from
 its menu (also on a phone). Alt+Shift+Left/Right moves a focused tab. Reordering keeps the
@@ -140,20 +140,19 @@ the pinned card.
 
 **The phone address, again:** run the one-line installer again. On a PC where the app is installed it installs nothing and prints the address and its QR code, serving the app to your tailnet first if nothing does yet. It finds the version that actually runs: herdr's plugin directory keeps the version first installed, and **Settings → Updates** runs newer ones from `~/.config/ovis/updates`. From a checkout, `bun scripts/plugin.ts phone` does the same.
 
-**A pairing code, on a PC with no browser of its own:**
+**On a PC with no browser of its own,** run the same command from the plugin's folder:
 
 ```bash
 root=$(herdr plugin list --json | bun -e 'const d = JSON.parse(await Bun.stdin.text()); console.log(d.result.plugins.find((p) => p.plugin_id === "devswha.ovis")?.plugin_root ?? "")')
-bun "$root/scripts/plugin.ts" pair   # plugin install
-bun scripts/plugin.ts pair           # from a checkout
+bun "$root/scripts/plugin.ts" phone   # plugin install
+bun scripts/plugin.ts phone           # from a checkout
 ```
 
-`pair` prints the code, the address the phone opens when Tailscale serves one, and that address as a QR code. Neither is a herdr action: herdr keeps an action's output in its log, and a pairing code belongs on the screen. The actions start, stop and report on the server:
+`phone` prints the address the phone opens when Tailscale serves one, and that address as a QR code. It is not a herdr action: herdr keeps an action's output in its log, and a QR code belongs on the screen. The actions start, stop and report on the server:
 
 ```bash
 herdr plugin action invoke devswha.ovis.start    # leaves a running server alone
 herdr plugin action invoke devswha.ovis.status
-herdr plugin action invoke devswha.ovis.phone    # visible phone setup pane
 herdr plugin action invoke devswha.ovis.stop
 ```
 
@@ -432,7 +431,7 @@ Only providers with a sign-in are shown; a GitHub account without Copilot is lef
   deletes its marked files; context removal checks the profile too and removes the context directory
   only when empty. Unmarked files are left alone under normal, nonconcurrent use. If you have
   since changed the status line yourself and it still runs the wrapper, turning it off changes nothing
-  and says so: set the status line yourself first. A watching device sees the switch and cannot turn it. It is not available on
+  and says so: set the status line yourself first. It is not available on
   Windows.
 - On macOS, a server started outside the logged-in desktop session (over SSH, or by a multiplexer started there) reads the keychain item through a one-shot job in that desktop session. A keychain that still cannot be opened shows as such instead of the numbers.
 
@@ -445,7 +444,7 @@ Turn it on in **Settings → Voice input**, then tap the mic beside Attach (chat
 - **Dictation language** (same section) is the language you speak. Auto listens for the app's language. While the app's language follows the browser and the browser's first language is one the app is not translated into (Hungarian, German, …), Auto listens for that one instead, so you are not heard as English. Pick another from the list when you dictate in a language your browser does not put first.
   Auto uses browser language tags with a two-letter primary code, which both recognition paths accept. Other tags use the app's language, shown in the Auto label.
 - **Without a key**, the browser recognizes the speech itself. Chrome and Edge send the audio to Google or Microsoft for that; Safari uses Apple's. On a touch screen it starts and finishes with a tap, never a hold: an iPhone starts the browser's recognition only from a tap. When the device's own recognition is off (on an iPhone, Siri & Dictation), the mic says so.
-- **The key stays on the server.** It is kept in `voice.json` under `OVIS_STATE_DIR` (readable by your user only) and never sent to a browser. Every device that can type into your terminals (this computer, a paired device, the token) dictates with it, and the use is billed to that key. A device paired to watch only can neither dictate nor change the key.
+- **The key stays on the server.** It is kept in `voice.json` under `OVIS_STATE_DIR` (readable by your user only) and never sent to a browser. Every client that can type into your terminals (this computer, the token) dictates with it, and the use is billed to that key.
 - **Silence is mostly not sent.** Where the browser lets the recorder pause, it runs only while it hears speech, so the pauses before, between and after your words are neither uploaded nor billed (keeping about a third of a second on either side of each word), and a recording with no speech is not sent at all. A browser that cannot sends the whole recording.
 - Recording needs HTTPS (or `localhost`): the mic is turned off on a plain `http://` LAN address. To use another OpenAI-compatible server, set `OVIS_OPENAI_BASE_URL`; a key from `OVIS_OPENAI_API_KEY` is only ever sent there or to OpenAI.
 
@@ -467,12 +466,12 @@ The one-line installer runs this for you when Tailscale runs on the PC and does 
 
 An address that already serves the app is kept as it is. To move it to another port, turn the old one off (`tailscale serve --https=443 off`), then run the installer again. The installed app on a phone stays on the address it was installed from, so install it again from the new one.
 
-Only devices in your tailnet can open that address, and each needs the access token (`OVIS_TOKEN`) or a pairing code the first time: `tailscale serve` is a proxy, and the app does not trust the Tailscale login it states (see [Access and safety](#access-and-safety)).
+Only devices in your tailnet can open that address, and each needs the access token (`OVIS_TOKEN`) the first time: `tailscale serve` is a proxy, and the app does not trust the Tailscale login it states (see [Access and safety](#access-and-safety)).
 
-**Settings → Phone & devices** in the app does this step for you as far as it can: it shows the address Tailscale already serves for this PC as a QR code, or the exact command still to run, and the address it will give.
+**Settings → Devices and PCs → Add a connection → Phones and devices** in the app does this step for you as far as it can: it shows the address Tailscale already serves for this PC as a QR code, or the exact command still to run, and the address it will give.
 
 1. Open the address.
-2. Install the app: in Safari, choose **Share → Add to Home Screen**; in Chrome, open **Settings → Phone & devices** and choose **Install app**; when it shows steps instead of the button, follow them (Chrome's menu has **Install app** or **Add to Home screen**). Each PC installs as an app of its own: set `OVIS_APP_NAME` on each to tell them apart (see [Configuration](#configuration)).
+2. Install the app: in Safari, choose **Share → Add to Home Screen**; in Chrome, open **Settings → Devices and PCs → More settings** and choose **Install app**; when it shows steps instead of the button, follow them (Chrome's menu has **Install app** or **Add to Home screen**). Each PC installs as an app of its own: set `OVIS_APP_NAME` on each to tell them apart (see [Configuration](#configuration)).
 3. Open the **⋯** menu at the top right and tap **Alerts** to turn on alerts for that device. iPhone needs iOS 16.4+ and the home-screen app.
 
 To check alerts later, choose **Settings → Alerts → Send test**. The result tells you
@@ -491,7 +490,7 @@ about (the command or the file): a tap answers it without opening the app, and t
 everywhere. If the question changed or was answered on another device meanwhile, nothing is sent
 and a new alert says so; tap it to open the pane. Questions with more or longer options, a command
 too long to show whole, typed answers and forms of several questions open the pane, as do alerts
-on iOS, and on a device paired to watch only.
+on iOS.
 
 To get the same alerts in a chat app, choose a destination under **Settings → Alerts → Also send
 to**: an ntfy topic, a Slack or Discord webhook, a Telegram bot (its token and a chat id), or
@@ -519,7 +518,7 @@ On a phone:
   the default row. Saved combinations use exactly their selected modifiers; ordinary keys use
   the currently held modifiers. Removing a held modifier button clears it.
 - Dragging the terminal scrolls the real herdr pane.
-- **Settings → Phone & devices → Keep screen on** keeps the screen awake while a terminal or chat
+- **Settings → Devices and PCs → More settings → This device → Keep screen on** keeps the screen awake while a terminal or chat
   pane is open. It is off by default, releases when the app is hidden, and resumes when
   you return. It needs HTTPS or localhost and browser support; power-saving mode may refuse it.
 - A font named in **Settings → Terminal → Terminal font**, **Chat → Chat font** or the custom
@@ -549,7 +548,7 @@ A workspace row's **⋯** menu offers **New worktree** and **Open worktree…**,
 
 Open Settings → Remote PCs and choose **Add PC** (the command palette has it too), then enter an SSH alias or `user@host` for a Linux or macOS computer. The setup dialog walks you through the host fingerprint, the password or key passphrase, and an explicit install approval. The PC's workspaces then join the sidebar, and chat, files, terminal input and alerts all follow the PC you pick.
 
-**Settings → Devices and PCs → Add a connection** opens on its **SSH** tab, which lists the PCs saved in herdr, the hosts of this PC's ssh config and the other PCs of your own Tailscale login; **Add** opens the same setup dialog with the address filled in ([Remote PCs over SSH](remote-pcs.md)). A Tailscale PC is reached over SSH. The **Phones and devices** tab holds what a phone or browser opens this PC with (its Tailscale address and a pairing code).
+**Settings → Devices and PCs → Add a connection** opens on its **SSH** tab, which lists the PCs saved in herdr, the hosts of this PC's ssh config and the other PCs of your own Tailscale login; **Add** opens the same setup dialog with the address filled in ([Remote PCs over SSH](remote-pcs.md)). A Tailscale PC is reached over SSH. The **Phones and devices** tab holds what a phone or browser opens this PC with: its Tailscale address and QR code.
 
 - **SSH runs on the server**, as the web server's account, with its OpenSSH configuration and agent. The browser never opens SSH itself.
 - **The remote side gets a private runtime bundle** and a loopback-only bridge, reached through an SSH forward.
@@ -583,7 +582,7 @@ With several PCs, you don't need Ovis on each of them. Install it on one PC that
 
    An Ovis left running there still works with the always-on app, but it stays a second app: it sends its own alerts and updates only through its own updater, which the always-on app can at most ask to run. Once it is stopped, the always-on app runs its own bridge there and keeps that bridge on its own version.
 3. **Add each PC in the always-on app:** Settings → Remote PCs → **Add PC**, then approve the install once. A PC already saved in herdr (`herdr machine`) is listed there already: choose **Connect**. The always-on PC must reach it over SSH as the account Ovis runs under, so try `ssh <pc>` there first. A PC the app already had, connected while that PC's own Ovis ran, keeps waiting for that Ovis to come back: open its **Manage PC** menu in the sidebar, choose **Reconnect / setup** and approve the install.
-4. **Open the always-on PC's address everywhere**, in the other PCs' browsers and on your phone, install the app from there, and turn on **Alerts** in it on each device. Pairings and alerts set up with a PC's own Ovis stay with that Ovis, so pair a device again if the new address asks.
+4. **Open the always-on PC's address everywhere**, in the other PCs' browsers and on your phone, install the app from there, and turn on **Alerts** in it on each device. Sign-ins and alerts set up with a PC's own Ovis stay with that Ovis, so sign in and turn alerts on again at the new address.
 
 Then there is one app to update: each release is downloaded and built once, the bridges on the other PCs follow it in the background (when SSH gets in with the saved key, without a password; otherwise the PC's card offers the update), push alerts come from one place, and no versions have to be kept in step.
 
@@ -593,52 +592,26 @@ Then there is one app to update: each release is downloaded and built once, the 
 
 ## Access and safety
 
-Anyone who can reach the server can type into your terminals, so what matters is who gets in. It listens on `127.0.0.1` by default, which means only this computer. From anywhere else, a request gets in in one of two ways:
+Anyone who can reach the server can type into your terminals, so what matters is who gets in. It listens on `127.0.0.1` by default, which means only this computer. There is one owner, who may do everything; there are no other roles or accounts. A request gets in in one of two ways:
 
-- **It is a paired device.** **Settings → Phone & devices**, on the PC (or on a device already paired), shows a six-digit code that lives ten minutes and a QR code that carries it. On a headless PC, the `pair` command prints the same in its terminal (see [In a terminal](#in-a-terminal)); Devices also shows the pairing link as text, to send to the other device. The other device enters it once and keeps its own credential in an HttpOnly cookie; the list shows it, and **Revoke** immediately closes its terminal connections and roster stream and refuses subsequent requests. A script or CLI pairs with `POST /api/devices/pair` and `{"code": "<code>", "label": "<name>"}` (with `X-Herdr-Machine: 1` and `Content-Type: application/json`), sending `Accept: application/json` to get its credential back as `{"token": "..."}`. It then sends `Authorization: Device <token>` with every request instead of a cookie, under the same role, last-seen time and **Revoke** as any paired device. Unlike the shared token, each such script can be revoked by itself.
-- **It holds the token.** `OVIS_TOKEN`, for scripts and proxies, as a cookie after sign-in or as `Authorization: Bearer <token>`. When a token is set, everything else needs it, this computer included: enter it once on each device, and that browser stays signed in for a year. A paired device still gets in without it.
+- **It comes straight from this computer.** A direct loopback connection with no proxy in front gets in with nothing, as long as no token is set. With a token set, this computer needs it too.
+- **It holds the token.** `OVIS_TOKEN`, for browsers, scripts and proxies, as a cookie after sign-in or as `Authorization: Bearer <token>`. When a token is set, everything needs it, this computer included: enter it once on each device, and that browser stays signed in for a year. Wrong tries are rationed per address.
 
-A request that came through a proxy or Tailscale Funnel (it carries a forwarding header, `X-Forwarded-For` and the like, or Funnel's own) is refused until it holds the token or a paired device's cookie. `tailscale serve` states a login in a header, but this app does not read it, and a proxy's word about who is behind it is worth nothing here.
+Everything else is refused (401): a request from another address with no token, and a request that came through a proxy or Tailscale Funnel (it carries a forwarding header, `X-Forwarded-For` and the like, or Funnel's own) with no token. `tailscale serve` states a login in a header, but this app does not read it, and a proxy's word about who is behind it is worth nothing here. Whether the server runs with a token, where it listens and how this connection arrived are shown in **Settings → Devices and PCs → More settings → Access**.
 
 | How you reach it | What gets you in |
 | --- | --- |
 | This computer only (default) | Nothing needed. With a token set, the token |
 | SSH tunnel (`ssh -L 7317:127.0.0.1:7317 host`) | Nothing needed. With a token set, the token |
-| `tailscale serve` (for HTTPS) | The token, or a paired device: `tailscale serve` is a proxy, and a proxied request is refused without either. A tailnet address bound directly (`HOST=<Tailscale address>`) is open until the first device is paired |
-| Your LAN (`HOST=0.0.0.0` or a LAN address) | Pair each device, or set a token |
-| Your LAN over HTTPS (`OVIS_LAN_HTTPS_PORT`, see [On your LAN over HTTPS](#on-your-lan-over-https)) | Pair each device, or the token. Never open, even before the first pairing |
+| `tailscale serve` (for HTTPS) | The token: `tailscale serve` is a proxy, and a proxied request is refused without it |
+| A tailnet or LAN address bound directly (`HOST=<address>` or `HOST=0.0.0.0`) | The token. Without one the server starts, warns, and refuses everything that does not come from this PC |
 | A public domain or reverse proxy | Set a token, with HTTPS, and set the proxy up as in [Behind a reverse proxy](#behind-a-reverse-proxy). Never `tailscale funnel` it |
-
-
-Until the first device is paired, and with no token set, a LAN address is open to anyone who reaches it directly, as it always was: the server warns on startup. A request that came through a proxy or Funnel is refused from the start. The first pairing closes access only after the browser returns its new device cookie. If the cookie is blocked or the pairing response is lost, the unconfirmed pairing does not restrict access; retry after checking browser and proxy cookie settings. A script that pairs for its token in JSON closes access at once, since it may store the token and use it later. Once confirmed, the gate stays closed: revoking every device does not reopen it. This app-level restriction also applies behind a proxy with its own authentication; other browsers need their own pairing or the app's token. Without a token, this computer itself stays in whatever happens, so you can never lock yourself out: revoke everything and pair again from `http://localhost:7317`. With a token set, this computer signs in with the token.
 
 A token is a credential on the wire as much as a cookie is: on plain `http://`, anyone on the network path reads it, and then every keystroke after it. Reach this PC over Tailscale, put it behind a TLS-terminating proxy, or keep it on loopback and tunnel in; the server says so on startup when it is bound to another address over http.
 
-The pairing code is a one-time secret: five wrong tries spend it.
-
-### On your LAN over HTTPS
-
-A phone on the same network as the PC can reach Ovis directly over HTTPS, beside the address it uses today (a tunnel, `tailscale serve`, loopback). It is off unless you set `OVIS_LAN_HTTPS_PORT` (for example `7318`) where Ovis starts, as with `HOST` and `PORT` ([Configuration](#configuration)).
-
-- **Where it listens.** On that port of each private IPv4 address the PC has (`10.x`, `172.16-31.x`, `192.168.x`, `169.254.x`), never on every address. `OVIS_LAN_HTTPS_HOST=<address>` binds one address instead (`0.0.0.0` only when you write it). The main listener stays as it is. The addresses are read when Ovis starts: restart it after the PC joins another network.
-- **Who gets in.** Only clients on a private IPv4 network, and only with the token or a paired device: never "this computer", the bridge token or an open install, even before the first device is paired. Pair a device with a code shown on the PC (Settings → Phone & devices): a code has five tries of its own here, so wrong tries here never spend it for a phone pairing another way. Twenty wrong codes within ten minutes pause pairing here for ten minutes, and wrong tokens from every address here share one budget.
-- **Its certificate.** Unless you give one, Ovis makes a self-signed certificate on first start and keeps it in the state folder (`lan-https/`, the key readable only by you). It names the PC's addresses, and a new one is made when they change or it runs out (after 825 days). Startup prints each address with the certificate's SHA-256 fingerprint.
-- **Your own certificate.** Set `OVIS_LAN_HTTPS_CERT` and `OVIS_LAN_HTTPS_KEY` to PEM files, for example from a local CA made with [mkcert](https://github.com/FiloSottile/mkcert) (`mkcert -install`, then `mkcert 192.168.1.20` with the PC's address).
-
-A bad value, a busy port or a certificate that does not load turns only this listener off, with a message at startup.
-
-**Trust the certificate before you sign in through it.** A browser warns about a certificate it does not know, and clicking through that warning without checking it is how someone else on the network would collect your token or pairing code. Either:
-
-- **Compare the fingerprint** the browser shows (the padlock or the warning's details) with the one Ovis printed, and continue only when they match. That is enough for a browser tab, but browsers turn off service workers on such a page, so the installed app, alerts and the microphone need the next way.
-- **Trust a local CA on the phone.** Use the mkcert way above and copy mkcert's `rootCA.pem` (`mkcert -CAROOT` says where it is) to the phone. The self-signed certificate Ovis makes is not a CA, so phones do not offer to trust it this way: for it, compare the fingerprint.
-  - iPhone and iPad: open the file (AirDrop or Files), install the profile in Settings → General → VPN & Device Management, then turn it on under Settings → General → About → Certificate Trust Settings.
-  - Android: Settings → Security → Encryption & credentials → Install a certificate → CA certificate (the menu names differ between makers).
-
-Keep the main listener off the same LAN address over plain http (`HOST` set to that address) while you use this: the browser keeps one cookie per address, so signing in over HTTPS signs that http tab out.
-
 ### Behind a reverse proxy
 
-**Set a token first** (`OVIS_TOKEN`). A proxy on this PC connects from this PC, so the server knows a proxied request only by what the proxy sends: an `X-Forwarded-For` header (or another forwarding header), or a `Host` that is not `localhost` or `127.0.0.1`. A proxy that sends neither makes every visitor count as this computer: they get in with nothing, and pairing a device does not close it. nginx's plain `proxy_pass` is such a proxy. With a token set, every visitor needs the token whatever the proxy sends.
+**Set a token first** (`OVIS_TOKEN`). A proxy on this PC connects from this PC, so the server knows a proxied request only by what the proxy sends: an `X-Forwarded-For` header (or another forwarding header), or a `Host` that is not `localhost` or `127.0.0.1`. A proxy that sends neither makes every visitor count as this computer: they get in with nothing. nginx's plain `proxy_pass` is such a proxy. With a token set, every visitor needs the token whatever the proxy sends.
 
 The proxy has to do four things:
 
@@ -685,7 +658,7 @@ server {
 
 The `map` block goes in the `http` section. `proxy_read_timeout` keeps an idle terminal connected, and `proxy_buffering off` lets the PC list update live.
 
-**If the proxy already signs people in** (basic auth, Authelia, oauth2-proxy and the like), let it hand the app the token, so nobody signs in twice and Settings stops warning that this address is open. Set `OVIS_TOKEN`, then have the proxy send it on every request it lets through, the terminal's `/ws` connection included. In Caddy, inside `reverse_proxy`:
+**If the proxy already signs people in** (basic auth, Authelia, oauth2-proxy and the like), let it hand the app the token, so nobody signs in twice. Set `OVIS_TOKEN`, then have the proxy send it on every request it lets through, the terminal's `/ws` connection included. In Caddy, inside `reverse_proxy`:
 
 ```caddyfile
 		header_up Authorization "Bearer {env.OVIS_TOKEN}"
@@ -697,7 +670,7 @@ In nginx, inside `location /`:
         proxy_set_header Authorization "Bearer <your token>";
 ```
 
-The proxy's own sign-in is then the only one: anyone it lets through gets in, and nobody needs to pair a device. Settings then offers no **Sign out**: the proxy would send the token again with the next request, so signing out is done at the proxy. Keep the app's port closed to everything but the proxy, as `HOST=127.0.0.1` does.
+The proxy's own sign-in is then the only one: anyone it lets through gets in. Settings then offers no **Sign out**: the proxy would send the token again with the next request, so signing out is done at the proxy. Keep the app's port closed to everything but the proxy, as `HOST=127.0.0.1` does.
 
 To check the app's gate, request its `/api/session` directly without a token: it must answer 401.
 If the proxy signs people in, also check that a signed-out visitor cannot reach the app through
@@ -718,11 +691,9 @@ ingress:
 
 To try it without an account, `cloudflared tunnel --url http://127.0.0.1:7317` prints a random `https://<words>.trycloudflare.com` address. It changes on every run, and cookies and the installed app are tied to the address, so it suits a test, not a phone you keep using. A quick tunnel also carries no [Server-Sent Events](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/), which the sidebar and the PC list update by, so the terminal works through it but those may not update by themselves.
 
-Cloudflare Access can put its sign-in in front of that hostname, but it cannot hand the app the token as Caddy or nginx can: Access adds no `Authorization` header to the requests it lets through. Keep the app's own gate on behind it. Each device signs in to Access, then enters the token once or is paired from **Settings → Phone & devices**, and stays signed in to the app; Access still asks it to sign in again when its own session runs out. A script reaches the app through Access with an Access [service token](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/), allowed by a **Service Auth** policy on that application, in its `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers, plus `Authorization: Bearer <your token>` for the app. The Android app cannot get past the Access sign-in yet ([#2008](https://github.com/devswha/ovis/issues/2008)): open the address in the phone's browser instead.
+Cloudflare Access can put its sign-in in front of that hostname, but it cannot hand the app the token as Caddy or nginx can: Access adds no `Authorization` header to the requests it lets through. Keep the app's own gate on behind it. Each device signs in to Access, then enters the token once, and stays signed in to the app; Access still asks it to sign in again when its own session runs out. A script reaches the app through Access with an Access [service token](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/), allowed by a **Service Auth** policy on that application, in its `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers, plus `Authorization: Bearer <your token>` for the app.
 
-**Sign out** in Settings → Devices clears, after asking once, this browser's token and device cookies; terminal sessions and agents keep running. Sign out is not offered when a proxy sends the token in the `Authorization` header (sign out at the proxy), or for automatic local access.
-
-If `devices.json` under `OVIS_STATE_DIR` (default `~/.config/ovis`) is corrupt or unreadable, the server keeps unrecognized external clients out and preserves the file. Local access without a configured token, and a valid token, still work. Settings → Phone & devices and the server log explain the error. Restore a valid registry from backup or fix its permissions, then restart; pairing and device changes remain disabled until it is repaired.
+**Sign out of this PC** in Settings → Devices and PCs → More settings clears, after asking once, this browser's token cookie; terminal sessions and agents keep running. Sign out is not offered when a proxy sends the token in the `Authorization` header (sign out at the proxy), or for automatic local access.
 
 Nothing is typed without you:
 - Input typed while disconnected waits as a draft for you to send or discard.
@@ -762,8 +733,8 @@ on the same port and state folder, and Settings shows the new runtime once the r
 answers. Text left unsent in one runtime's panes waits in **Recover unsent text** once the other's
 are shown; pins and muted alerts are kept for the panes shown, so the other runtime's may be cleared.
 A start that fails on the chosen runtime goes back to the previous one, and a saved Herdr app
-whose core is gone starts herdr instead and says so there. Only a device that drives this PC can
-switch, never a watching one or a stranger on an open install, and the switch needs Ovis's own
+whose core is gone starts herdr instead and says so there. Only the owner (this PC or the token) can
+switch, and the switch needs Ovis's own
 launcher (the herdr plugin or `bun run start`), which restarts the server. When `OVIS_RUNTIME`
 is set in the environment, it decides, and Settings says to change it there. On a server
 started directly (`bun server/index.ts`), Settings says how to switch by hand: set
@@ -907,15 +878,12 @@ Each `OVIS_*` variable was called `HERDR_WEB_*` before Ovis took its name (`OVIS
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` or a LAN address only with `OVIS_TOKEN` set or once a device is paired: until then that address is open to anyone who reaches it (see [Access and safety](#access-and-safety)). |
+| `HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` or a LAN address only with `OVIS_TOKEN` set: without one, every request that does not come straight from this PC is refused (see [Access and safety](#access-and-safety)). |
 | `PORT` | `7317` | HTTP and WebSocket port. Left unset, the plugin takes the next of 17317, 27317, 37317 and 47317 when 7317 cannot be opened (another program has it, or Windows reserves it for Hyper-V, WSL2 or Docker), keeps that port for later starts, and the installer and the **Ovis status** action print the address. A port set here is never changed |
 | `HERDR_SOCKET` | `~/.config/herdr/herdr.sock` | herdr socket for API calls and terminal attach. For a named session, use `~/.config/herdr/sessions/<name>/herdr.sock`. A plugin install follows the socket of the herdr session that starts it; set `HERDR_SOCKET` in the plugin's config to pin another one, and that setting wins. |
-| `OVIS_TOKEN` | unset | Shared token for scripts and proxies. Once set, every client that is not a paired device needs it, this computer included |
-| `OVIS_LAN_HTTPS_PORT` | unset (off) | Opens an HTTPS listener on this port for devices on the same network, beside the main one; only the token or a paired device gets in there (see [On your LAN over HTTPS](#on-your-lan-over-https)) |
-| `OVIS_LAN_HTTPS_HOST` | unset (every private IPv4 address) | The one IPv4 address that listener binds instead; `0.0.0.0` only when written |
-| `OVIS_LAN_HTTPS_CERT`, `OVIS_LAN_HTTPS_KEY` | unset (self-signed, kept in the state dir) | PEM files of your own certificate and key for that listener, for example from a local CA; set both or neither |
+| `OVIS_TOKEN` | unset | Shared token for scripts and proxies. Once set, every client needs it, this computer included |
 | `OVIS_CSP` | unset (enforced) | `report-only` sends the policy as `Content-Security-Policy-Report-Only`: the browser reports what it would block and the app keeps working. Used to measure the policy after a change |
-| `OVIS_TAILSCALE_HTTPS_PORT` | unset (first free of 443, 8443, 7317, 17317) | The HTTPS port the installer publishes the app on with `tailscale serve`, and the one **Settings → Phone & devices** suggests. When another service already uses it, the installer stops and says so instead of taking another port, since an app installed on a phone stays on the address it came from. An address that already serves the app is kept |
+| `OVIS_TAILSCALE_HTTPS_PORT` | unset (first free of 443, 8443, 7317, 17317) | The HTTPS port the installer publishes the app on with `tailscale serve`, and the one **Settings → Devices and PCs → Add a connection** suggests. When another service already uses it, the installer stops and says so instead of taking another port, since an app installed on a phone stays on the address it came from. An address that already serves the app is kept |
 | `OVIS_STATE_DIR` | `~/.config/ovis` | Push keys, device subscriptions, PC registrations, update builds |
 | `OVIS_OPENAI_API_KEY` | unset | OpenAI API key for [voice input](#voice-input). Set here, it cannot be changed from the app |
 | `OVIS_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API root for voice input |
@@ -1081,7 +1049,7 @@ On a desktop, Enter sends and Shift+Enter adds a line. On a touch screen, Return
 ```mermaid
 flowchart LR
   subgraph devices [Your devices]
-    B[Browser / phone app]
+    B[Browser]
   end
   subgraph pc [This PC]
     S[Ovis<br/>Bun server]

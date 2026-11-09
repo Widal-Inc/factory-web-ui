@@ -1,49 +1,41 @@
 import { describe, expect, it } from "bun:test";
-import { bindScope, cameThroughProxy, decideAccess, forwardingHeaders, isLoopbackAddress, isLoopbackBind, isLoopbackHost, lanExposed, observedIngress, ownerAccess, type AccessInput } from "./access.ts";
+import { bindScope, cameThroughProxy, decideAccess, forwardingHeaders, isLoopbackAddress, isLoopbackBind, isLoopbackHost, observedIngress, ownerAccess, type AccessInput } from "./access.ts";
 
-const device = { id: "d1", label: "Phone", role: "drive" as const };
-const base: AccessInput = { loopback: true, forwarded: false, forwardingHeaders: false, funnel: false, tokenMatched: false, device: null, tokenConfigured: false, gated: false };
+const base: AccessInput = { loopback: true, forwarded: false, forwardingHeaders: false, funnel: false, tokenMatched: false, tokenConfigured: false };
 const via = (input: Partial<AccessInput>) => { const a = decideAccess({ ...base, ...input }); return a.level === "full" ? a.via : `refused:${a.reason}`; };
 
 describe("decideAccess", () => {
   it("lets this PC in without a token, but not through a proxy", () => {
     expect(via({})).toBe("local");
-    expect(via({ forwarded: true, gated: true })).toBe("refused:pairing_required");
+    expect(via({ forwarded: true })).toBe("refused:token_required");
     // a forwarding header is a proxy in front, whether the connection is from this PC or from the network
-    expect(via({ forwarded: true, forwardingHeaders: true })).toBe("refused:pairing_required");
-    expect(via({ loopback: false, forwarded: true, forwardingHeaders: true })).toBe("refused:pairing_required");
+    expect(via({ forwarded: true, forwardingHeaders: true })).toBe("refused:token_required");
+    expect(via({ loopback: false, forwarded: true, forwardingHeaders: true })).toBe("refused:token_required");
   });
 
-  it("keeps everything open, as before, while no token and no device exist", () => {
-    expect(via({ loopback: false })).toBe("open");
-    expect(via({ loopback: true, forwarded: true })).toBe("open");
-    expect(via({ loopback: false, gated: true })).toBe("refused:pairing_required");
+  it("refuses a connection from another address without a token", () => {
+    expect(via({ loopback: false })).toBe("refused:token_required");
+    expect(via({ loopback: true, forwarded: true })).toBe("refused:token_required");
   });
 
-  it("never treats a Funnel request as open", () => {
-    expect(via({ loopback: true, forwarded: true, funnel: true })).toBe("refused:pairing_required");
-    expect(via({ loopback: true, forwarded: true, funnel: true, gated: true })).toBe("refused:pairing_required");
-    expect(via({ loopback: true, forwarded: true, funnel: true, device })).toBe("device");
+  it("never lets a Funnel request in without the token", () => {
+    expect(via({ loopback: true, forwarded: true, funnel: true })).toBe("refused:token_required");
+    expect(via({ loopback: true, forwarded: true, funnel: true, tokenConfigured: true })).toBe("refused:token_required");
     expect(via({ loopback: true, forwarded: true, funnel: true, tokenConfigured: true, tokenMatched: true })).toBe("token");
   });
 
-  it("lets a proxied request in only with the token or a paired device", () => {
+  it("lets a proxied request in only with the token", () => {
     const proxied = { forwarded: true, forwardingHeaders: true } as const;
+    expect(via({ ...proxied })).toBe("refused:token_required");
     expect(via({ ...proxied, tokenConfigured: true })).toBe("refused:token_required");
     expect(via({ ...proxied, tokenConfigured: true, tokenMatched: true })).toBe("token");
-    expect(via({ ...proxied, device, gated: true })).toBe("device");
   });
 
-  it("a configured token gates everything but a paired device, this PC included", () => {
+  it("a configured token gates everything, this PC included", () => {
     expect(via({ tokenConfigured: true })).toBe("refused:token_required");
     expect(via({ tokenConfigured: true, tokenMatched: true })).toBe("token");
-    expect(via({ tokenConfigured: true, device })).toBe("device");
     expect(via({ tokenConfigured: true, loopback: false })).toBe("refused:token_required");
-  });
-
-  it("a paired device gets in from anywhere, with its role", () => {
-    const access = decideAccess({ ...base, loopback: false, gated: true, device: { ...device, role: "watch" } });
-    expect(access).toEqual({ level: "full", via: "device", role: "watch", device: { ...device, role: "watch" } });
+    expect(via({ tokenConfigured: true, loopback: false, tokenMatched: true })).toBe("token");
   });
 
   it("knows a name for this machine from a proxied Host", () => {
@@ -71,46 +63,11 @@ describe("decideAccess", () => {
 });
 
 describe("ownerAccess", () => {
-  it("is a driving sign-in direct to this PC, never an open install's stranger or a watching device", () => {
+  it("is whoever got in: a direct local connection or the token, never a refused request", () => {
     expect(ownerAccess(decideAccess({ ...base }))).toBe(true);
     expect(ownerAccess(decideAccess({ ...base, tokenConfigured: true, tokenMatched: true }))).toBe(true);
     expect(ownerAccess(decideAccess({ ...base, loopback: false }))).toBe(false);
-    expect(ownerAccess(decideAccess({ ...base, device: { ...device, role: "watch" }, gated: true }))).toBe(false);
-    expect(ownerAccess(decideAccess({ ...base, device, gated: true }))).toBe(true);
     expect(ownerAccess({ level: "none", reason: "token_required" })).toBe(false);
-  });
-});
-
-describe("lanExposed", () => {
-  const open = { hostname: "0.0.0.0", tokenConfigured: false, gated: false };
-  const warned = (over: Partial<typeof open>): boolean => lanExposed({ ...open, ...over });
-
-  it("names the one state a warning belongs to: bound past this PC, no token, nothing paired", () => {
-    expect(lanExposed(open)).toBe(true);
-    // wildcard, LAN, other IPv6 and DNS binds still warn, even on a PC with Tailscale
-    for (const hostname of ["::", "[::]", "192.168.0.10", "fd7a::1", "my-pc.local", "127.devbox.example", "localhost.example", "100.63.255.255", "100.128.0.0", "fd7a:115c:a1df:ffff:ffff:ffff:ffff:ffff", "fd7a:115c:a1e1::", "100.64.0.999", "100.64.0.2.example"]) {
-      expect(isLoopbackBind(hostname)).toBe(false);
-      expect(warned({ hostname })).toBe(true);
-    }
-  });
-
-  for (const hostname of ["100.64.0.0", "100.64.0.2", "100.127.255.255", "fd7a:115c:a1e0::", "fd7a:115c:a1e0::1", "fd7a:115c:a1e0:ffff:ffff:ffff:ffff:ffff", "FD7A:115C:A1E0:0:0:0:0:1", "[fd7a:115c:a1e0::1]", " 100.64.0.2 "]) {
-    it(`does not warn for a Tailscale-only bind at ${hostname}`, () => {
-      expect(isLoopbackBind(hostname)).toBe(false);
-      expect(warned({ hostname })).toBe(false);
-    });
-  }
-
-  it("is quiet whenever one of the three is not the case", () => {
-    // a loopback bind is unreachable from the network however it is addressed or spelt
-    for (const hostname of ["127.0.0.1", "localhost", "::1", "127.0.0.2", "[::1]", "LOCALHOST", "::ffff:127.0.0.1", "app.localhost", " localhost "]) {
-      expect(isLoopbackBind(hostname)).toBe(true);
-      expect(warned({ hostname })).toBe(false);
-    }
-    // a token means a stranger is asked for it, and a paired device means the gate is closed
-    expect(warned({ tokenConfigured: true })).toBe(false);
-    expect(warned({ gated: true })).toBe(false);
-    expect(warned({ tokenConfigured: true, gated: true })).toBe(false);
   });
 });
 
@@ -124,10 +81,10 @@ describe("bindScope", () => {
     for (const hostname of ["100.64.0.0", "100.127.255.255", "fd7a:115c:a1e0::1", "[fd7a:115c:a1e0::1]", "FD7A:115C:A1E0:0:0:0:0:1", " 100.64.0.2 "]) expect(bindScope(hostname)).toBe("tailnet");
   });
 
-  it("reads wildcards, LAN addresses and names as other, matching where lanExposed warns", () => {
+  it("reads wildcards, LAN addresses and names as other", () => {
     for (const hostname of ["0.0.0.0", "::", "[::]", "192.168.0.10", "fd7a::1", "my-pc.local", "100.63.255.255", "100.128.0.0", "fd7a:115c:a1e1::", "100.64.0.2.example"]) {
+      expect(isLoopbackBind(hostname)).toBe(false);
       expect(bindScope(hostname)).toBe("other");
-      expect(lanExposed({ hostname, tokenConfigured: false, gated: false })).toBe(true);
     }
   });
 });

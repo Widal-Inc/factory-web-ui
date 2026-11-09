@@ -58,10 +58,10 @@ const manager = {
 } as unknown as MachineManager;
 beforeEach(() => { asked.length = 0; soon.length = 0; });
 
-const guard = { origin: "http://127.0.0.1", "x-herdr-machine": "1", "x-herdr-update": "1", "content-type": "application/json", cookie: "ovis_device=browser-secret" };
-const call = (path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}, readOnly = false) => handleMachineRequest(new Request(`http://127.0.0.1/api/machines/${path}`, {
+const guard = { origin: "http://127.0.0.1", "x-herdr-machine": "1", "x-herdr-update": "1", "content-type": "application/json", cookie: "ovis_token=browser-secret" };
+const call = (path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => handleMachineRequest(new Request(`http://127.0.0.1/api/machines/${path}`, {
   method: init.method ?? "GET", headers: init.headers ?? guard, ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-}), manager, undefined, undefined, readOnly, undefined, undefined, undefined, true);
+}), manager);
 const code = async (response: Response) => [response.status, ((await response.json()) as { error?: { code: string } }).error?.code ?? null];
 
 it("forwards a PC's move routes with that PC's credential and the app's header, and nothing of the browser's", async () => {
@@ -80,13 +80,6 @@ it("forwards a PC's move routes with that PC's credential and the app's header, 
   expect(soon).toEqual(["pc", "pc", "pc", "pc", "pc"]);
   // the install downloads and checks herdr-core on that PC: it gets the long wait
   expect(slowMachinePath("runtime/move/install")).toBe(true);
-});
-
-it("never asks a PC about its move for a watching device, its plan included", async () => {
-  for (const path of ["runtime/move", "runtime/move/stop", "runtime/move/stop-all", "runtime/move/install"]) {
-    for (const method of ["GET", "POST"]) expect([path, method, ...await code(await call(`pc/${path}`, { method, ...(method === "POST" ? { body: {} } : {}) }, true))]).toEqual([path, method, 403, "read_only"]);
-  }
-  expect(asked).toEqual([]);
 });
 
 it("tells an Ovis too old to be moved from here as an update to make first", async () => {
@@ -130,11 +123,10 @@ it("tells a start whose answer never came apart from a refusal: that PC may have
   expect([gateway.refused, gateway.unknown.map(({ machine_id }) => machine_id)]).toEqual([[], ["gateway"]]);
 });
 
-it("takes a move of every PC only from a driving device of this app, as one list of plans", async () => {
+it("takes a move of every PC only from this app, as one list of plans", async () => {
   const body = { plans: [{ machine_id: "pc", revision: "shown" }] };
   expect(await code(await call("runtime/move-all", { method: "POST", body, headers: { origin: "http://127.0.0.1", "content-type": "application/json" } }))).toEqual([403, "invalid_machine_request"]);
   expect(await code(await call("runtime/move-all", { method: "POST", body, headers: { ...guard, origin: "https://elsewhere.example" } }))).toEqual([403, "invalid_origin"]);
-  expect(await code(await call("runtime/move-all", { method: "POST", body }, true))).toEqual([403, "read_only"]);
   expect(await code(await call("runtime/move-all", { method: "POST", body: { plans: [{ machine_id: "pc" }] } }))).toEqual([400, "invalid_body"]);
   expect(await code(await call("runtime/move-all"))).toEqual([405, "method_not_allowed"]);
   // each PC once, and never more plans than there are PCs

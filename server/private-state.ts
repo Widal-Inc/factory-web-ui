@@ -1,7 +1,6 @@
 /**
- * Durable replacement of private security records: the paired-device registry (its closed gate
- * and last-seen times included, since they share the file), the VAPID key pair and the push subscriptions. Losing one of these acknowledged writes
- * on a crash or power loss brings back a revoked device or orphans every phone's push
+ * Durable replacement of private security records: the VAPID key pair and the push subscriptions.
+ * Losing one of these acknowledged writes on a crash or power loss orphans every phone's push
  * subscription, and none of them can be recomputed, so the new bytes are flushed before they
  * replace the old file.
  *
@@ -37,16 +36,6 @@ export function writePrivateState(path: string, value: unknown, platform: NodeJS
     try { privateStateFs.unlinkSync(temporary); } catch { /* reported through `error` */ }
     throw error;
   }
-  return syncDirectory(dirname(path), platform);
-}
-
-/**
- * The two halves of writePrivateState, for a caller that must know afterwards whether the new
- * document reached `path` (state-merge.ts): the prepared file is renamed into place by
- * publishPrivateState, so while it still exists, `path` has not got it. A failed publish leaves it.
- */
-export function publishPrivateState(temporary: string, path: string, platform: NodeJS.Platform = process.platform): PrivateStateWrite {
-  privateStateFs.renameSync(temporary, path);
   return syncDirectory(dirname(path), platform);
 }
 

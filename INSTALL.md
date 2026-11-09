@@ -12,8 +12,7 @@ web server on port `7317` and never replaces herdr, its sessions or the user's o
 - Bind to `127.0.0.1` (the default) unless the user asks for remote access. Anyone who can reach an
   ungated server can type into the user's terminals. Never bind to `0.0.0.0` or a LAN address, or
   put it behind a proxy other people can reach, without a token (`OVIS_TOKEN`). A `tailscale
-  serve` address may go without one only when the user confirms every device in their tailnet is
-  their own.
+  serve` address is a proxy, and the server refuses a proxied request that has no token.
 - Never print, log or commit the token. Write it only to the config file named below and tell the
   user where it is.
 - Do not install herdr or Bun yourself unless the user agrees. Say which one is missing and how to
@@ -72,7 +71,7 @@ Where the herdr plugin already runs Ovis, it does not add a second one: it says 
 
 On Windows x64, use `irm https://ovis.sh/install.ps1 | iex` in PowerShell.
 It requires Git for Windows and installs missing herdr and Bun for the user, without Node or WSL.
-It starts the plugin when herdr runs. Phone access stays optional: use the **Phone setup** action.
+It starts the plugin when herdr runs. Phone access stays optional (section 5).
 On Windows it uses herdr even where herdr-core is installed: Ovis runs on herdr-core on Linux and
 macOS only.
 `OVIS_REF` selects a branch or tag for testing; otherwise it installs the latest release.
@@ -203,25 +202,13 @@ Or run the one-line installer (method C) again, which installs nothing when the 
 `bun scripts/plugin.ts phone` from a source checkout: it runs that command on the first
 free HTTPS port (only on `OVIS_TAILSCALE_HTTPS_PORT` when the user set one, for a user who
 keeps 443 for something else) when Tailscale runs and does not serve the app yet, says how to undo it, and prints the
-address as a QR code. **Settings → Phone & devices** in the app shows this step's state: the address that already works as a QR
-code, or the exact command still to run. Who gets in:
+address as a QR code. **Settings → Devices and PCs → Add a connection → Phones and devices** in the app shows this
+step's state: the address that already works as a QR code, or the exact command still to run. Who gets in:
 
-- `tailscale serve` is a proxy, and a proxied request is refused until it holds the access token (`OVIS_TOKEN`) or a
-  paired device's cookie: the app does not read the Tailscale login `serve` states
-  ([Access and safety](docs/guide.md#access-and-safety)).
-- A device is paired: **Settings → Phone & devices**
-  on the PC shows a six-digit code and a QR code; the device enters it once. On a headless PC with
-  no browser, find the plugin path with `herdr plugin list` (herdr 0.9.4 moved plugin checkouts),
-  then run:
-
-  ```bash
-  root=$(herdr plugin list --json | bun -e 'const d = JSON.parse(await Bun.stdin.text()); console.log(d.result.plugins.find((p) => p.plugin_id === "devswha.ovis")?.plugin_root ?? "")')
-  bun "$root/scripts/plugin.ts" pair
-  ```
-
-  This prints the code in the terminal. Do this with the user present; never read a code aloud into
-  a log.
-- A token (`OVIS_TOKEN`) is for scripts and proxies. Only when the user asks for one, create it
+- `tailscale serve` is a proxy, and a proxied request is refused until it holds the access token (`OVIS_TOKEN`): the
+  app does not read the Tailscale login `serve` states ([Access and safety](docs/guide.md#access-and-safety)).
+- The token (`OVIS_TOKEN`) is what a phone or any other browser signs in with. Set one before serving the app over
+  Tailscale. Only when the user asks for one, create it
   without printing it. For the plugin:
 
    ```bash
@@ -234,8 +221,8 @@ code, or the exact command still to run. Who gets in:
    `~/.config/ovis/token.env`, mode `600`) and start with
    `env $(cat ~/.config/ovis/token.env) bun run start`. Restart Ovis either way.
 
-Tell the user the HTTPS address. Until a device is paired, and with no token set, a LAN or proxied
-address is open to anyone who reaches it, as before; the server warns on startup. A token sent over
+Tell the user the HTTPS address. With no token set, a LAN address bound directly is open to anyone who
+reaches it, as before; the server warns on startup, and a proxied address is refused. A token sent over
 plain `http://` is readable by anyone on the network path: prefer HTTPS (Tailscale or a
 TLS-terminating proxy) for any address others can reach.
 
@@ -247,7 +234,7 @@ Other PCs over SSH are added in Ovis (Settings → Remote PCs → **Add PC**), n
 | --- | --- | --- |
 | `HOST` | `127.0.0.1` | Bind address |
 | `PORT` | `7317` | HTTP and WebSocket port |
-| `OVIS_TOKEN` | unset | Token for scripts and proxies. Once set, every client that is not a paired device needs it, this PC included |
+| `OVIS_TOKEN` | unset | Token for scripts and proxies. Once set, every client needs it, this PC included |
 | `HERDR_SOCKET` | `~/.config/herdr/herdr.sock` | herdr socket. The plugin follows herdr's session (herdr passes `HERDR_SOCKET_PATH`); a `HERDR_SOCKET` set in the plugin config wins |
 | `OVIS_AUTO_UPDATE` | `0` | `1` installs new versions automatically |
 | `OVIS_STATE_DIR` | `~/.config/ovis` | Push keys, device subscriptions, PC registrations, update builds. Keep it across reinstalls. |

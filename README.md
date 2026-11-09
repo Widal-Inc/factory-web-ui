@@ -58,11 +58,9 @@ Other ways, step by step: [INSTALL.md](INSTALL.md).
 
 **On your phone**
 
-- **iPhone:** the TestFlight beta, from [ovis.sh/beta](https://ovis.sh/beta/).
-- **Android:** the Google Play beta, from [ovis.sh/beta](https://ovis.sh/beta/).
 - **Browser:** no app needed; add the page to the home screen.
 
-To connect a phone, open the app over Tailscale and scan the QR code in **Settings → Phone & devices**. [How it works →](docs/guide.md#on-your-phone)
+To connect a phone, open the app over Tailscale and scan the QR code in **Settings → Devices and PCs → Add a connection**. [How it works →](docs/guide.md#on-your-phone)
 
 ## what you get
 

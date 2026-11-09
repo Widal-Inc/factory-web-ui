@@ -69,7 +69,7 @@ function CreditsRow({ credits, count }: { credits: UsageCredits; count: UsageCou
   );
 }
 
-function Provider({ usage, now, count, onLocalLogin, onFollow, watching }: { usage: ProviderUsage; now: number; count: UsageCount; onLocalLogin: ((paneId: string) => void) | undefined; onFollow: (request: Extract<UsageLoginRequest, { provider: "claude" | "codex" }>) => void; watching: boolean }) {
+function Provider({ usage, now, count, onLocalLogin, onFollow }: { usage: ProviderUsage; now: number; count: UsageCount; onLocalLogin: ((paneId: string) => void) | undefined; onFollow: (request: Extract<UsageLoginRequest, { provider: "claude" | "codex" }>) => void }) {
   const t = useT();
   const statusline = useStatuslineSwitch(false);
   const name = PROVIDER_NAME[usage.id];
@@ -86,7 +86,7 @@ function Provider({ usage, now, count, onLocalLogin, onFollow, watching }: { usa
       {problem && <p className={`usage-note${isError(usage) ? " is-problem" : ""}`}>{problem}</p>}
       {offered && <UsageSignInAgain usage={usage} onStarted={onLocalLogin} onFollow={onFollow} />}
       {/* a 403 to a token that has not expired is a refused network, not an expired sign-in: the status line can stand in */}
-      {usage.statusline_offer && !watching && <button type="button" className="btn btn-ghost usage-offer" disabled={statusline.busy} onClick={() => void statusline.set(true)}>
+      {usage.statusline_offer && <button type="button" className="btn btn-ghost usage-offer" disabled={statusline.busy} onClick={() => void statusline.set(true)}>
         {t("Read from Claude's status line instead")}
       </button>}
       {statusline.error && <p className="usage-note is-problem" role="alert">{statusline.error}</p>}
@@ -128,8 +128,7 @@ function Provider({ usage, now, count, onLocalLogin, onFollow, watching }: { usa
  * provider its logo and the limit chosen in Settings (week or session); the whole strip opens every limit
  * with its reset time.
  */
-/** `watching`: a watching device is not offered what it cannot turn on or sign in to */
-export function UsageMeters({ onLocalLogin, watching = false }: { /** opens a sign-in tab; a watching device has none */ readonly onLocalLogin?: (paneId: string) => void; readonly watching?: boolean }) {
+export function UsageMeters({ onLocalLogin }: { /** opens a sign-in tab */ readonly onLocalLogin?: (paneId: string) => void }) {
   const t = useT();
   const { settings } = useSettings();
   const { report, loading, refresh } = useUsage(settings.showUsage);
@@ -232,7 +231,7 @@ export function UsageMeters({ onLocalLogin, watching = false }: { /** opens a si
               <RefreshCw aria-hidden="true" className={loading ? "is-spinning" : undefined} />
             </button>
           </header>
-          {shown.map((usage) => <Provider key={usage.key} usage={usage} now={now} count={count} watching={watching} onLocalLogin={onLocalLogin && ((paneId) => { setOpen(false); onLocalLogin(paneId); })}
+          {shown.map((usage) => <Provider key={usage.key} usage={usage} now={now} count={count} onLocalLogin={onLocalLogin && ((paneId) => { setOpen(false); onLocalLogin(paneId); })}
             onFollow={(request) => { setOpen(false); setFollowing(request); }} />)}
         </div>
       )}

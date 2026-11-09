@@ -28,7 +28,6 @@ import { RUNTIME_MOVE_KO } from "./i18n/runtime-move.ko.ts";
  * braces keep their English names.
  */
 const BASE: Record<string, string> = {
-  "View only": "보기 전용",
   "Not pasted: the file's path holds a line break, which the terminal would take as Enter.": "붙여넣지 않았습니다: 파일 경로에 줄바꿈이 있어 터미널이 Enter로 받아들입니다.",
   "Attach files": "파일 첨부",
 
@@ -58,7 +57,6 @@ const BASE: Record<string, string> = {
   "PCs": "PC",
   "Chat": "채팅",
   "Agent default": "에이전트 기본값",
-  "Devices and PCs": "기기와 PC",
   "Access token": "접속 토큰",
 
   // ---- shortcuts (lib/shortcuts.ts labels) ----
@@ -126,7 +124,6 @@ const BASE: Record<string, string> = {
   "Work time unknown": "작업 시간 알 수 없음",
   "Worked at least {duration}": "최소 {duration} 작업",
   "Worked {duration}": "{duration} 작업함",
-  "Share link": "링크 공유",
   "Copy address": "주소 복사",
   "Link copied": "링크를 복사했습니다",
   "That agent has closed: its workspace is open": "그 에이전트는 닫혔습니다. 대신 워크스페이스를 열었습니다",
@@ -220,11 +217,6 @@ const BASE: Record<string, string> = {
   "Recommended": "추천",
   "Agents": "에이전트",
   "Setup guide": "설정 안내",
-  "Could not confirm this browser is paired. Check that cookies are enabled, then try again.": "이 브라우저의 페어링을 확인할 수 없습니다. 쿠키가 허용되어 있는지 확인한 뒤 다시 시도하세요.",
-  "New code": "새 코드",
-  "Paired: {name}.": "페어링됨: {name}.",
-  "QR code that pairs a phone with code {code}": "코드 {code}로 폰을 페어링하는 QR 코드",
-  "Pairing code": "페어링 코드",
   "{agent} is ready": "{agent} 준비 완료",
 
 
@@ -253,7 +245,7 @@ const BASE: Record<string, string> = {
   "Microphone permission was denied": "마이크 권한이 거부되었습니다",
   "Voice input needs HTTPS": "음성 입력에는 HTTPS가 필요합니다",
   // ---- errors (lib/userError.ts) ----
-  "This browser is not signed in to this PC any more. Pair it again in Settings → Devices and PCs.": "이 브라우저는 더 이상 이 PC에 로그인되어 있지 않습니다. 설정 → 기기와 PC에서 다시 페어링하세요.",
+  "This browser is not signed in to this PC any more. Sign in again with the access token.": "이 브라우저는 더 이상 이 PC에 로그인되어 있지 않습니다. 액세스 토큰으로 다시 로그인하세요.",
   "That item no longer exists on the PC. Refresh and try again.": "그 항목은 PC에 더 이상 없습니다. 새로 고친 뒤 다시 시도하세요.",
   "It changed on the PC while you were acting. Check it and try again.": "작업하는 동안 PC에서 내용이 바뀌었습니다. 확인한 뒤 다시 시도하세요.",
   "The PC took too long to answer. Try again.": "PC가 너무 오래 응답하지 않았습니다. 다시 시도하세요.",
@@ -268,7 +260,7 @@ const BASE: Record<string, string> = {
   "Can't reach the PC": "PC에 연결할 수 없음",
   "PC disk is full": "PC 디스크가 가득 참",
   "No permission on the PC": "PC에서 권한 없음",
-  "Pair it again in Settings → Devices and PCs.": "설정 → 기기와 PC에서 다시 페어링하세요.",
+  "Sign in again with the access token.": "액세스 토큰으로 다시 로그인하세요.",
   "Refresh and try again.": "새로 고친 뒤 다시 시도하세요.",
   "Check it and try again.": "확인한 뒤 다시 시도하세요.",
   "Check your connection, then try again.": "연결을 확인한 뒤 다시 시도하세요.",
@@ -299,7 +291,6 @@ const BASE: Record<string, string> = {
   "The PC did not take this device's push subscription. Try again.": "PC가 이 기기의 푸시 구독을 받지 않았습니다. 다시 시도하세요.",
   "Brave would not make a push subscription. Turn on Use Google services for push messaging in Brave's privacy settings, then try again.": "Brave가 푸시 구독을 만들지 않았습니다. Brave 개인정보 설정에서 \"Use Google services for push messaging\"을 켠 뒤 다시 시도하세요.",
   "This device would not make a push subscription. Check that push messaging is allowed in its settings, then try again.": "이 기기에서 푸시 구독을 만들지 못했습니다. 설정에서 푸시 메시지가 허용되어 있는지 확인한 뒤 다시 시도하세요.",
-  "This device can only watch.": "이 기기는 보기만 할 수 있습니다.",
   "Needs input": "입력 필요",
   "Needs permission": "권한 필요",
   "Finished": "작업 완료",
@@ -345,7 +336,6 @@ const BASE: Record<string, string> = {
   "The sidebar can't be shown.": "사이드바를 표시할 수 없습니다.",
   // t3code ports (a)
   // t3code ports (d)
-  "Change PC": "PC 바꾸기",
   "Selected": "선택됨",
   // Recover unsent text (components/UnsentText.tsx)
   "Unsent text": "보내지 않은 글",

@@ -11,8 +11,6 @@ const config: SlashCommand = { name: "config", description: "Open config", sourc
 describe("usePaneCommands after a failed read", () => {
   let renderer: ReactTestRenderer | null = null;
   let down = false;
-  /** while set, every read is refused as a watching device's is (#2132) */
-  let refused = false;
   /** while set, each read waits for the test to answer it, in the order the test chooses */
   let held: ((rows: SlashCommand[]) => void)[] | null = null;
   /** while set, a read never answers, whatever its signal says (a connection that went quiet) */
@@ -26,11 +24,10 @@ describe("usePaneCommands after a failed read", () => {
   beforeAll(() => { Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true }); });
   beforeEach(() => {
     jest.useFakeTimers();
-    down = false; refused = false; stalled = false; seen = []; held = null;
+    down = false; stalled = false; seen = []; held = null;
     fetchSpy = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async () => {
       if (down) throw new TypeError("network down");
       if (stalled) return new Promise<Response>(() => undefined);
-      if (refused) return Response.json({ error: { code: "read_only", message: "this device can only watch" } }, { status: 403 });
       if (held !== null) { const queue = held; return Response.json({ commands: await new Promise<SlashCommand[]>((resolve) => { queue.push(resolve); }) }); }
       return Response.json({ commands: [config] });
     }, { preconnect: globalThis.fetch.preconnect }));
@@ -65,17 +62,6 @@ describe("usePaneCommands after a failed read", () => {
     await settle(() => seen.length > 0);
     expect(seen.map((command) => command.name)).toEqual(["config"]);
     expect(fetchSpy.mock.calls.length).toBe(2);
-  });
-
-  it("does not ask again when the device may only watch (#2132)", async () => {
-    refused = true;
-    await act(async () => { renderer = create(createElement(Probe, { pane: "w-refused:p1" })); });
-    await settle(() => fetchSpy.mock.calls.length >= 1);
-    await settle(() => false);
-    await act(async () => { jest.advanceTimersByTime(60_000); });
-    await settle(() => false);
-    expect(fetchSpy.mock.calls.length).toBe(1);
-    expect(seen).toEqual([]);
   });
 
   it("lets a retry join the refresh read already on its way, and keeps that read's list", async () => {

@@ -60,11 +60,9 @@ irm https://ovis.sh/install.ps1 | iex
 
 **スマートフォンに**
 
-- **iPhone:** TestFlight のベータ版、[ovis.sh/ja/beta](https://ovis.sh/ja/beta/) から。
-- **Android:** Google Play のベータ版、[ovis.sh/ja/beta](https://ovis.sh/ja/beta/) から。
 - **ブラウザー:** アプリなしで、ページをホーム画面に追加します。
 
-スマートフォンをつなぐには、Tailscale 経由でアプリを開き、**Settings → Phone & devices** の QR コードを読み取ります。[仕組み →](docs/guide.md#on-your-phone)
+スマートフォンをつなぐには、Tailscale 経由でアプリを開き、**Settings → Devices and PCs → Add a connection** の QR コードを読み取ります。[仕組み →](docs/guide.md#on-your-phone)
 
 ## できること
 

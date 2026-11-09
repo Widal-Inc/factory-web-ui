@@ -23,7 +23,7 @@
   </Resources>
   <Applications>
     <Application Id="Ovis" Executable="Ovis.exe" uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="mediumIL">
-      <uap:VisualElements DisplayName="Ovis" Description="Set up Ovis on this PC: herdr, Bun and the Ovis server, and the QR code for the phone app."
+      <uap:VisualElements DisplayName="Ovis" Description="Set up Ovis on this PC: herdr, Bun and the Ovis server."
         Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
     </Application>
     <!-- herdr's server at sign-in. Windows turns the task on the first time Ovis is opened, and the user can turn it

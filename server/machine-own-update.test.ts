@@ -546,7 +546,7 @@ describe("a PC whose own Ovis is away (#2047)", () => {
     await until((machine) => machine.action_required === "update_bridge");
     ovis.stop("removed");
     const response = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update-bridge`, {
-      method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager, undefined, undefined, false, undefined, undefined, undefined, true);
+      method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager);
     expect(response.status).toBeLessThan(300);
     // the PC waits for it as for one that cannot be reached, and asks again once it answers
     const waiting = await until((machine) => machine.state === "reconnecting" && !machine.updating && /own Ovis is not running/.test(machine.error ?? ""));
@@ -575,7 +575,7 @@ describe("a PC whose own Ovis is older than this app", () => {
     expect(waiting.error).toContain("own Ovis v0.4.16");
     expect(installs).toEqual([]);
     const response = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update-bridge`, {
-      method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager, undefined, undefined, false, undefined, undefined, undefined, true);
+      method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager);
     expect(response.status).toBeLessThan(300);
     await until((machine) => machine.state === "connected");
     expect(installs).toEqual([{ expected_revision: OFFERED }]);
@@ -585,7 +585,7 @@ describe("a PC whose own Ovis is older than this app", () => {
     const { manager, installs, until } = pc({ status: managedOffer(), afterInstall: { statuses: [{ phase: "building", step: "dependencies" }, { phase: "error", error: "bun install failed (exit 1)" }] } }, { autoUpdate: false, ownUpdate: { pollMs: 5 } });
     const waiting = await until((machine) => machine.action_required === "update_bridge");
     expect(waiting.ovis_update).toEqual({ how: "own", current_version: "0.4.16", latest_version: "0.4.18", updatable: true, reason: null, revision: OFFERED });
-    const update = () => handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update`, { method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager, undefined, undefined, false, undefined, undefined, undefined, true);
+    const update = () => handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update`, { method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager);
     const response = await update();
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ job_id: expect.any(String) });
@@ -605,7 +605,7 @@ describe("a PC whose own Ovis is older than this app", () => {
     expect(waiting.ovis_update?.revision).toBe(OFFERED);
     // a newer release appears there before the person's tap reaches it
     remote.status = managedOffer({ latest_revision: "e".repeat(40), latest_version: "0.4.19" });
-    const asked = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update`, { method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1", "content-type": "application/json" }, body: JSON.stringify({ revision: OFFERED }) }), manager, undefined, undefined, false, undefined, undefined, undefined, true);
+    const asked = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update`, { method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1", "content-type": "application/json" }, body: JSON.stringify({ revision: OFFERED }) }), manager);
     expect(asked.status).toBe(202);
     const failed = await until((machine) => !machine.updating && typeof machine.update_error === "string");
     expect(failed.update_error).toContain("another release now than the one shown");
@@ -819,7 +819,7 @@ describe("a PC whose own Ovis is older than this app", () => {
     expect(waiting.error).toMatch(reason);
     expect(waiting.remote_ovis).toMatchObject({ updatable: false, address: `pc.invalid:${OWN_PORT}`, url: "https://home-server.example.ts.net" });
     expect(waiting.remote_ovis?.reason).toMatch(reason);
-    const asked = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update`, { method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager, undefined, undefined, false, undefined, undefined, undefined, true);
+    const asked = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update`, { method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager);
     if (fix) {
       // the devices list offers the install over SSH, naming what it does and the very process it stops or restarts
       expect(waiting.ovis_update).toMatchObject({ how: "install", updatable: true, reason: null });

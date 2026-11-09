@@ -13,9 +13,9 @@ Include what you can of:
 
 - the version (Settings, under Updates, opens with `Running vX.Y.Z (commit)`) and, for a remote PC, its OS;
 - how the server was reached (localhost, SSH tunnel, `tailscale serve`, LAN, reverse proxy) and how the
-  client signed in (this PC, paired device, token);
+  client signed in (this PC, token);
 - the steps to reproduce, and what an attacker needs beforehand;
-- the impact, with evidence from your own setup. Leave out real tokens, pairing codes and cookies.
+- the impact, with evidence from your own setup. Leave out real tokens and cookies.
 
 This is a project with one maintainer, so there is no guaranteed response time. Fixes ship as a new
 patch release with a GitHub security advisory, crediting you unless you prefer otherwise. Please keep
@@ -31,12 +31,11 @@ by themselves with `OVIS_AUTO_UPDATE=1`). A fix in the remote-PC runtime ships a
 
 In scope, for example:
 
-- getting in without a matching token, a paired device or a local connection
+- getting in without a matching token or a local connection
   (`server/access.ts`, `server/auth.ts`), including through a proxy, Tailscale Funnel or forged
-  headers: a request that carries a forwarding header is refused without the token or a paired
-  device, and a `Tailscale-User-Login` header is never read;
-- pairing codes, device cookies and revocation (`server/devices.ts`); a revoked or observe-only
-  device that can still type, send keys or resize;
+  headers: a request that carries a forwarding header is refused without the token, and a
+  `Tailscale-User-Login` header is never read;
+- an observe-only connection (the chat lens's observers) that can still type, send keys or resize;
 - reading files, transcripts or screens outside what the app shows a signed-in client;
 - script injection in the web client (chat Markdown, file viewer, prompt cards, push payloads);
 - the remote-PC path: SSH, the bridge bundle's checksums and the socket relay of a remote PC (`server/ssh.ts`,
@@ -50,11 +49,11 @@ In scope, for example:
 Out of scope, as documented in [Access and safety](docs/guide.md#access-and-safety):
 
 - getting into a server that is still ungated by design: bound off loopback or behind a proxy, with
-  no token set and no device ever paired, and not through a proxy that forwards headers. It is
+  no token set, and not through a proxy that forwards headers. It is
   open to anyone who reaches it directly, and the server warns about it on startup. Getting past
-  the gate once a token is set or a device is paired is in scope;
+  the gate once a token is set is in scope;
 - anything reached through `tailscale funnel`, which is unsupported;
-- people you gave drive access to (a driving paired device or the token) using it, including through a terminal: reading the
+- people you gave the token using it, including through a terminal: reading the
   server's environment or state files, or keeping a way in after their access ends;
 - vulnerabilities in herdr, the agents, Tailscale or the browser themselves: report those upstream.
 

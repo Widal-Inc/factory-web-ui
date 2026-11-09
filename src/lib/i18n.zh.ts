@@ -32,7 +32,6 @@ import { RUNTIME_MOVE_ZH } from "./i18n/runtime-move.zh.ts";
  * Placeholders in braces keep their English names.
  */
 const BASE: Record<string, string> = {
-  "View only": "仅查看",
   "Not pasted: the file's path holds a line break, which the terminal would take as Enter.": "未粘贴：文件路径中含有换行，终端会将其当作 Enter。",
   "Attach files": "附加文件",
 
@@ -62,7 +61,6 @@ const BASE: Record<string, string> = {
   "PCs": "PC",
   "Chat": "聊天",
   "Agent default": "代理默认",
-  "Devices and PCs": "设备和电脑",
   "Access token": "访问 Token",
 
   // ---- shortcuts (lib/shortcuts.ts labels) ----
@@ -130,7 +128,6 @@ const BASE: Record<string, string> = {
   "Work time unknown": "工作时长未知",
   "Worked at least {duration}": "至少工作了 {duration}",
   "Worked {duration}": "共工作 {duration}",
-  "Share link": "分享链接",
   "Copy address": "复制地址",
   "Link copied": "已复制链接",
   "That agent has closed: its workspace is open": "该代理已关闭，已改为打开其工作区",
@@ -224,11 +221,6 @@ const BASE: Record<string, string> = {
   "Recommended": "推荐",
   "Agents": "代理",
   "Setup guide": "设置向导",
-  "Could not confirm this browser is paired. Check that cookies are enabled, then try again.": "无法确认此浏览器已配对。请检查是否允许 Cookie，然后重试。",
-  "New code": "新代码",
-  "Paired: {name}.": "已配对：{name}。",
-  "QR code that pairs a phone with code {code}": "使用代码 {code} 配对手机的二维码",
-  "Pairing code": "配对码",
   "{agent} is ready": "{agent} 已就绪",
 
 
@@ -257,7 +249,7 @@ const BASE: Record<string, string> = {
   "Microphone permission was denied": "麦克风权限已被拒绝",
   "Voice input needs HTTPS": "语音输入需要 HTTPS",
   // ---- errors (lib/userError.ts) ----
-  "This browser is not signed in to this PC any more. Pair it again in Settings → Devices and PCs.": "此浏览器已不再登录此电脑。请在设置 → 设备和电脑中重新配对。",
+  "This browser is not signed in to this PC any more. Sign in again with the access token.": "此浏览器已不再登录此电脑。请用访问令牌重新登录。",
   "That item no longer exists on the PC. Refresh and try again.": "该项目在电脑上已不存在。请刷新后重试。",
   "It changed on the PC while you were acting. Check it and try again.": "你操作期间电脑上的内容已更改。请检查后重试。",
   "The PC took too long to answer. Try again.": "电脑响应时间过长。请重试。",
@@ -272,7 +264,7 @@ const BASE: Record<string, string> = {
   "Can't reach the PC": "无法连接到电脑",
   "PC disk is full": "电脑磁盘已满",
   "No permission on the PC": "电脑上没有权限",
-  "Pair it again in Settings → Devices and PCs.": "请在设置 → 设备和电脑中重新配对。",
+  "Sign in again with the access token.": "请用访问令牌重新登录。",
   "Refresh and try again.": "请刷新后重试。",
   "Check it and try again.": "请检查后重试。",
   "Check your connection, then try again.": "请检查网络连接后重试。",
@@ -303,7 +295,6 @@ const BASE: Record<string, string> = {
   "The PC did not take this device's push subscription. Try again.": "电脑未接受此设备的推送订阅。请重试。",
   "Brave would not make a push subscription. Turn on Use Google services for push messaging in Brave's privacy settings, then try again.": "Brave 未创建推送订阅。请在 Brave 的隐私设置中开启“Use Google services for push messaging”，然后重试。",
   "This device would not make a push subscription. Check that push messaging is allowed in its settings, then try again.": "此设备未能创建推送订阅。请确认其设置中允许推送消息，然后重试。",
-  "This device can only watch.": "此设备只能查看。",
   "Needs input": "需要输入",
   "Needs permission": "需要权限",
   "Finished": "已完成",
@@ -349,7 +340,6 @@ const BASE: Record<string, string> = {
   "The sidebar can't be shown.": "无法显示侧边栏。",
   // t3code ports (a)
   // t3code ports (d)
-  "Change PC": "切换电脑",
   "Selected": "已选择",
   // Recover unsent text (components/UnsentText.tsx)
   "Unsent text": "未发送的文本",

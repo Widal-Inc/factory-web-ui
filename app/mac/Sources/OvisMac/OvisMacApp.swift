@@ -1,5 +1,4 @@
 import AppKit
-import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 @main
@@ -17,7 +16,7 @@ struct OvisMacApp: App {
         .windowResizability(.contentMinSize)
         .commands { OvisCommands(model: model) }
 
-        Window(L("Phone Setup", "휴대폰 연결"), id: "setup") {
+        Window(L("Setup", "설정"), id: "setup") {
             ContentView()
                 .environmentObject(model)
                 .frame(width: 520)
@@ -30,7 +29,6 @@ struct OvisMacApp: App {
 /// Ovis itself once its server runs; until then, or when it stops, the setup that gets it running.
 struct MainView: View {
     @EnvironmentObject private var model: Model
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Group {
@@ -48,11 +46,6 @@ struct MainView: View {
             await model.refresh()
             await model.monitor()
         }
-        .onChange(of: model.phoneSetupRequested) { requested in
-            guard requested else { return }
-            model.phoneSetupRequested = false
-            openWindow(id: "setup")
-        }
     }
 }
 
@@ -60,18 +53,18 @@ struct OvisCommands: Commands {
     let model: Model
 
     var body: some Commands {
-        CommandGroup(after: .appInfo) { PhoneSetupItem() }
+        CommandGroup(after: .appInfo) { SetupItem() }
         CommandGroup(replacing: .newItem) { OpenInBrowserItem(model: model) }
         CommandGroup(before: .toolbar) { ReloadItem(model: model) }
     }
 }
 
 /// No Cmd+Shift letter here or below: the page's own shortcuts are Cmd+Shift ones (src/lib/shortcuts.ts).
-private struct PhoneSetupItem: View {
+private struct SetupItem: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button(L("Phone Setup…", "휴대폰 연결…")) { openWindow(id: "setup") }
+        Button(L("Setup…", "설정…")) { openWindow(id: "setup") }
     }
 }
 
@@ -108,7 +101,7 @@ struct ContentView: View {
                 Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 56, height: 56)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Ovis").font(.title.bold())
-                    Text(L("Your coding agents, on your phone", "코딩 에이전트를 휴대폰에서")).foregroundStyle(.secondary)
+                    Text(L("Your coding agents, on this Mac", "코딩 에이전트를 이 Mac에서")).foregroundStyle(.secondary)
                 }
             }
             Divider()
@@ -136,8 +129,8 @@ struct ContentView: View {
     private var notInstalled: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L("Set up this Mac for Ovis", "이 Mac을 Ovis에 연결할 준비를 합니다")).font(.headline)
-            Text(L("This installs herdr, Bun, Node and the Ovis server for your user only, with no administrator password, and starts herdr when you log in. Then scan the QR code with Ovis on your phone.",
-                   "herdr, Bun, Node, Ovis 서버를 내 사용자 계정에만 설치합니다(관리자 비밀번호 필요 없음). 로그인할 때 herdr가 자동으로 켜집니다. 설치가 끝나면 휴대폰의 Ovis로 QR 코드를 찍으면 됩니다."))
+            Text(L("This installs herdr, Bun, Node and the Ovis server for your user only, with no administrator password, and starts herdr when you log in. Then open Ovis in this app.",
+                   "herdr, Bun, Node, Ovis 서버를 내 사용자 계정에만 설치합니다(관리자 비밀번호 필요 없음). 로그인할 때 herdr가 자동으로 켜집니다. 설치가 끝나면 이 앱에서 Ovis를 열면 됩니다."))
                 .fixedSize(horizontal: false, vertical: true)
             Button(L("Install", "설치")) { Task { await model.install() } }
                 .buttonStyle(.borderedProminent).controlSize(.large).keyboardShortcut(.defaultAction)
@@ -195,7 +188,6 @@ struct ContentView: View {
                     .help(L("Check again", "다시 확인"))
                     .accessibilityLabel(L("Check again", "다시 확인"))
             }
-            if status?.running == true { phone(status) }
             HStack {
                 Button(status?.running == true ? L("Restart", "다시 시작") : L("Start", "시작")) { Task { await model.restart() } }
                 Spacer()
@@ -203,51 +195,4 @@ struct ContentView: View {
             }
         }
     }
-
-    @ViewBuilder
-    private func phone(_ status: Status?) -> some View {
-        if let url = status?.phoneURL {
-            HStack(alignment: .top, spacing: 18) {
-                if let image = qrImage(url.absoluteString) {
-                    Image(nsImage: image).interpolation(.none).resizable().frame(width: 180, height: 180)
-                        .padding(8).background(.white).clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L("Connect your phone", "휴대폰 연결")).font(.headline)
-                    Text(L("Open Ovis on your phone, tap Scan QR code, and point it here. Your phone needs Tailscale, signed in to the same account.",
-                           "휴대폰에서 Ovis를 열고 Scan QR code를 눌러 이 화면을 찍으세요. 휴대폰에도 같은 계정으로 로그인한 Tailscale이 있어야 합니다."))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(url.absoluteString).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary)
-                }
-            }
-        } else if status?.tailscale == "running" {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("Your phone needs an address for this Mac", "휴대폰이 열 주소가 아직 없습니다")).font(.headline)
-                Text(L("Tailscale runs here: let it serve the app to your own devices.", "이 Mac에 Tailscale이 있습니다. 내 기기들에서만 열리는 주소를 만듭니다."))
-                Button(L("Make the phone address", "휴대폰 주소 만들기")) { Task { await model.makePhoneAddress() } }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L("Your phone needs a way to reach this Mac", "휴대폰에서 이 Mac에 올 길이 필요합니다")).font(.headline)
-                Text(status?.tailscale == "stopped"
-                     ? L("Tailscale is installed but not signed in. Sign in to it, then check again.", "Tailscale이 설치돼 있지만 로그인되지 않았습니다. 로그인한 뒤 다시 확인해 주세요.")
-                     : L("Install Tailscale on this Mac and on your phone, sign in to both with the same account, then check again.", "이 Mac과 휴대폰에 Tailscale을 설치하고 같은 계정으로 로그인한 뒤 다시 확인해 주세요."))
-                    .fixedSize(horizontal: false, vertical: true)
-                if status?.tailscale != "stopped" {
-                    Button(L("Get Tailscale", "Tailscale 받기")) { model.open(Ovis.tailscaleDownload) }
-                }
-            }
-        }
-    }
-}
-
-func qrImage(_ text: String) -> NSImage? {
-    let filter = CIFilter.qrCodeGenerator()
-    filter.message = Data(text.utf8)
-    filter.correctionLevel = "M"
-    guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)) else { return nil }
-    let rep = NSCIImageRep(ciImage: output)
-    let image = NSImage(size: rep.size)
-    image.addRepresentation(rep)
-    return image
 }

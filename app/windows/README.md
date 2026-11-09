@@ -1,8 +1,8 @@
 # Ovis for Windows
 
 The one-click setup for a Windows PC, downloaded from https://ovis.sh as `Ovis.exe` (and, once it is
-listed, from the Microsoft Store). The phone apps need the Ovis server running on the computer; this
-app sets that up without PowerShell or a terminal and shows the QR code the phone app scans. It is the
+listed, from the Microsoft Store). It needs the Ovis server running on the computer; this
+app sets that up without PowerShell or a terminal. It is the
 Windows twin of [Ovis for Mac](../mac/README.md).
 
 It is a small WinForms app on .NET Framework 4.8, which every Windows 10 (1903 and later) and 11 PC
@@ -14,9 +14,8 @@ apart.
 | --- | --- |
 | **Install** | `irm https://ovis.sh/install.ps1 \| iex` in Windows PowerShell, with `OVIS_NO_OPEN=1` and an empty stdin. Then herdr's server is set to start at sign-in (below) and started. |
 | **Install Git** | Shown instead of Install while Git for Windows is missing (install.ps1 needs it): `winget install --id Git.Git`, which asks for administrator approval, or **Download Git** for https://git-scm.com/download/win. |
-| Status (on open) | `herdr plugin list --json` finds the plugin, `scripts/plugin.ts status` gives its address and the version that runs, and `GET /api/access` gives the phone address, drawn as a QR code (with the server's token when it asks for one, read from the plugin's `env`/`.env`; a token it cannot find is named, not taken for a missing Tailscale). |
+| Status (on open) | `herdr plugin list --json` finds the plugin, `scripts/plugin.ts status` gives its address and the version that runs, and `GET /api/access` gives the address Tailscale serves the app at, which Remove turns off again (with the server's token when it asks for one, read from the plugin's `env`/`.env`). |
 | **Update** | Shown instead of Start when the server is older than the app, under the old id, or of a version nothing reports. Under the old id: its `plugin.ts stop`, told herdr's state dir for the plugin (`HERDR_PLUGIN_STATE_DIR`, as herdr runs its actions: a release from before 0.4.13 run without it finds no server, even one that outlived herdr), then install.ps1, which stops it the same way and moves it to the new id with its settings and token. Otherwise: the plugin's `stop`, then `herdr plugin install devswha/ovis --ref <tag> --yes`, herdr's reinstall, which keeps the plugin's config and state; the tag is the newest release `git ls-remote` lists, never older than the app, so a server that updated itself past the app is not taken back. Then the server starts and herdr is set to start at sign-in, as for Install. A herdr older than the server needs is named instead, with `herdr update` to run. |
-| **Make the phone address** | `scripts/plugin.ts phone`, the installer's Tailscale step. |
 | **Restart** / **Start** | The plugin's `stop-windows` and `start-windows` actions, or `herdr server` when herdr is not running. |
 | **Remove** | The guide's Uninstall steps (`stop-windows`, `herdr plugin uninstall`, `tailscale serve … off`), then the sign-in start and the Start menu entry are removed. |
 
@@ -34,9 +33,8 @@ inherited cannot take it back. When the installer or herdr's reinstall fails, th
 the way herdr starts it (its start-windows action, or herdr's server), so it keeps its active release. A linked
 checkout or a fork is never moved or reinstalled, and a build without a version (0.0.0, a local build) compares none.
 
-Every program it runs has a time limit (two minutes; the installer 45, winget 30, the phone step 5). Past it,
-the program and what it started are ended, except herdr and anything under it. The QR encoder's MIT notice
-(`NOTICE.txt`) is embedded in `Ovis.exe`, shown from its **Licences** link, and shipped in the MSIX.
+Every program it runs has a time limit (two minutes; the installer 45, winget 30). Past it,
+the program and what it started are ended, except herdr and anything under it.
 
 ## Starting at sign-in
 

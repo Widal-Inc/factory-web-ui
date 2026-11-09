@@ -60,11 +60,9 @@ irm https://ovis.sh/install.ps1 | iex
 
 **폰에서**
 
-- **iPhone:** TestFlight 베타, [ovis.sh/ko/beta](https://ovis.sh/ko/beta/)에서.
-- **Android:** Google Play 베타, [ovis.sh/ko/beta](https://ovis.sh/ko/beta/)에서.
 - **브라우저:** 앱 없이, 페이지를 홈 화면에 추가합니다.
 
-휴대폰을 연결하려면 Tailscale로 앱을 열고 **Settings → Phone & devices**의 QR 코드를 스캔하세요. [작동 방식 →](docs/guide.md#on-your-phone)
+휴대폰을 연결하려면 Tailscale로 앱을 열고 **Settings → Devices and PCs → Add a connection**의 QR 코드를 스캔하세요. [작동 방식 →](docs/guide.md#on-your-phone)
 
 ## 할 수 있는 일
 

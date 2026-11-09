@@ -5,8 +5,6 @@
   update of the app's screens.
 
 ### Changed
-- Changing what runs on another PC from here is the owner's, from any device he signed in or paired
-  himself (this PC, its token, his phone or other PCs paired directly):
+- Changing what runs on another PC from here is the owner's, from this PC itself or with its token:
   updating a PC's bridge or its Ovis, approving what a PC's setup installs, turning a PC on
-  (which may update it) and turning automatic PC updates on. A visitor of an open install with nothing
-  paired and a device that only watches can no longer do these.
+  (which may update it) and turning automatic PC updates on. Anyone else can no longer do these.

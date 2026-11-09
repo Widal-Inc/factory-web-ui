@@ -62,13 +62,13 @@ describe("the pane canvas on a PC the Herdr app lays out", () => {
   });
 
   let actions: (target: HerdrPane) => RowMenuItem[] = () => [];
-  async function draw(offer: LayoutOffer, drawn: SessionSnapshot = snapshot, watching = false): Promise<(target: HerdrPane) => string[]> {
+  async function draw(offer: LayoutOffer, drawn: SessionSnapshot = snapshot): Promise<(target: HerdrPane) => string[]> {
     const actionsRef: { current: ((target: HerdrPane) => RowMenuItem[]) | null } = { current: null };
     actions = (target) => actionsRef.current!(target);
     await act(async () => {
       renderer = create(createElement(SettingsProvider, null, createElement(AppLayoutContext.Provider, { value: offer },
         createElement(PaneCanvas, { snapshot: drawn, pane: drawn.panes[0] as HerdrPane, selectedPaneId: "p1", onSelect: () => {}, onChanged: () => {}, renderPane: () => null, actionsRef,
-          onNewTab: () => {}, onNewTerminal: async () => {}, onMoveToWorkspace: async () => {}, watching }))));
+          onNewTab: () => {}, onNewTerminal: async () => {}, onMoveToWorkspace: async () => {} }))));
     });
     return (target) => actionsRef.current!(target).map((item) => item.id);
   }
@@ -212,22 +212,10 @@ describe("the pane canvas on a PC the Herdr app lays out", () => {
     try {
       const itemsOf = await draw(TUI);
       const unlock = actions(snapshot.panes[0] as HerdrPane).find((item) => item.id === "unlock");
-      expect(unlock?.disabled).toBeFalsy();
       await act(async () => unlock!.run());
       // the pane closes again; the other lock stays
       expect(itemsOf(snapshot.panes[0] as HerdrPane)).toContain("close");
       expect(JSON.parse(stored.get("ovis:settings") ?? "{}").lockedAgents).toEqual(["local:p9"]);
-    } finally {
-      setSidebarPins([]);
-    }
-  });
-
-  it("shows a watching device the pane's Unlock, which it cannot use", async () => {
-    stored.set("ovis:settings", JSON.stringify({ agentLocks: true, lockedAgents: ["local:p1"] }));
-    setSidebarPins(["local:p1"]);
-    try {
-      await draw(TUI, snapshot, true);
-      expect(actions(snapshot.panes[0] as HerdrPane).find((item) => item.id === "unlock")?.disabled).toBe(true);
     } finally {
       setSidebarPins([]);
     }

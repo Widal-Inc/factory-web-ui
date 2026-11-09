@@ -88,7 +88,7 @@ disposable install at the same test origin: first install `black-translucent`,
 seed the states below, record/export them, update to absent metadata, and reopen
 without removal. Compare a separate fresh install. A removal/re-add comparison
 belongs only to that disposable QA install after its saved data has been checked.
-Do not clear user website data, erase a Simulator, revoke real pairings or reset
+Do not clear user website data, erase a Simulator, sign out a real session or reset
 server credentials/push keys as a workaround.
 
 | State | Storage/recovery boundary | Owned QA check before and after each transition |
@@ -97,7 +97,7 @@ server credentials/push keys as a workaround.
 | Terminal disconnected draft | Browser local storage, text and dropped-special count | Copy text and record the count; verify both without sending input |
 | Held message queue | Browser local storage, per PC/pane | Save every item, ID and order; verify that nothing sends automatically |
 | Settings and UI preferences | Browser local storage | Record theme, density, fonts, replies, alert preferences and selected target/view; compare values |
-| Pairing/authentication | HttpOnly cookies plus server device records | Keep the QA server state unchanged; check access/role before and after; record whether fresh pairing is needed |
+| Authentication | HttpOnly token cookie | Keep the QA server state unchanged; check access before and after; record whether signing in again is needed |
 | Notifications | OS permission, service-worker subscription and server registration | Record permission and subscription presence; verify with an owned test device/fake endpoint; note any permission or registration step needed |
 
 For developer QA, privately capture only the test origin's `ovis:*`
@@ -112,7 +112,7 @@ settle pending sends before a lifecycle comparison. Never post credential or
 push-subscription contents in evidence.
 
 There is no automatic migration/export added by this PR. Browser storage
-retention across removal/re-add, pairing continuity and notification continuity
+retention across removal/re-add, sign-in continuity and notification continuity
 remain unverified on the target iOS installations. Record retained/lost/recovered
 results separately from header appearance, and keep the candidate draft until
 the exact-source native, viewport and preservation checks are accepted.

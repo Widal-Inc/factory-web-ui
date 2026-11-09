@@ -2,8 +2,7 @@
 
 Ovis on a Mac, downloaded from https://ovis.sh as `Ovis.dmg`. Once the Ovis server runs, the app
 opens Ovis in its own window, as a native app. Until then, or when the server stops, the window shows
-the one-click setup instead: it installs the server without a terminal and shows the QR code the
-phone app scans.
+the one-click setup instead: it installs the server without a terminal.
 
 It is a small SwiftUI app with no code of its own for installing: everything goes through what a
 terminal user runs, so the two never drift apart.
@@ -11,11 +10,10 @@ terminal user runs, so the two never drift apart.
 ## The Ovis window
 
 The window is a WKWebView on the server's own address (`http://127.0.0.1:<port>`, from
-`scripts/plugin.ts status`). The server lets a loopback request in without pairing, and the page's
+`scripts/plugin.ts status`). The server lets a direct loopback request in while no token is set, and the page's
 cookies and drafts stay in the app's own WebKit store, apart from any browser's.
 
-- **Ovis → Phone Setup…** opens the setup and the phone's QR code in a window of their own. After
-  an Install from the app it opens by itself. **File → Open in Browser** opens the page as it is in
+- **Ovis → Setup…** opens the setup (Restart, Remove) in a window of its own. **File → Open in Browser** opens the page as it is in
   the default browser, and **View → Reload** (Cmd+R) loads it again. No menu item takes a Cmd+Shift
   letter: those are the page's own shortcuts.
 - The server's own pages stay in the app: a link that opens a new tab of it (a file) opens another
@@ -44,7 +42,7 @@ cookies and drafts stay in the app's own WebKit store, apart from any browser's.
   does, and only the Ovis page itself opens app windows.
 - The user agent ends like Safari's, then `OvisMac/<version>`: the terminal's Korean input
   (xterm.js's Hangul handling in `patches/`) goes by "Safari", and the page treats the app as
-  installed (`src/lib/nativeApp.ts`).
+  installed (`src/lib/macApp.ts`).
 - A WKWebView has no web notifications or Web Push: the page's alerts setting reports them as
   unsupported here. macOS notifications from the app itself are a later step.
 
@@ -53,10 +51,9 @@ cookies and drafts stay in the app's own WebKit store, apart from any browser's.
 | Button | What runs |
 | --- | --- |
 | **Install** | `install.sh`, downloaded fresh from https://ovis.sh/install.sh over HTTPS (following only a redirect to ovis.sh or herdrweb.dev, where it is served from), with `OVIS_NO_OPEN=1` and an empty stdin. Then a LaunchAgent, `~/Library/LaunchAgents/sh.ovis.herdr-server.plist`, runs `herdr server` at login. |
-| Status (on open) | `herdr plugin list --json` finds the plugin, `scripts/plugin.ts status` gives its address, and `GET /api/access` gives the phone address, drawn as a QR code. The app asks only a loopback address, never through a redirect, and draws the code only for Tailscale's HTTPS name of this Mac (`https://<name>.ts.net`). |
-| **Make the phone address** | `scripts/plugin.ts phone`, the installer's Tailscale step, from the code the server runs now. Settings → Updates runs newer releases from the state dir while herdr's checkout stays at the first one, so the app reads it from the processes: `plugin.ts status` names the launcher (`server/managed.ts` of this checkout), whose supervisor runs the bridge (`server/index.ts`) in the code's dir. When that cannot be read, or the dir is neither the checkout nor a `release-*` dir with its own `plugin.ts`, the checkout's runs. When it fails, the window shows its output. |
+| Status (on open) | `herdr plugin list --json` finds the plugin, `scripts/plugin.ts status` gives its address. |
 | **Restart** / **Start** | The plugin's `stop` and `start`, or the LaunchAgent when herdr is not running. herdr set up from a terminal has no LaunchAgent: Start then runs herdr for this login only and makes no login item. |
-| **Remove** | The guide's Uninstall steps (`stop`, `herdr plugin uninstall`, `tailscale serve … off` for the HTTPS port Tailscale serves the app on, found with `tailscale serve status` when the server is down), then the LaunchAgent is disabled and deleted. A step that fails stops there and shows why; Try again goes on from it. |
+| **Remove** | The guide's Uninstall steps (`stop`, `herdr plugin uninstall`, `tailscale serve … off` for the HTTPS port Tailscale serves the app on, found with `tailscale serve status`), then the LaunchAgent is disabled and deleted. A step that fails stops there and shows why; Try again goes on from it. |
 
 Why a LaunchAgent: herdr runs the app from its startup hook, and a headless `herdr server` runs
 startup hooks like the TUI's server does. A user who never opens a terminal still gets the app,

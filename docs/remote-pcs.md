@@ -120,12 +120,7 @@ the release its card shows). The same rule covers installing an update on this P
 `POST /api/updates/install` and `POST /api/herdr/update`. The one exception is the connection
 server's bridge token, which asks for its own install by revision.
 
-| May | Who |
-|---|---|
-| Yes | a driving sign-in on this PC, its token |
-| Yes | a driving device paired with this install (the owner's phone, his other PCs) |
-| No | a visitor of an open install, with nothing paired |
-| No | any device that only watches |
+Only the owner may: this PC itself, or a client holding its token. Anyone else is refused at the gate (401).
 
 The request must also come from this app's own page: the `X-Herdr-Update: 1` header, same origin,
 no query. Anything else gets 403 `forbidden`. The app sends the header on every PC request.
@@ -235,7 +230,7 @@ The current server keeps one status-only WebSocket per remote PC without attachi
 | `PATCH /api/machines/:id` | Rename or change `enabled` |
 | `DELETE /api/machines/:id` | Forget the PC and remove its local private key |
 | `/api/machines/:id/{session,agents,pane/*,workspace/*}` | Allowlisted target API routes |
-| `GET/POST/DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/{stop,stop-all,install}` | That PC's move to herdr-core, for the owner only: this PC, the token, a paired device that drives; never an open LAN visitor or a device that watches ([runtime-move.md](runtime-move.md#on-another-pc)); 409 `pc_update_required` from an Ovis too old for it |
+| `GET/POST/DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/{stop,stop-all,install}` | That PC's move to herdr-core, for the owner only: this PC or the token ([runtime-move.md](runtime-move.md#on-another-pc)); 409 `pc_update_required` from an Ovis too old for it |
 | `POST /api/machines/runtime/move-all` | Starts every previewed PC's move at once, for the owner only (as above): 202 `{ started, refused, unknown }` |
 | `/ws?machine_id=…` | Immutable terminal destination |
 
@@ -250,7 +245,7 @@ herdr 0.9.3). Older bridge bundles keep waiting until updated, and observe conne
 
 When the connection server and remote bridge support receipt recovery, a returning browser can
 recover the exact outcome of a sent or discarded follow-up without typing it again. The connection
-server scopes the receipt identity to that server, PC, authenticated device and browser; watch-only connections cannot recover it. Receipts last at most ten
+server scopes the receipt identity to that server, PC, authenticated client and browser. Receipts last at most ten
 minutes, with at most 1024 outcomes retained.
 A missing receipt or a restart of either server leaves the saved copy **Not confirmed**.
 
@@ -317,7 +312,7 @@ that it failed, the card with why. One that ends on another version than this ap
 server answers, with why it cannot be updated from here. A server older than this change takes
 these requests only as its own PC's: when it listens on that PC's loopback and has no `OVIS_TOKEN`.
 A server that cannot update itself (not started by
-its updater, a changed source checkout, an `OVIS_TOKEN` or paired-device gate this app cannot pass,
+its updater, a changed source checkout, an `OVIS_TOKEN` gate this app cannot pass,
 a supervisor too old to install by revision, no newer release) keeps the message to update it through its own Settings, with the reason and where it
 answers: the HTTPS address it says Tailscale serves it at, or else its host and port to copy and open
 on that PC or through its own tailnet address. A server newer than this app is told to the user as

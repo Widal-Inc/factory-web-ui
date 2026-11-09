@@ -149,9 +149,8 @@ const sameStore = (landed: { key: string; place: string; chosen: boolean }, list
 /** The listing options with Claude's store set to `dir`. */
 const inStore = (stores: SessionHistoryOptions | undefined, dir: string): SessionHistoryOptions => ({ ...stores, env: { ...(stores?.env ?? process.env), CLAUDE_CONFIG_DIR: dir } });
 
-export async function handleSessionHistoryRequest(request: Request, url: URL, options: { readOnly: boolean } & StoreOptions): Promise<Response> {
+export async function handleSessionHistoryRequest(request: Request, url: URL, options: StoreOptions): Promise<Response> {
   if (request.method !== "GET") return badRequest("method_not_allowed", "use GET");
-  if (options.readOnly) return jsonResponse({ error: { code: "read_only", message: "this device can only watch" } }, 403);
   const workspaceId = url.searchParams.get("workspace_id") ?? "";
   if (workspaceId === "") return badRequest("missing_workspace_id", "workspace_id is required");
   const agent = url.searchParams.get("agent") ?? "";
@@ -245,9 +244,8 @@ const inProgress = () => refuse(409, "resume_in_progress", "this session is stil
  * answer comes by RESUME_ANSWER_MS (or once `deadline` settles: tests hand in their own), whatever
  * still runs: 504 resume_timed_out, and work that ends later makes no tab and closes the one it made.
  */
-export async function handleSessionResumeRequest(request: Request, options: { readOnly: boolean; holdOpen?: (seconds: number) => void; deadline?: Promise<void> } & StoreOptions): Promise<Response> {
+export async function handleSessionResumeRequest(request: Request, options: { holdOpen?: (seconds: number) => void; deadline?: Promise<void> } & StoreOptions): Promise<Response> {
   if (request.method !== "POST") return badRequest("method_not_allowed", "use POST");
-  if (options.readOnly) return jsonResponse({ error: { code: "read_only", message: "this device can only watch" } }, 403);
   const body = await readJsonObject<{ workspace_id?: unknown; pane_id?: unknown; agent?: unknown; session_id?: unknown; store_key?: unknown }>(request);
   if (body instanceof Response) return body;
   // after the body is read: a timeout given before it is dropped as it is read

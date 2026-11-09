@@ -22,7 +22,6 @@ import { opencodeDatabasePath } from "../opencode.ts";
 import { OpencodeSubagentStatus } from "../opencode-subagents.ts";
 import { openCodeServiceOptions, readOpenCodeService } from "../opencode-service.ts";
 import { processStartUpperBoundAsync } from "../process-start.ts";
-import type { DeviceStore } from "../devices.ts";
 import { createGjcStatus, gjcPanes, readOmoSnapshot, reconcileProviderStatus } from "../gjc-status.ts";
 import { createLettaStatus, lettaPanes, lettaTitleStatus } from "../letta-status.ts";
 import type { HerdrMachineProfile } from "../herdr-profiles.ts";
@@ -49,7 +48,7 @@ import type { TelemetryIngress, TelemetrySurface } from "../../shared/telemetry.
 /** a focus or reconnect re-reads the panes for the daily active message at most this often */
 const VISIT_READ_MS = 10 * 60_000;
 
-export function createStatusHub<Owner, Lease>({ options, devices, preferences, clients, present, pending, drainPending, holdPendingPane, paneMoved, usage, usageLogin }: {
+export function createStatusHub<Owner, Lease>({ options, preferences, clients, present, pending, drainPending, holdPendingPane, paneMoved, usage, usageLogin }: {
   options: {
     stateDir?: string;
     codexHome?: string;
@@ -77,7 +76,6 @@ export function createStatusHub<Owner, Lease>({ options, devices, preferences, c
     /** herdr moved a pane of this PC under a new ID: the finishes read there go with it, numbered as counted there (server/seen.ts moved) */
     seenMoved?: (from: string, to: string, renumber: (id: number) => number) => void;
   };
-  devices: DeviceStore;
   /** the preferences every browser shares (server/preferences.ts): web push reads the muted panes from it */
   preferences: PreferenceStore;
   clients: Set<Client>;
@@ -91,17 +89,13 @@ export function createStatusHub<Owner, Lease>({ options, devices, preferences, c
   usage: UsageService;
   usageLogin: UsageLoginService;
 }) {
-  const canDeliver = (id: string | null | undefined): boolean => id === null || (id === undefined ? !devices.gated : devices.has(id));
-  const alertWebhook = createAlertWebhook({ stateDir: options.stateDir ?? defaultStateDir(), canDeliver });
+  const alertWebhook = createAlertWebhook({ stateDir: options.stateDir ?? defaultStateDir() });
   const push = createPushService({
     stateDir: options.stateDir ?? defaultStateDir(),
     webhook: alertWebhook,
     timing: options.alertTiming,
     now: options.statusNow,
     loopbackHttp: options.pushLoopbackHttp === true,
-    canDeliver,
-    // a device paired to watch gets the alert, never its answer buttons
-    canAnswer: (id) => id === null || (id === undefined ? !devices.gated : devices.canDrive(id)),
     lookupPrompt: (paneId, signal) => currentPrompt(paneId, { codexHome: options.codexHome, openCodeStateDir: options.openCodeStateDir, openCodeState: options.openCodeState, signal }),
     inUse: () => present.size > 0,
     // the persisted list, read as each alert is scheduled and again as it goes out
@@ -409,11 +403,6 @@ export function createStatusHub<Owner, Lease>({ options, devices, preferences, c
   const logPushError = (error: unknown): void => {
     console.error(`web push: ${error instanceof Error ? error.message : String(error)}`);
   };
-  // a device durably enrolled: every other device with alerts on hears of it at once (server/devices.ts announces
-  // only after the registry write succeeded, so nothing is told of a pairing that did not happen)
-  // nor is the browser that paired, by its stream keys, whatever access its subscriptions came through
-  devices.onPaired((event, origin) => { push.devicePaired(event, origin).catch(logPushError); });
-
   /** Status of EVERY pane, attached or not: one collector feeds all connected clients and web push. */
   function omoChanged(paneId: string, derived: AgentStatus, background: number, turn: boolean, rest: OmoRest | undefined): void {
     // OmO's own turn, which herdr's status never shows: back at work, its form has had its answer

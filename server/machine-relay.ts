@@ -7,17 +7,17 @@ import type { MachineManager } from "./machines.ts";
 import type { ServerMessage, SessionSnapshot } from "../shared/protocol.ts";
 import { LARGE_REPLY_BYTES } from "./herdr/client.ts";
 
-/** Unlinkable receipt identities for one connection server lifetime; no browser-controlled namespace crosses PCs or devices. */
+/** Unlinkable receipt identities for one connection server lifetime; no browser-controlled namespace crosses PCs. */
 export class RelayReceiptIds {
   private readonly key = randomBytes(32);
 
   /**
-   * Returns an opaque UUID stable for this server, PC, authenticated device and browser UUID.
+   * Returns an opaque UUID stable for this server, PC and browser UUID.
    * Invalid browser UUIDs return undefined; restarting the server invalidates derived identities.
    */
-  scope(machine: string, device: string | undefined, browser: string): string | undefined {
+  scope(machine: string, browser: string): string | undefined {
     if (!RECEIPT_RESUME_ID.test(browser)) return undefined;
-    const digest = createHmac("sha256", this.key).update(JSON.stringify([machine, device ?? null, browser])).digest();
+    const digest = createHmac("sha256", this.key).update(JSON.stringify([machine, browser])).digest();
     digest[6] = (digest[6]! & 0x0f) | 0x40;
     digest[8] = (digest[8]! & 0x3f) | 0x80;
     const hex = digest.subarray(0, 16).toString("hex");
@@ -78,7 +78,7 @@ export class MachineRelay {
    * `browserSnapshot`: the PC's snapshot frame as the browser is told it, without the token values this
    * server's sidebar rows hide (#2160). Other frames pass as they came.
    */
-  constructor(manager: MachineManager, id: string, private readonly readOnly: boolean, private readonly browserSnapshot: (snapshot: SessionSnapshot) => SessionSnapshot,
+  constructor(manager: MachineManager, id: string, private readonly browserSnapshot: (snapshot: SessionSnapshot) => SessionSnapshot,
     private readonly receiptId?: (browser: string) => string | undefined) {
     const endpoint = manager.endpoint(id);
     if (!endpoint) throw new Error("This PC is disconnected");
@@ -87,7 +87,6 @@ export class MachineRelay {
     this.ready = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => { this.close(); reject(new Error("Remote websocket timed out")); }, 15_000);
       this.upstream.addEventListener("open", () => {
-        if (this.readOnly) this.upstream.send(JSON.stringify({ type: "role", mode: "observe" }));
         clearTimeout(timeout); resolve();
       }, { once: true });
       this.upstream.addEventListener("error", () => { clearTimeout(timeout); reject(new Error("Remote websocket unavailable")); this.close(); }, { once: true });
@@ -110,16 +109,12 @@ export class MachineRelay {
   }
   /**
    * A frame as the browser is told it: a frame that names `tokens` anywhere is read, whatever its key
-   * order, and a snapshot among them re-written where a value leaves; a watch-only browser's features frame
-   * leaves its `paste_dir`; the rest pass unread.
+   * order, and a snapshot among them re-written where a value leaves; the rest pass unread.
    */
   private told(raw: string): string {
-    const pasteDir = this.readOnly && raw.includes('"paste_dir"');
-    if (!raw.includes('"tokens"') && !pasteDir) return raw;
+    if (!raw.includes('"tokens"')) return raw;
     let message: ServerMessage;
     try { message = JSON.parse(raw) as ServerMessage; } catch { return raw; }
-    // a watch-only browser is not told the PC's upload folder (server/core/socket.ts), whatever its bridge says
-    if (message.type === "features" && pasteDir) { const { paste_dir: _folder, ...features } = message; return JSON.stringify(features); }
     if (message.type !== "snapshot") return raw;
     const snapshot = this.browserSnapshot(message.snapshot);
     return snapshot === message.snapshot ? raw : JSON.stringify({ ...message, snapshot });
@@ -144,8 +139,7 @@ export class MachineRelay {
     if (this.client.send(raw) === 0) this.close(OUTPUT_STALLED_CLOSE_CODE, "output delivery failed");
   }
   /**
-   * Forwards browser frames with scoped resume IDs only for controlling attachments; raw browser
-   * resume IDs and observer resume IDs are stripped. Malformed frames remain upstream's responsibility.
+   * Forwards browser frames with scoped resume IDs; raw browser resume IDs are stripped. Malformed frames remain upstream's responsibility.
    */
   message(raw: string | Buffer): void {
     if (this.closed) return;
@@ -154,14 +148,11 @@ export class MachineRelay {
     try {
       const message = JSON.parse(text);
       if (message?.type === "attach") {
-        // The bridge authenticates this server's shared token, not the browser's device.
-        // Only controlling clients receive a server-scoped receipt identity.
-        const id = !this.readOnly && typeof message.receipt_resume_id === "string" ? this.receiptId?.(message.receipt_resume_id) : undefined;
+        // The bridge authenticates this server's shared token, not the browser.
+        const id = typeof message.receipt_resume_id === "string" ? this.receiptId?.(message.receipt_resume_id) : undefined;
         if (id) message.receipt_resume_id = id;
         else delete message.receipt_resume_id;
         text = JSON.stringify(message);
-      } else if (this.readOnly && message?.type === "role") {
-        text = JSON.stringify({ type: "role", mode: "observe" });
       }
     } catch { /* malformed frames are answered by the upstream server */ }
     if (this.upstream.bufferedAmount + Buffer.byteLength(text) > OUTPUT_HARD_BYTES) { this.close(OUTPUT_STALLED_CLOSE_CODE, "input overflow"); return; }

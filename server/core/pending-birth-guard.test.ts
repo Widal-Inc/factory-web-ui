@@ -65,7 +65,7 @@ async function drain({ after = () => {}, afterPaste = () => {}, mode = "gjc", ta
   const agent = mode === "skill" || mode === "missing" ? "gjc" : mode;
   const pane = { pane_id: "p", terminal_id: "p", workspace_id: "w", tab_id: "t", agent, agent_status: "working", cwd: "/tmp", focused: false, revision: 0 } as HerdrPane;
   const frames: ServerMessage[] = [];
-  const owner = { data: connectionData({ deviceId: undefined, readOnly: false }), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value) as ServerMessage); return 1; } } as unknown as Client;
+  const owner = { data: connectionData({}), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value) as ServerMessage); return 1; } } as unknown as Client;
   owner.data.attached.set("p", { keepSize: false });
   let tail: Promise<unknown> = Promise.resolve();
   const serialize = <T>(_pane: string, task: () => T | Promise<T>): Promise<T> => { const run = tail.catch(() => {}).then(task); tail = run; return run; };
@@ -150,7 +150,7 @@ it("keeps a Pi receipt waiting while the agent's start reads as unknown for a mo
     spyOn(client, "paneSendText").mockResolvedValue(undefined);
     spyOn(client, "paneSendKeys").mockResolvedValue(undefined);
     const frames: ServerMessage[] = [];
-    const owner = { data: connectionData({ deviceId: undefined, readOnly: false }), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value) as ServerMessage); return 1; } } as unknown as Client;
+    const owner = { data: connectionData({}), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value) as ServerMessage); return 1; } } as unknown as Client;
     owner.data.attached.set("p", { keepSize: false });
     let tail: Promise<unknown> = Promise.resolve();
     const serialize = <T>(_pane: string, task: () => T | Promise<T>): Promise<T> => { const run = tail.catch(() => {}).then(task); tail = run; return run; };
@@ -193,7 +193,7 @@ it("keeps a first message waiting, not held, while its launched agent's start re
   spyOn(processStart, "processStartedAtAsync").mockImplementation(async () => birth);
   spyOn(client, "paneProcessInfo").mockResolvedValue({ pane_id: "p", shell_pid: 41000, foreground_processes: [{ pid: 41001, name: "codex", argv: ["codex"] }] } as Awaited<ReturnType<typeof client.paneProcessInfo>>);
   const frames: ServerMessage[] = [];
-  const owner = { data: connectionData({ deviceId: undefined, readOnly: false }), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value) as ServerMessage); return 1; } } as unknown as Client;
+  const owner = { data: connectionData({}), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value) as ServerMessage); return 1; } } as unknown as Client;
   owner.data.attached.set("p", { keepSize: false });
   let tail: Promise<unknown> = Promise.resolve();
   const serialize = <T>(_pane: string, task: () => T | Promise<T>): Promise<T> => { const run = tail.catch(() => {}).then(task); tail = run; return run; };

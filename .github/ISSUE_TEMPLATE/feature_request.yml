@@ -35,7 +35,7 @@ body:
         - Phone, installed app and alerts
         - Sidebar and navigation
         - Remote PCs
-        - Access, pairing and devices
+        - Access and sign-in
         - Install and updates
         - Other
   - type: textarea

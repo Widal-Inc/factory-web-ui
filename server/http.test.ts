@@ -10,7 +10,7 @@ import { createServer } from "./index.ts";
 
 describe("errorResponse", () => {
   it("answers a 500 with a fixed message and a correlation id, never the exception's own", async () => {
-    const secret = "ENOENT: no such file or directory, open '/home/someone/.config/herdr-web-ui/devices.json'";
+    const secret = "ENOENT: no such file or directory, open '/home/someone/.config/herdr-web-ui/push-subscriptions.json'";
     const response = errorResponse(new Error(secret));
     expect(response.status).toBe(500);
     const body = await response.json() as { error: { code: string; message: string } };

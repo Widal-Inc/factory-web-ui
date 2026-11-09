@@ -8,9 +8,7 @@
  * flag whenever the request arrived over TLS or through a TLS-terminating proxy.
  *
  * An empty token disables this gate; server/access.ts then decides by where a request comes
- * from, what Tailscale says about it, and whether it holds a paired device's cookie (the
- * helpers for that cookie live here too), and index.ts warns when a public bind address is
- * combined with neither.
+ * from, and index.ts warns when a public bind address is combined with no token.
  */
 
 import { timingSafeEqual } from "node:crypto";
@@ -20,20 +18,12 @@ import { PAGE_MEDIA_ROUTE } from "./file-view.ts";
 import { badRequest, jsonResponse } from "./http.ts";
 
 export const TOKEN_COOKIE = "ovis_token";
-/** a paired device's own credential; the same flags as the token cookie */
-export const DEVICE_COOKIE = "ovis_device";
 /** their names before the rename: a browser signed in then keeps sending them for up to a year */
 const LEGACY_TOKEN_COOKIE = "herdr_web_token";
-const LEGACY_DEVICE_COOKIE = "herdr_web_device";
 
 /** The token cookie a request carries, under its name or the one before the rename. */
 export function tokenCookie(cookies: Map<string, string>): string | undefined {
   return cookies.get(TOKEN_COOKIE) ?? cookies.get(LEGACY_TOKEN_COOKIE);
-}
-
-/** The paired device's cookie a request carries, under its name or the one before the rename. */
-export function deviceCookieValue(cookies: Map<string, string>): string | undefined {
-  return cookies.get(DEVICE_COOKIE) ?? cookies.get(LEGACY_DEVICE_COOKIE);
 }
 
 function clearCookie(name: string): string {
@@ -42,7 +32,6 @@ function clearCookie(name: string): string {
 
 /** Set with a fresh credential, so the browser stops sending the old name beside the new one. */
 export const CLEAR_LEGACY_TOKEN_COOKIE = clearCookie(LEGACY_TOKEN_COOKIE);
-export const CLEAR_LEGACY_DEVICE_COOKIE = clearCookie(LEGACY_DEVICE_COOKIE);
 export const COOKIE_MAX_AGE_SECONDS = 31536000;
 
 /**
@@ -64,7 +53,6 @@ const AUTH_BACKOFF_MAX_MS = 60_000;
 export const AUTH_CLIENTS_MAX = 1024;
 const authAttempts = new Map<string, { failures: number; until: number }>();
 const BEARER_PREFIX = "bearer ";
-const DEVICE_PREFIX = "device ";
 const encoder = new TextEncoder();
 
 /** Malformed pairs are skipped: a junk cookie from another app must not deny the user. */
@@ -99,17 +87,6 @@ export function isAuthenticated(request: Request, token: string): boolean {
   return bearerMatches(request, token);
 }
 
-/**
- * A paired device's own token sent as `Authorization: Device <token>`, in place of its cookie: a
- * script that paired for its token in JSON (#2744). Matched exactly as the cookie is, so the same
- * role, last-seen and revocation hold; it is never the shared token.
- */
-export function deviceAuthorizationValue(request: Request): string | undefined {
-  const authorization = request.headers.get("authorization") ?? "";
-  if (authorization.slice(0, DEVICE_PREFIX.length).toLowerCase() !== DEVICE_PREFIX) return undefined;
-  return authorization.slice(DEVICE_PREFIX.length) || undefined;
-}
-
 /** The token came in an `Authorization` header: a proxy or a script sends it with every request, so signing out cannot take it away. */
 export function bearerMatches(request: Request, token: string): boolean {
   if (token === "") return false;
@@ -118,18 +95,18 @@ export function bearerMatches(request: Request, token: string): boolean {
   return matches(authorization.slice(BEARER_PREFIX.length), token);
 }
 
-/** /api/health, /api/auth and /api/devices/pair stay open so a client can discover the gate and pass it. */
+/** /api/health and /api/auth stay open so a client can discover the gate and pass it. */
 export function requiresAuth(pathname: string): boolean {
   if (pathname === "/ws") return true;
   if (!pathname.startsWith("/api/")) return false;
   // a rendered page's media address is its own credential, kept to the client that rendered it for a fixed time
   // (file-view.ts): the page has no origin and sends no cookie
   if (PAGE_MEDIA_ROUTE.test(pathname)) return false;
-  return pathname !== "/api/health" && pathname !== "/api/auth" && pathname !== "/api/devices/pair";
+  return pathname !== "/api/health" && pathname !== "/api/auth";
 }
 
-export function unauthorizedJson(reason: "pairing_required" | "token_required" = "token_required"): Response {
-  return jsonResponse({ error: { code: "unauthorized", message: reason === "pairing_required" ? "pair this device, or use the token" : "token required" } }, 401);
+export function unauthorizedJson(): Response {
+  return jsonResponse({ error: { code: "unauthorized", message: "token required" } }, 401);
 }
 
 export function isSecureRequest(request: Request): boolean {
@@ -141,13 +118,6 @@ function sessionCookie(token: string, secure: boolean): string {
   const attributes = `Path=/; HttpOnly; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE_SECONDS}`;
   return `${TOKEN_COOKIE}=${encodeURIComponent(token)}; ${attributes}${secure ? "; Secure" : ""}`;
 }
-
-export function deviceCookie(token: string, secure: boolean): string {
-  return `${DEVICE_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE_SECONDS}${secure ? "; Secure" : ""}`;
-}
-
-/** The Set-Cookie that drops a browser's device cookie: signing out, or revoking every device (its own included). */
-export const DEVICE_COOKIE_CLEARED = clearCookie(DEVICE_COOKIE);
 
 export function noContent(...setCookies: string[]): Response {
   const headers = new Headers();
@@ -188,7 +158,7 @@ type Channel = "sign-in" | "presented";
  * a plain TCP tunnel) gets a fresh own budget per guess but no fresh share. It is a window, not
  * a run: a browser left polling with an old cookie (one failure a minute once its own wait is at
  * its cap) never fills it, and it empties on its own. Full, it holds back only addresses that
- * have not got in lately (`admitted`), so the owner's devices keep working through an attack.
+ * have not got in lately (`admitted`), so the owner's own clients keep working through an attack.
  */
 const SHARED_FAILURES = AUTH_FAILURE_BUDGET * 10;
 const SHARED_WINDOW_MS = 10 * 60_000;
@@ -314,8 +284,7 @@ export function forgetAuthAttempts(): void {
 
 export async function handleAuthRequest(request: Request, token: string, client: string | null = null): Promise<Response> {
   if (request.method === "DELETE") {
-    // signing out drops both credentials this browser may hold
-    return noContent(clearCookie(TOKEN_COOKIE), clearCookie(DEVICE_COOKIE), CLEAR_LEGACY_TOKEN_COOKIE, CLEAR_LEGACY_DEVICE_COOKIE);
+    return noContent(clearCookie(TOKEN_COOKIE), CLEAR_LEGACY_TOKEN_COOKIE);
   }
   if (request.method !== "POST") return badRequest("method_not_allowed", "use POST or DELETE");
   // Gate off: answering 204 without a cookie lets one client flow work either way.

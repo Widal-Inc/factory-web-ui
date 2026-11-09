@@ -1,13 +1,10 @@
 /**
  * Where the first-run setup guide stands (components/SetupGuide.tsx): the welcome, then one setup
  * screen that checks the PC for coding agents and either starts the first workspace with one it found
- * or installs one, with Connect your phone beside Start: the page's own address or Settings → Phone
- * (phoneBoxMode). It opens by
- * itself only on a fresh install, and once: the record in this browser says it was closed, or that it
- * was left open.
+ * or installs one. It opens by itself only on a fresh install, and once: the record in this browser
+ * says it was closed, or that it was left open.
  */
 import type { AgentCatalogEntry, AgentCatalogRow } from "../../shared/agent-catalog.ts";
-import type { HealthAuth } from "../../shared/protocol.ts";
 import type { SetupStep } from "./agentSetup.ts";
 import type { ProviderUsage } from "../../shared/usage.ts";
 
@@ -80,18 +77,6 @@ export function agentRows(catalog: readonly AgentCatalogRow[] | null, ready: rea
   const first = FIRST.flatMap((id) => harness.filter((row) => row.id === id));
   const rest = harness.filter((row) => !FIRST.includes(row.id));
   return [...first, ...rest.filter((row) => installedHere(row, ready)), ...rest.filter((row) => !installedHere(row, ready))];
-}
-
-/**
- * What the guide's Connect your phone box does: wait until the address a phone can open and this
- * browser's access are known; leave it to Settings → Phone where there is no such address (the PC's
- * loopback) or the server does not say how this browser got in; pair this browser first where it is
- * in only because nothing is paired yet (a paired phone turns sign-in on); else show the QR.
- */
-export function phoneBoxMode(address: string | null | undefined, auth: HealthAuth | null): "wait" | "settings" | "pair-self" | "qr" {
-  if (address === undefined || auth === null) return "wait";
-  if (address === null || auth.via === undefined) return "settings";
-  return auth.via === "open" ? "pair-self" : "qr";
 }
 
 /** How long a tile's install may run without the PC listing the agent before it stops spinning (a prompt, a closed tab). */
@@ -184,15 +169,11 @@ export interface FreshFacts {
   savedSettings: boolean;
   /** GET /api/preferences: 0 until a browser of this server first shared a setting */
   sharedRevision: number | null;
-  /** closed: a device was paired with this server */
-  pairingGate: "open" | "closed" | "unavailable" | null;
-  /** a watching device sets nothing up */
-  watching: boolean;
 }
 
 export function autoOpen(facts: FreshFacts): boolean {
-  if (facts.workspaces === null || facts.sharedRevision === null || facts.watching) return false;
-  return facts.workspaces === 0 && !facts.savedSettings && facts.sharedRevision === 0 && facts.pairingGate !== "closed";
+  if (facts.workspaces === null || facts.sharedRevision === null) return false;
+  return facts.workspaces === 0 && !facts.savedSettings && facts.sharedRevision === 0;
 }
 
 export const GUIDE_STORAGE_KEY = "ovis:setup-guide";

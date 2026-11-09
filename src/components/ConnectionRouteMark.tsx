@@ -10,7 +10,7 @@ import { useT } from "../lib/i18n.ts";
  * one glyph and one short word, the route said in its title whatever the connection's state (the
  * chip beside it tells that). It is about the page's own connection, which every PC the sidebar
  * lists shares, so it sits with the chip, not on a PC. Tailscale and LAN are names, the same in
- * every language. Nothing in the phone app's demo, which reaches no PC.
+ * every language.
  */
 export function ConnectionRouteMark({ ingress }: { ingress: ObservedIngress | null }) {
   const t = useT();
@@ -18,8 +18,7 @@ export function ConnectionRouteMark({ ingress }: { ingress: ObservedIngress | nu
   // facts it brought: a missing answer is no evidence of another route
   const known = useRef<ObservedIngress | null>(null);
   if (ingress !== null) known.current = ingress;
-  const route = connectionRoute({ ingress: known.current, protocol: window.location.protocol, hostname: window.location.hostname });
-  if (route === null) return null;
+  const route = connectionRoute({ ingress: known.current, hostname: window.location.hostname });
   const [Icon, word, title]: [LucideIcon, string, string] =
     route === "tailscale" ? [Network, "Tailscale", t("Via Tailscale")]
     : route === "tailscale-name" ? [Network, "Tailscale", t("Via Tailscale, or Funnel from the internet")]

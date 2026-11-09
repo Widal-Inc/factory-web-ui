@@ -5,7 +5,6 @@ import { delimiter, join } from "node:path";
 import { parsePatchFiles } from "@pierre/diffs";
 
 import type { ApiError, RepoBranchComparison, RepoDiffFileList, RepoDiffFilePatch, RepoDiffRefs } from "../shared/protocol.ts";
-import { DeviceStore } from "./devices.ts";
 import { createServer } from "./index.ts";
 import { REPO_DIFF_CONTEXT_LINES, REPO_DIFF_MAX_FILES, REPO_DIFF_MAX_LIST_BYTES, REPO_DIFF_MAX_PATCH_BYTES, REPO_DIFF_MAX_REFS, repoDiffFile, repoDiffFiles, repoDiffRefs } from "./repo-diff.ts";
 
@@ -682,7 +681,6 @@ describe("GET /api/workspace/diff/*", () => {
   let root: string;
   let server: ReturnType<typeof createServer>;
   let base: string;
-  let watchCookie: string;
   const stateDir = mkdtempSync(join(tmpdir(), "herdr-repo-diff-state-"));
   const owner = { authorization: "Bearer test-repo-diff" };
   beforeAll(() => {
@@ -691,11 +689,6 @@ describe("GET /api/workspace/diff/*", () => {
     git(root, "add", ".");
     git(root, "commit", "-q", "-m", "first");
     writeFileSync(join(root, "a.txt"), "two\n");
-    const store = new DeviceStore(stateDir);
-    const watchToken = store.pair(store.startPairing().code, "Watch", "watch")!.token;
-    // a first pairing is a device only once its cookie came back: that return is what saves it
-    expect(store.match(watchToken)).not.toBeNull();
-    watchCookie = `ovis_device=${watchToken}`;
     server = createServer({ port: 0, stateDir, token: "test-repo-diff", machines: false });
     base = `http://127.0.0.1:${server.port}`;
   });
@@ -774,7 +767,7 @@ describe("GET /api/workspace/diff/*", () => {
     expect((await posted.json() as ApiError).error.code).toBe("method_not_allowed");
   });
 
-  it("is closed to a stranger, to another site's page and to a device that can only watch", async () => {
+  it("is closed to a stranger and to another site's page", async () => {
     expect((await files(directory(), {})).status).toBe(401);
     const crossSite = await files(directory(), { ...owner, "sec-fetch-site": "cross-site" });
     expect(crossSite.status).toBe(403);
@@ -782,11 +775,5 @@ describe("GET /api/workspace/diff/*", () => {
     const crossSiteRefs = await fetch(`${base}/api/workspace/diff/refs?${directory()}`, { headers: { ...owner, "sec-fetch-site": "cross-site" } });
     expect(crossSiteRefs.status).toBe(403);
     expect((await crossSiteRefs.json() as ApiError).error.code).toBe("cross_site");
-    expect((await fetch(`${base}/api/session`, { headers: { cookie: watchCookie } })).status).not.toBe(401);
-    for (const path of ["workspace/diff/files", "workspace/diff/file", "workspace/diff/refs", "machines/pc1/workspace/diff/files", "machines/pc1/workspace/diff/file", "machines/pc1/workspace/diff/refs", "machines/local/workspace/diff/file"]) {
-      const response = await fetch(`${base}/api/${path}?${directory()}&path=a.txt`, { headers: { cookie: watchCookie } });
-      expect([path, response.status]).toEqual([path, 403]);
-      expect((await response.json() as ApiError).error.code).toBe("read_only");
-    }
   });
 });

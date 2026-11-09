@@ -14,8 +14,7 @@ import * as claudeStore from "./claude-store.ts";
 import * as agentLaunchModule from "./agent-launch.ts";
 import * as piModule from "./pi.ts";
 import { MachineManager } from "./machines.ts";
-import { DeviceStore } from "./devices.ts";
-import { DEVICE_COOKIE } from "./auth.ts";
+import { TOKEN_COOKIE } from "./auth.ts";
 
 type PendingUpdate = Extract<ServerMessage, { type: "pending-messages" }>;
 
@@ -220,7 +219,7 @@ async function setup(label: string, agent = "claude", screen = "› Message\n", 
 }
 
 describe("resumable follow-up receipts (#2421)", () => {
-  it.each(["sent", "discarded"] as const)("recovers a relayed Codex %s receipt without typing again or sharing it with another device", async (outcome) => {
+  it.each(["sent", "discarded"] as const)("recovers a relayed Codex %s receipt without typing again or sharing it with another browser", async (outcome) => {
     const f = await setup("remote-codex-resume", "codex", "› Message\n", { bridgeToken: "fixture-bridge-token", machines: false });
     const endpoint = MachineManager.prototype.endpoint;
     const remoteId = "receipt-test-remote";
@@ -228,13 +227,7 @@ describe("resumable follow-up receipts (#2421)", () => {
       return id === remoteId ? { url: `http://127.0.0.1:${f.port}`, token: "fixture-bridge-token" } : endpoint.call(this, id);
     });
     const stateDir = join(root, `remote-receipt-central-${outcome}`);
-    const devices = new DeviceStore(stateDir);
-    const pair = (role: "drive" | "watch") => {
-      const paired = devices.pair(devices.startPairing().code, "Receipt test device", role)!;
-      devices.match(paired.token);
-      return `${DEVICE_COOKIE}=${paired.token}`;
-    };
-    const owner = pair("drive"), other = pair("drive"), watcher = pair("watch");
+    const owner = `${TOKEN_COOKIE}=fixture-server-token`;
     const central = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-server-token", stateDir });
     const sockets: Socket[] = [];
     const connect = async (resumeId: string, cookie = owner) => {
@@ -259,9 +252,9 @@ describe("resumable follow-up receipts (#2421)", () => {
       await f.removed(row.id, expected, browser);
       const bytes = f.bytes(), writes = herdrWrites.slice();
       await browser.disconnect();
-      // A guessed browser UUID cannot recover another authenticated device's receipts.
-      for (const [id, cookie] of [[resumeId, other], [resumeId, watcher], [crypto.randomUUID(), owner]] as const) {
-        const stranger = await connect(id, cookie);
+      // A guessed browser UUID cannot recover another browser's receipts.
+      for (const id of [crypto.randomUUID()]) {
+        const stranger = await connect(id);
         stranger.send({ type: "ping", id: 985 });
         await stranger.wait((frame) => frame.type === "pong" && frame.id === 985);
         expect(stranger.seen.some((frame) => frame.type === "pending-messages" && frame.removed?.some((item: { id: string }) => item.id === row.id))).toBe(false);
@@ -286,13 +279,7 @@ describe("resumable follow-up receipts (#2421)", () => {
       return id === remoteId ? { url: `http://127.0.0.1:${f.port}`, token: "fixture-bridge-token" } : endpoint.call(this, id);
     });
     const stateDir = join(root, "remote-receipt-central-closed-owner");
-    const devices = new DeviceStore(stateDir);
-    const pair = (role: "drive" | "watch") => {
-      const paired = devices.pair(devices.startPairing().code, "Receipt test device", role)!;
-      devices.match(paired.token);
-      return `${DEVICE_COOKIE}=${paired.token}`;
-    };
-    const owner = pair("drive"), other = pair("drive"), watcher = pair("watch");
+    const owner = `${TOKEN_COOKIE}=fixture-server-token`;
     const central = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-server-token", stateDir });
     const sockets: Socket[] = [];
     const connect = async (resumeId: string, cookie = owner) => {
@@ -348,8 +335,8 @@ describe("resumable follow-up receipts (#2421)", () => {
       expect(retained.store.outcome(retained.owner, f.pane, row.id)).toBe("sent");
       const deliveredWrites = herdrWrites.slice();
       await resender.disconnect();
-      for (const [id, cookie] of [[resumeId, other], [resumeId, watcher], [crypto.randomUUID(), owner]] as const) {
-        const stranger = await connect(id, cookie);
+      for (const id of [crypto.randomUUID()]) {
+        const stranger = await connect(id);
         stranger.send({ type: "ping", id: 989 });
         await stranger.wait((frame) => frame.type === "pong" && frame.id === 989);
         expect(stranger.seen.some((frame) => frame.type === "pending-messages" && frame.removed?.some((item: { id: string }) => item.id === row.id))).toBe(false);

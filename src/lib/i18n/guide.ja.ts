@@ -12,7 +12,6 @@ export const GUIDE_JA: Record<string, string> = {
   "Skip setup": "セットアップをスキップ",
   "Already installed one?": "もうインストールしましたか?",
   "Look again": "もう一度確認",
-  "This browser is paired first: other browsers now need pairing too.": "このブラウザーを先にペアリングしました。ほかのブラウザーもペアリングが必要になります。",
   "You're set up": "準備ができました",
   "Ovis found these on this PC. Start opens your first project with the one picked.": "この PC で見つかりました。開始すると、選んだもので最初のプロジェクトが開きます。",
   "Pick an AI coding helper": "AI コーディングアシスタントを選んでください",
@@ -23,7 +22,6 @@ export const GUIDE_JA: Record<string, string> = {
   "Ovis finds or installs an AI coding helper and opens your first project.": "Ovis が AI コーディングアシスタントを見つけるかインストールして、最初のプロジェクトを開きます。",
   "Plan usage will show in the sidebar for your signed-in accounts.": "サインイン済みのアカウントのプラン使用量がサイドバーに表示されます。",
   "Start with {agent}": "{agent} で開始",
-  "Connect your phone": "スマートフォンをつなぐ",
   "{agent} can't start from here. Open a workspace from the sidebar instead.": "ここからは {agent} を開始できません。サイドバーからワークスペースを開いてください。",
   "Checking this PC…": "この PC を確認しています…",
   "Looking for AI coding helpers that are already installed.": "インストール済みの AI コーディングアシスタントを探しています。",
@@ -35,5 +33,4 @@ export const GUIDE_JA: Record<string, string> = {
   "The workspace opened, but {agent} did not start. Open it to see why in its terminal.": "ワークスペースは開きましたが、{agent} が起動しませんでした。開いてターミナルで理由を確認してください。",
   "Open the workspace": "ワークスペースを開く",
   "{agent} is not signed in yet.": "{agent} はまだログインしていません。",
-  "Open this address on your phone": "スマートフォンでこのアドレスを開いてください",
 };

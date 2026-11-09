@@ -2539,9 +2539,7 @@ try {
   await signOutConfirm.getByRole("button", { name: "Sign out", exact: true }).click();
   await securedPage.getByTestId("token-gate").waitFor();
   assert.equal((await securedContext.request.get(`${securedOrigin}/api/session`)).status(), 401);
-  const pairing = await securedContext.request.post(`${securedOrigin}/api/devices/pair/start`, { headers: { authorization: "Bearer browser-test-token", "x-herdr-machine": "1" } });
-  const { code } = await pairing.json();
-  await securedContext.request.post(`${securedOrigin}/api/devices/pair`, { data: { code, label: "Browser test device" } });
+  await securedContext.request.post(`${securedOrigin}/api/auth`, { data: { token: "browser-test-token" } });
   await securedPage.setViewportSize({ width: 390, height: 844 });
   await securedPage.reload();
   await securedPage.locator(".app-header.is-zoned").waitFor();
@@ -2554,7 +2552,7 @@ try {
   if (securedEvidence) await securedEvidence.finish();
   await securedContext.close();
   assertCspClean(csp, "the token gate loads with no CSP violation");
-  console.log("PASS Settings sign out: cancel preserves access, failure permits retry, token and paired-device sign out return to the access gate");
+  console.log("PASS Settings sign out: cancel preserves access, failure permits retry, signing out again on a phone returns to the access gate each time");
 } catch (error) {
   for (const evidence of evidenceSessions) {
     if (evidence.isOpen()) await evidence.captureFailure(error);

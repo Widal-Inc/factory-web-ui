@@ -1,13 +1,11 @@
 /**
  * Who a request is and whether it gets in. There is no user database: a request is trusted for
- * where it comes from (this PC, with no proxy in front) or for what it holds (a paired device's
- * cookie, or the shared token). A token, when one is configured, is required of everything but a
- * paired device, this PC included: a plain local connection, since the remote-PC bridge runs on a
- * loopback port of a PC other people may use.
- * Without a token, and until the first device is paired, a direct connection is let in as it
- * always was. A request that came through a proxy or Funnel (a forwarding header, or Funnel's own)
- * is not: it is refused until it holds the token (or a paired device's cookie), because what a
- * proxy in front of this server forwards says nothing about who is behind it.
+ * where it comes from (this PC, with no proxy in front) or for what it holds (the shared token).
+ * A token, when one is configured, is required of everything, this PC included: a plain local
+ * connection, since the remote-PC bridge runs on a loopback port of a PC other people may use.
+ * Without a token, a direct loopback connection is let in. Everything else is refused: a request
+ * that came through a proxy or Funnel (a forwarding header, or Funnel's own) says nothing about who
+ * is behind it, and a connection from another address holds no token.
  *
  * A proxy on this PC connects from loopback like a local client does, so it is known only by
  * what it sends: a forwarding header, or a Host that is not a name for this machine. A proxy
@@ -15,8 +13,7 @@
  * nothing) cannot be told from a local client: only a token closes that setup.
  */
 import { BlockList, isIP } from "node:net";
-import type { AccessRefusal, AccessVia, BindScope, DeviceRole, ObservedIngress } from "../shared/protocol.ts";
-import type { DeviceMatch } from "./devices.ts";
+import type { AccessRefusal, AccessVia, BindScope, ObservedIngress } from "../shared/protocol.ts";
 
 export interface AccessInput {
   /** the connection came from this machine: 127/8, ::1 or their IPv4-mapped forms */
@@ -29,15 +26,11 @@ export interface AccessInput {
   funnel: boolean;
   /** the shared token matched (cookie or bearer) */
   tokenMatched: boolean;
-  /** the device the cookie belongs to */
-  device: DeviceMatch | null;
   tokenConfigured: boolean;
-  /** a device cookie was confirmed by DeviceStore.match: the gate is closed to strangers */
-  gated: boolean;
 }
 
 export type Access =
-  | { level: "full"; via: AccessVia; role: DeviceRole; device?: DeviceMatch }
+  | { level: "full"; via: AccessVia }
   | { level: "none"; reason: AccessRefusal };
 
 export function isLoopbackAddress(address: string): boolean {
@@ -55,19 +48,6 @@ export function isLoopbackBind(hostname: string): boolean {
   // the address tests apply to an address: a DNS name such as 127.devbox.example may point anywhere
   const literal = /^[\d.]+$/.test(name) || name.includes(":");
   return name === "localhost" || name.endsWith(".localhost") || (literal && isLoopbackAddress(name));
-}
-
-/**
- * Is the server answering beyond this PC and its tailnet while no access token is set and no
- * device has ever been paired? Every client that can reach that address is let in as `open`
- * (see `decideAccess`), so this is the state a warning belongs to — told to whoever already
- * got in, never used to change a default.
- *
- * `hostname` is the address the server is bound to, not the one the request arrived on: a
- * loopback bind is local, and a Tailscale-only bind is reachable only within the tailnet.
- */
-export function lanExposed(input: { hostname: string; tokenConfigured: boolean; gated: boolean }): boolean {
-  return bindScope(input.hostname) === "other" && !input.tokenConfigured && !input.gated;
 }
 
 /**
@@ -154,22 +134,17 @@ tailnetIpv6.addSubnet("fd7a:115c:a1e0::", 48, "ipv6");
 
 /**
  * The owner, for actions that change what runs on this PC's PCs (updates, installs, approving a
- * setup, server/machine-api.ts): a driving sign-in on this PC, its token, or a driving device paired
- * with this install (his phone, his other PCs). Never a visitor of an
- * open install (nothing paired), or a device that only watches.
+ * setup, server/machine-api.ts): whoever got in. There is one owner and no other role.
  */
 export function ownerAccess(access: Access): boolean {
-  return access.level === "full" && access.role === "drive" && access.via !== "open";
+  return access.level === "full";
 }
 
 export function decideAccess(input: AccessInput): Access {
-  if (input.tokenMatched) return { level: "full", via: "token", role: "drive" };
-  if (input.device !== null) return { level: "full", via: "device", role: input.device.role, device: input.device };
+  if (input.tokenMatched) return { level: "full", via: "token" };
   if (input.tokenConfigured) return { level: "none", reason: "token_required" };
   // a proxy or Funnel in front, and nothing held: what it forwards says nothing about who is behind it
-  if (input.funnel || input.forwardingHeaders) return { level: "none", reason: "pairing_required" };
-  if (input.loopback && !input.forwarded) return { level: "full", via: "local", role: "drive" };
-  // from here a request that merely names another host (a test harness, a proxy that sends no header) is as open as the LAN
-  if (!input.gated) return { level: "full", via: "open", role: "drive" };
-  return { level: "none", reason: "pairing_required" };
+  if (input.funnel || input.forwardingHeaders) return { level: "none", reason: "token_required" };
+  if (input.loopback && !input.forwarded) return { level: "full", via: "local" };
+  return { level: "none", reason: "token_required" };
 }

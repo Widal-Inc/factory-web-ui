@@ -199,7 +199,6 @@ export const FILES_JA: Record<string, string> = {
   "This file mixes line endings. Edit it in the terminal.": "このファイルは改行コードが混在しています。ターミナルで編集してください。",
   "Saving files from the app isn't available on this PC yet.": "この PC ではまだアプリからファイルを保存できません。",
   "This file can't be written here.": "ここではこのファイルに書き込めません。",
-  "Only a device that drives this PC can edit its files.": "この PC を操作できるデバイスだけがファイルを編集できます。",
   "The file could not be saved.": "ファイルを保存できませんでした。",
   "Text of {name}": "{name} の内容",
   "Documents": "ドキュメント",

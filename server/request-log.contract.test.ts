@@ -4,7 +4,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "./index.ts";
-import { DeviceStore } from "./devices.ts";
 import { MachineManager } from "./machines.ts";
 import { fileInfo, fileResponse } from "./file-view.ts";
 import { serveStatic } from "./static.ts";
@@ -33,7 +32,6 @@ it("attributes reserved setup job lookups to the dispatch branch rather than a m
     // Adjacent dispatch branches keep their own templates and never copy private segments.
     for (const [path, route, status] of [
       ["/api/machines/private-pc/pane/conversation", "/api/machines/:machine_id/pane/conversation", 503],
-      ["/api/devices/private-label", "/api/devices/:device_id", 400],
       ["/api/fs/page-media/private-token", "/api/fs/page-media/:media_id", 404],
       ["/api/pane/private-pane", "unmatched", 404],
       ["/api/machines/private-pc/private-path", "unmatched", 404],
@@ -86,10 +84,6 @@ function handshake(port: number, path: string, extra = ""): Promise<{ status: nu
 it("records exactly one completion for HTTP responses, early refusals, streams and both 101 paths", async () => {
   // Given: temporary state and a wire-level remote WebSocket stand-in, never SSH.
   const root = mkdtempSync(join(tmpdir(), "herdr-request-contract-"));
-  const store = new DeviceStore(root);
-  const watch = store.pair(store.startPairing().code, "fictional-watch-label", "watch");
-  if (watch === null) throw new Error("Watch fixture did not pair");
-  store.match(watch.token);
   const upstream = Bun.serve({
     port: 0, hostname: "127.0.0.1",
     fetch(request, server) {
@@ -123,10 +117,8 @@ it("records exactly one completion for HTTP responses, early refusals, streams a
     // When / Then: the exact outer boundary covers every response class.
     check(await fetch(`${base}/api/preferences`, { headers: auth }), 200);
     check(await fetch(`${base}/api/auth`, { method: "DELETE", headers: auth }), 204);
-    check(await fetch(`${base}/api/devices/pair`, { method: "POST", body: "{}" }), 400);
     check(await fetch(`${base}/api/session`), 401);
     check(await fetch(`${base}/api/preferences`, { method: "PUT", headers: { ...auth, origin: "https://other.example" }, body: "{}" }), 403);
-    check(await fetch(`${base}/api/fs/file?path=/fictional-secret`, { headers: { cookie: `ovis_device=${watch.token}` } }), 403);
     check(await fetch(`${base}/api/fictional-secret?token=fictional-secret`, { headers: auth }), 404);
     const shell = await fetch(`${base}/`, { headers: { ...auth, "accept-encoding": "identity" } });
     check(shell, 200);
@@ -181,7 +173,7 @@ it("records exactly one completion for HTTP responses, early refusals, streams a
         : ["client_request_id", "latency_ms", "method", "request_id", "route", "status"]);
     }
     const raw = readFileSync(join(root, "http-requests.jsonl"), "utf8");
-    for (const secret of [root, "fictional-secret", "fictional-watch-label", "fictional-owner", "fictional-remote", watch.token]) expect(raw).not.toContain(secret);
+    for (const secret of [root, "fictional-secret", "fictional-owner", "fictional-remote"]) expect(raw).not.toContain(secret);
   } finally {
     abort.abort();
     app.stop(); upstream.stop(true); endpoint.mockRestore();

@@ -3,14 +3,10 @@ import { describe, expect, it } from "bun:test";
 import type { ObservedIngress } from "../../shared/protocol.ts";
 import { connectionRoute } from "./connectionRoute.ts";
 
-const route = (hostname: string, page: { ingress?: ObservedIngress | null; protocol?: string } = {}) =>
-  connectionRoute({ ingress: null, protocol: "https:", hostname, ...page });
+const route = (hostname: string, page: { ingress?: ObservedIngress | null } = {}) =>
+  connectionRoute({ ingress: null, hostname, ...page });
 
 describe("how this device reaches Ovis", () => {
-  it("says nothing in the phone app's bundled demo, which reaches no PC", () => {
-    expect(route("localhost", { protocol: "capacitor:" })).toBeNull();
-  });
-
   it("is direct for a request the server saw come through Tailscale Funnel, though its name is a tailnet one", () => {
     expect(route("pc.tail1e211e.ts.net", { ingress: "funnel" })).toBe("direct");
   });

@@ -60,11 +60,9 @@ irm https://ovis.sh/install.ps1 | iex
 
 **在手机上**
 
-- **iPhone：** TestFlight 公测版，见 [ovis.sh/zh/beta](https://ovis.sh/zh/beta/)。
-- **Android：** Google Play 公测版，见 [ovis.sh/zh/beta](https://ovis.sh/zh/beta/)。
 - **浏览器：** 无需应用，把页面添加到主屏幕即可。
 
-要连接手机，通过 Tailscale 打开应用，扫描 **Settings → Phone & devices** 中的二维码。[工作原理 →](docs/guide.md#on-your-phone)
+要连接手机，通过 Tailscale 打开应用，扫描 **Settings → Devices and PCs → Add a connection** 中的二维码。[工作原理 →](docs/guide.md#on-your-phone)
 
 ## 能做什么
 

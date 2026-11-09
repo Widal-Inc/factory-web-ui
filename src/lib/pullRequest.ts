@@ -59,7 +59,6 @@ export function pullRequestErrorMessage(t: Translate, error: unknown): string {
     case "merge_queue": return t("This base branch merges through a merge queue; merge it on GitHub.");
     case "pull_request_changed": return t("The pull request changed since it was shown. Refresh it, then merge.");
     case "merge_refused": case "gh_failed": return error.detail || t("The pull request could not be loaded.");
-    case "read_only": return t("This device can only watch.");
     case "invalid_cwd": case "pane_not_found": return t("The pane's folder could not be read.");
     case "machine_offline": case "machine_unavailable": case "machine_timeout": return t("That PC is not reachable right now.");
     default: return t("The pull request could not be loaded.");

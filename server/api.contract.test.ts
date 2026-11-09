@@ -1,9 +1,7 @@
 import type { SystemReport } from "../shared/system.ts";
 import { describe, expect, it, beforeAll, afterAll, spyOn } from "bun:test";
-import { CLEAR_LEGACY_DEVICE_COOKIE, DEVICE_COOKIE_CLEARED } from "./auth.ts";
 import { Database } from "bun:sqlite";
 import { appendFileSync, chmodSync, closeSync, constants as fsConstants, copyFileSync, mkdirSync, mkdtempSync, existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, openSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, watch, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { hostname, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { ConversationMonitor } from "./conversation-monitor.ts";
@@ -11,7 +9,7 @@ import { createServer } from "./index.ts";
 import { AgentDetector, catalogLocator } from "./agent-catalog-detect.ts";
 import * as appModule from "./index.ts";
 import * as herdrClient from "./herdr/client.ts";
-import type { AgentKind, AgentStatus, ApiError, HealthAuth, IntegrationsResponse, LanExposure, SecuritySummary, PushKey, RemoteAccess, SessionSnapshot, TabMoved, TabMovedToWorkspace, PaneFindResponse, PaneReadResult, UsageReport, WorkspaceCreated, WorktreeListing, WorktreeOpened, WorktreeRemoved } from "../shared/protocol.ts";
+import type { AgentKind, AgentStatus, ApiError, HealthAuth, IntegrationsResponse, SecuritySummary, PushKey, RemoteAccess, SessionSnapshot, TabMoved, TabMovedToWorkspace, PaneFindResponse, PaneReadResult, UsageReport, WorkspaceCreated, WorktreeListing, WorktreeOpened, WorktreeRemoved } from "../shared/protocol.ts";
 import { SUPPORTED_AGENT_KINDS } from "../shared/supported-agents.ts";
 import { HerdrUpdater } from "./herdr-update.ts";
 import { noInstalledNotes, noUpdateNotes, unmanagedUpdateStatus, type HerdrUpdateStatus, type InstalledNotes, type UpdateNotes, type UpdateStatus } from "../shared/update.ts";
@@ -32,7 +30,6 @@ import { claudeProjectDir } from "./claude-store.ts";
 import { testShellEnv } from "../scripts/test-shell.ts";
 import { PendingInputError, PendingInputs } from "./pending-input.ts";
 import { loginPathProbe, ShellAgentLocator, type LoginPathProbe } from "./shell-agent.ts";
-import { DeviceStore } from "./devices.ts";
 import type { HerdrCoreFacts, HerdrRuntimeFacts, MachineEvent, MachineSettings } from "../shared/machines.ts";
 import type { RuntimeService, SwitchAnswer } from "./herdr-core/runtime-choice.ts";
 import { MAX_MUTED_PANES, type SharedPreferences } from "../shared/preferences.ts";
@@ -816,7 +813,7 @@ describe("update API", () => {
       for (const headers of [{ "content-type": "application/json" }, { "x-herdr-update": "1", origin: "https://untrusted.invalid" }, { "x-herdr-update": "1", "sec-fetch-site": "cross-site" }] as Record<string, string>[]) {
         expect((await install(JSON.stringify({ expected_revision: offered }), headers)).status).toBe(403);
       }
-      // reading the status, as a watching device does, asks for nothing
+      // reading the status asks for nothing
       expect(((await (await fetch(`${origin}/api/updates`)).json()) as UpdateStatus).revision_bound_install).toBe(true);
       expect(requests).toEqual([]);
       // another release on offer already: refused before the supervisor hears of it
@@ -4097,34 +4094,31 @@ describe("web push", () => {
   }, 60_000);
 });
 
-describe("pairing and identity", () => {
-  /** no token: the gate is where the request comes from, or a paired device's cookie */
+describe("access and identity", () => {
+  /** no token: the gate is where the request comes from */
   let open: { port: number; stop: () => void };
-  const openState = mkdtempSync(join(tmpdir(), "herdr-pairing-"));
+  const openState = mkdtempSync(join(tmpdir(), "herdr-access-"));
   beforeAll(() => { open = createServer({ port: 0, stateDir: openState }); });
   afterAll(() => { open?.stop(); rmSync(openState, { recursive: true, force: true }); });
   const base = () => `http://127.0.0.1:${open.port}`;
   /** as if `tailscale serve` or a reverse proxy had forwarded it: the test client is on loopback, like a proxy */
   const proxied = (extra: Record<string, string> = {}) => ({ "x-forwarded-for": "100.64.0.9", ...extra });
   const auth = async (headers: Record<string, string> = {}) => ((await (await fetch(`${base()}/api/health?scope=bridge`, { headers })).json()) as { auth: HealthAuth }).auth;
-  const guard = { "content-type": "application/json", "x-herdr-machine": "1" };
-  let cookie = "";
-  let deviceId = "";
 
-  it("lets this PC in, and not a proxied request, even before the first device is paired", async () => {
+  it("lets this PC in, and not a proxied request", async () => {
     expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-    expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    expect((await fetch(`${base()}/api/session`, { headers: proxied() })).status).toBe(401);
+    expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "token_required" });
+    const refused = await fetch(`${base()}/api/session`, { headers: proxied() });
+    expect([refused.status, ((await refused.json()) as ApiError).error]).toEqual([401, { code: "unauthorized", message: "token required" }]);
   });
 
   it("does not take a proxied request for this PC, whatever the proxy sends", async () => {
-    // a proxy that sends only a forwarding header is refused until the token or a pairing
+    // a proxy that sends only a forwarding header is refused until it holds the token
     for (const name of ["x-forwarded-for", "x-forwarded-proto", "x-forwarded-host", "x-real-ip", "forwarded", "via"]) {
-      expect(await auth({ [name]: "https" })).toMatchObject({ authenticated: false, reason: "pairing_required" });
+      expect(await auth({ [name]: "https" })).toMatchObject({ authenticated: false, reason: "token_required" });
     }
-    // a proxy that keeps the browser's Host and adds nothing is no more this PC than a client on the network: open, as any
-    // other address is while nothing is paired, and not the owner's own
-    expect(await auth({ host: "app.example.test" })).toMatchObject({ authenticated: true, via: "open" });
+    // a proxy that keeps the browser's Host and adds nothing is no more this PC than a client on the network: refused
+    expect(await auth({ host: "app.example.test" })).toMatchObject({ authenticated: false, reason: "token_required" });
     // this PC under its other names is still this PC
     for (const host of [`localhost:${open.port}`, `herdr.localhost:${open.port}`, "localhost:5173"]) {
       expect(await auth({ host })).toMatchObject({ authenticated: true, via: "local" });
@@ -4133,123 +4127,17 @@ describe("pairing and identity", () => {
 
   it("does not read a Tailscale login header: it neither lets a proxied request in nor marks this PC's own as proxied", async () => {
     const login = { "tailscale-user-login": "someone@example.com" };
-    expect(await auth(proxied(login))).toMatchObject({ authenticated: false, reason: "pairing_required" });
+    expect(await auth(proxied(login))).toMatchObject({ authenticated: false, reason: "token_required" });
     expect((await fetch(`${base()}/api/session`, { headers: proxied(login) })).status).toBe(401);
     expect(await auth(login)).toMatchObject({ authenticated: true, via: "local" });
   });
 
   it("never treats a Funnel request as open", async () => {
-    expect(await auth(proxied({ "tailscale-funnel-request": "?1" }))).toMatchObject({ authenticated: false, reason: "pairing_required" });
+    expect(await auth(proxied({ "tailscale-funnel-request": "?1" }))).toMatchObject({ authenticated: false, reason: "token_required" });
   });
 
-  it("pairs a device with a code from this PC, and the gate closes for strangers", async () => {
-    expect((await fetch(`${base()}/api/devices/pair/start`, { method: "POST" })).status).toBe(403); // the mutation guard
-    const started = await fetch(`${base()}/api/devices/pair/start`, { method: "POST", headers: guard });
-    expect(started.status).toBe(200);
-    const { code } = (await started.json()) as { code: string; expires_at: string };
-    expect(code).toMatch(/^\d{6}$/);
-    const wrong = await fetch(`${base()}/api/devices/pair`, { method: "POST", headers: { ...guard, ...proxied() }, body: JSON.stringify({ code: code === "000000" ? "111111" : "000000", label: "x" }) });
-    expect(wrong.status).toBe(401);
-    expect(((await wrong.json()) as ApiError).error.code).toBe("invalid_code");
-    const paired = await fetch(`${base()}/api/devices/pair`, { method: "POST", headers: { ...guard, ...proxied() }, body: JSON.stringify({ code, label: "  Test  phone " }) });
-    expect(paired.status).toBe(204);
-    const setCookie = paired.headers.get("set-cookie") ?? "";
-    expect(setCookie).toMatch(/^ovis_device=[0-9a-f]{64}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=/);
-    cookie = setCookie.split(";")[0]!;
-    // the device is in, from anywhere; a stranger no longer is; this PC still is
-    expect(await auth({ ...proxied(), cookie })).toMatchObject({ authenticated: true, via: "device" });
-    expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    expect((await fetch(`${base()}/api/session`, { headers: proxied() })).status).toBe(401);
-    expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-    const list = (await (await fetch(`${base()}/api/devices`, { headers: { ...proxied(), cookie } })).json()) as { devices: Array<{ id: string; label: string; current: boolean }> };
-    expect(list.devices.map((d) => [d.label, d.current])).toEqual([["Test phone", true]]);
-    deviceId = list.devices[0]!.id;
-    expect(readFileSync(join(openState, "devices.json"), "utf8")).not.toContain(cookie.split("=")[1]);
-  });
-
-  it("renames and revokes a device; signing out drops its cookie", async () => {
-    const renamed = await fetch(`${base()}/api/devices/${deviceId}`, { method: "PATCH", headers: guard, body: JSON.stringify({ label: "Kitchen iPad" }) });
-    expect(((await renamed.json()) as { label: string }).label).toBe("Kitchen iPad");
-    const out = await fetch(`${base()}/api/auth`, { method: "DELETE", headers: { cookie } });
-    expect(out.headers.get("set-cookie") ?? "").toContain("ovis_device=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
-    expect((await fetch(`${base()}/api/devices/${deviceId}`, { method: "DELETE", headers: guard })).status).toBe(204);
-    expect((await fetch(`${base()}/api/devices/${deviceId}`, { method: "DELETE", headers: guard })).status).toBe(404);
-    // the revoked device is out, and so are strangers: revoking the last device never reopens the gate
-    expect(await auth({ ...proxied(), cookie })).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-  });
-
-  it("revokes every device in one answer that clears the caller's own cookie, and takes revoke-all for no device id", async () => {
-    const pair = async (label: string) => {
-      const { code } = (await (await fetch(`${base()}/api/devices/pair/start`, { method: "POST", headers: guard })).json()) as { code: string };
-      const paired = await fetch(`${base()}/api/devices/pair`, { method: "POST", headers: { ...guard, ...proxied() }, body: JSON.stringify({ code, label }) });
-      expect(paired.status).toBe(204);
-      return paired.headers.get("set-cookie")!.split(";")[0]!;
-    };
-    const phone = await pair("Phone");
-    const tablet = await pair("Tablet");
-    expect(await auth({ ...proxied(), cookie: tablet })).toMatchObject({ authenticated: true, via: "device" });
-    // the route comes before the device ids: another method on it is refused as a method, never read as a device
-    const asDevice = await fetch(`${base()}/api/devices/revoke-all`, { method: "DELETE", headers: guard });
-    expect([asDevice.status, ((await asDevice.json()) as ApiError).error.code]).toEqual([400, "method_not_allowed"]);
-    expect((await fetch(`${base()}/api/devices/revoke-all`, { method: "POST" })).status).toBe(403); // the mutation guard
-    // from a paired device: everything paired goes, that device's own pairing included, and its cookie with the answer
-    const revoked = await fetch(`${base()}/api/devices/revoke-all`, { method: "POST", headers: { ...guard, ...proxied(), cookie: tablet } });
-    expect(revoked.status).toBe(200);
-    expect(revoked.headers.get("content-type")).toContain("application/json");
-    expect(revoked.headers.get("cache-control")).toBe("no-store");
-    expect(await revoked.json()).toEqual({ revoked: 2 });
-    expect(revoked.headers.getSetCookie()).toEqual([DEVICE_COOKIE_CLEARED, CLEAR_LEGACY_DEVICE_COOKIE]);
-    for (const cookie of [phone, tablet]) expect(await auth({ ...proxied(), cookie })).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    expect(((await (await fetch(`${base()}/api/devices`)).json()) as { devices: unknown[] }).devices).toEqual([]);
-    // the gate stays shut to strangers; this PC is in as before
-    expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-    // with nothing left to revoke the answer is the same shape, and still a durable write
-    const again = await fetch(`${base()}/api/devices/revoke-all`, { method: "POST", headers: guard });
-    expect([again.status, await again.json()]).toEqual([200, { revoked: 0 }]);
-    expect(JSON.parse(readFileSync(join(openState, "devices.json"), "utf8"))).toEqual({ gate_closed_at: expect.any(String), devices: [] });
-  });
-
-  it("the plugin script prints a code a headless PC's owner can hand to a phone", async () => {
-    const configDir = mkdtempSync(join(tmpdir(), "herdr-pair-cli-"));
-    try {
-      // spawned asynchronously: a synchronous spawn would block the very server the script asks
-      const pairCli = async (port: number) => {
-        const child = Bun.spawn(["bun", "scripts/plugin.ts", "pair"], { cwd: join(import.meta.dir, ".."), env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", HERDR_PLUGIN_CONFIG_DIR: configDir, OVIS_TOKEN: "" }, stdout: "pipe", stderr: "pipe" });
-        const [out, err, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-        return { out, err, exitCode };
-      };
-      const run = await pairCli(open.port);
-      const out = run.out;
-      expect(run.exitCode, run.err).toBe(0);
-      const code = /Pairing code: (\d{3}) (\d{3})/.exec(out);
-      expect(code).not.toBeNull();
-      expect(out).toContain("enter the code");
-      const paired = await fetch(`${base()}/api/devices/pair`, { method: "POST", headers: { ...guard, ...proxied() }, body: JSON.stringify({ code: `${code![1]}${code![2]}`, label: "Phone by CLI" }) });
-      expect(paired.status).toBe(204);
-      const list = (await (await fetch(`${base()}/api/devices`)).json()) as { devices: Array<{ label: string }> };
-      expect(list.devices.map((d) => d.label)).toContain("Phone by CLI");
-      // with a token configured, the script reads it from the plugin's .env file and gets past the gate
-      const tokenState = mkdtempSync(join(tmpdir(), "herdr-pair-cli-token-"));
-      const secured = createServer({ port: 0, stateDir: tokenState, token: "cli-t0k3n" });
-      try {
-        writeFileSync(join(configDir, ".env"), "OVIS_TOKEN=cli-t0k3n\n");
-        const withToken = await pairCli(secured.port);
-        expect(withToken.exitCode, withToken.err).toBe(0);
-        expect(withToken.out).toMatch(/Pairing code: \d{3} \d{3}/);
-        // `.env` wins over a stale token in the older `env` file
-        writeFileSync(join(configDir, "env"), "OVIS_TOKEN=stale\n");
-        const withLegacy = await pairCli(secured.port);
-        expect(withLegacy.exitCode, withLegacy.err).toBe(0);
-        expect(withLegacy.out).toMatch(/Pairing code: \d{3} \d{3}/);
-      } finally { secured.stop(); rmSync(tokenState, { recursive: true, force: true }); }
-    } finally { rmSync(configDir, { recursive: true, force: true }); }
-  });
-
-  it("a configured token gates this PC, and a paired device gets past it", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-pairing-token-"));
+  it("a configured token gates this PC, and only the token gets past it", async () => {
+    const state = mkdtempSync(join(tmpdir(), "herdr-access-token-"));
     const secured = createServer({ port: 0, stateDir: state, token: "t0k3n" });
     const at = (headers: Record<string, string> = {}) => fetch(`http://127.0.0.1:${secured.port}/api/health?scope=bridge`, { headers }).then((r) => r.json() as Promise<{ auth: HealthAuth }>).then((b) => b.auth);
     try {
@@ -4257,20 +4145,14 @@ describe("pairing and identity", () => {
       expect(await at({ authorization: "Bearer wrong" })).toEqual({ required: true, authenticated: false, reason: "token_required" });
       expect(await at({ authorization: "Bearer t0k3n" })).toMatchObject({ authenticated: true, via: "token", bearer: true });
       // a token held in the sign-in cookie is one signing out can clear
-      expect(await at({ cookie: "ovis_token=t0k3n" })).toEqual({ required: false, authenticated: true, via: "token", role: "drive" });
-      expect(await at({ cookie: "ovis_token=t0k3n", authorization: "Bearer wrong" })).toEqual({ required: false, authenticated: true, via: "token", role: "drive" });
+      expect(await at({ cookie: "ovis_token=t0k3n" })).toEqual({ required: false, authenticated: true, via: "token" });
+      expect(await at({ cookie: "ovis_token=t0k3n", authorization: "Bearer wrong" })).toEqual({ required: false, authenticated: true, via: "token" });
       // a proxy on this PC does not get in on being a proxy: the token is asked for
       expect(await at(proxied())).toMatchObject({ authenticated: false, reason: "token_required" });
       expect(await at({ ...proxied(), authorization: "Bearer t0k3n" })).toMatchObject({ authenticated: true, via: "token" });
       // health only reports the decision: the guarded routes and the upgrade must refuse it too
       expect((await fetch(`http://127.0.0.1:${secured.port}/api/session`, { headers: proxied() })).status).toBe(401);
       expect((await fetch(`http://127.0.0.1:${secured.port}/ws`, { headers: proxied() })).status).toBe(401);
-      // a pairing started with the token lets a device in without it
-      const started = await fetch(`http://127.0.0.1:${secured.port}/api/devices/pair/start`, { method: "POST", headers: { ...guard, authorization: "Bearer t0k3n" } });
-      const { code } = (await started.json()) as { code: string };
-      const paired = await fetch(`http://127.0.0.1:${secured.port}/api/devices/pair`, { method: "POST", headers: guard, body: JSON.stringify({ code }) });
-      expect(paired.status).toBe(204);
-      expect(await at({ cookie: (paired.headers.get("set-cookie") ?? "").split(";")[0]! })).toMatchObject({ authenticated: true, via: "device" });
     } finally { secured.stop(); rmSync(state, { recursive: true, force: true }); }
   });
 });
@@ -4326,51 +4208,6 @@ describe("token auth", () => {
     expect(body.auth).toEqual({ required: true, authenticated: false, reason: "token_required" });
     // a Unix herdr attaches terminals; Windows PCs report false and open in the chat lens
     expect(body.herdr.terminal_attach).toBe(true);
-  });
-
-  it("tells a client that got in when this server is open to the network, and nobody else", async () => {
-    // the health body is JSON off the wire; LanExposure is the shape this endpoint adds to it
-    type HealthBody = { auth: HealthAuth; lan_exposure?: LanExposure };
-    const health = async (port: number, headers: Record<string, string> = {}): Promise<HealthBody> =>
-      (await (await fetch(`http://127.0.0.1:${port}/api/health`, { headers })).json()) as HealthBody;
-    // no token and nothing paired, pinned so an inherited OVIS_TOKEN cannot gate the case
-    const bound = (hostname: string) => {
-      const stateDir = mkdtempSync(join(tmpdir(), "herdr-lan-"));
-      const instance = createServer({ port: 0, hostname, token: "", stateDir });
-      return { port: instance.port, stop: () => { instance.stop(); rmSync(stateDir, { recursive: true, force: true }); } };
-    };
-    const open = bound("0.0.0.0");
-    try {
-      // bound past this PC, no token, nothing paired: the one state the warning is for
-      expect((await health(open.port)).lan_exposure).toEqual({ host: "0.0.0.0" });
-      // a request that did not get in is told nothing, whatever the server's state: Funnel is the
-      // public internet, which is never "open" (server/access.ts)
-      const refused = await health(open.port, { "x-forwarded-for": "100.64.0.9", "tailscale-funnel-request": "?1" });
-      expect(refused.auth).toMatchObject({ required: true, authenticated: false, reason: "pairing_required" });
-      expect(refused.lan_exposure).toBeUndefined();
-      // pairing one device closes the gate to strangers, and the warning leaves with the state
-      const guard = { "content-type": "application/json", "x-herdr-machine": "1" };
-      const { code } = (await (await fetch(`http://127.0.0.1:${open.port}/api/devices/pair/start`, { method: "POST", headers: guard })).json()) as { code: string };
-      const paired = await fetch(`http://127.0.0.1:${open.port}/api/devices/pair`, { method: "POST", headers: { ...guard, host: "192.168.0.20" }, body: JSON.stringify({ code, label: "Phone" }) });
-      expect(paired.status).toBe(204);
-      expect((await health(open.port)).lan_exposure).toEqual({ host: "0.0.0.0" });
-      const cookie = paired.headers.get("set-cookie")!.split(";")[0]!;
-      expect((await health(open.port, { cookie })).auth).toMatchObject({ authenticated: true, via: "device" });
-      expect((await health(open.port)).auth).toMatchObject({ authenticated: true, via: "local" });
-      expect((await health(open.port)).lan_exposure).toBeUndefined();
-    } finally {
-      open.stop();
-    }
-    // the same empty configuration on a loopback bind is unreachable from the network
-    const loopback = bound("127.0.0.1");
-    try {
-      expect((await health(loopback.port)).lan_exposure).toBeUndefined();
-    } finally {
-      loopback.stop();
-    }
-    // and a token is a closed gate, which this endpoint already reported
-    const securedBody = await (await fetch(`${securedBase()}/api/health`)).json() as HealthBody;
-    expect(securedBody.lan_exposure).toBeUndefined();
   });
 
   it("refuses a token that does not match", async () => {
@@ -4532,18 +4369,19 @@ describe("PC management API", () => {
     const url = `http://127.0.0.1:${peer.port}`;
     const retried: string[] = [];
     const manager = { endpoint: (id: string) => id === "capped-remote" ? { url, token: "contract-token" } : undefined, trackTerminal: () => () => {}, retryNow: (id: string) => { retried.push(id); } } as unknown as MachineManager;
-    const ask = (machine: string, path: string, readOnly = false) => handleMachineRequest(new Request(`http://127.0.0.1/api/machines/${machine}/${path}`), manager, undefined, undefined, readOnly);
+    const ask = (machine: string, path: string) => handleMachineRequest(new Request(`http://127.0.0.1/api/machines/${machine}/${path}`), manager);
     const logged: string[] = [];
     const error = spyOn(console, "error").mockImplementation((...args: unknown[]) => { logged.push(args.join(" ")); });
     try {
-      // a watcher's prompt is parsed to remove what it may not see, so it is held to 1 MiB
-      serve = () => new Response(`{"prompt":null,"restored":"${secret}${"x".repeat(1024 * 1024)}"}`);
-      const large = await ask("capped-remote", "pane/prompt?pane_id=p1", true);
+      // an answer is held whole before it is passed on, so it is held to the proxy's 64 MiB
+      serve = () => new Response(`{"restored":"${secret}${"x".repeat(64 * 1024 * 1024)}"}`);
+      const large = await ask("capped-remote", "pane/read?pane_id=p1");
       expect(large.status).toBe(502);
       const tooLarge = await large.json() as ApiError;
       expect(tooLarge.error.code).toBe("remote_response_too_large");
-      serve = () => new Response(`{"prompt":{"plan_file":"${secret}"`);
-      const unreadable = await ask("capped-remote", "pane/prompt?pane_id=p1", true);
+      // a session is parsed to hide the token values of this server's sidebar rows, so a cut-off one is unreadable
+      serve = () => new Response(`{"snapshot":{"workspaces":"${secret}"`);
+      const unreadable = await ask("capped-remote", "session");
       expect(unreadable.status).toBe(502);
       const invalid = await unreadable.json() as ApiError;
       expect(invalid.error.code).toBe("remote_response_invalid");
@@ -5095,7 +4933,6 @@ describe("POST /api/sessions/resume", () => {
   const herdr = process.env["OVIS_HERDR_BIN"] || Bun.which("herdr") || "herdr";
   const ID = "00000000-0000-4000-8000-0000000000c1";
   const OTHER = "00000000-0000-4000-8000-0000000000c2";
-  const WATCH_TOKEN = "f".repeat(64);
   type Report = { pid: number; resumed: string | null; has: boolean; value: string | null };
   const queued: Report[] = [];
   const waiting: ((report: Report) => void)[] = [];
@@ -5241,7 +5078,6 @@ setInterval(() => {}, 1 << 30);
     delete process.env["CLAUDE_CONFIG_DIR"];
     const appState = join(root, "app-state");
     mkdirSync(appState);
-    writeFileSync(join(appState, "devices.json"), JSON.stringify({ gate_closed_at: new Date().toISOString(), devices: [{ id: "0123456789abcdef", label: "Watch fixture", role: "watch", token_hash: createHash("sha256").update(WATCH_TOKEN).digest("hex"), created_at: new Date().toISOString(), last_seen_at: null }] }), { mode: 0o600 });
     app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: appState });
     workspaceId = (await rpc<Awaited<ReturnType<typeof workspaceCreate>>>("workspace.create", { cwd, label: "ovis-test-claude-resume", focus: false })).workspace.workspace_id;
     foreignWorkspace = (await rpc<Awaited<ReturnType<typeof workspaceCreate>>>("workspace.create", { cwd, label: "ovis-test-claude-resume-other", focus: false })).workspace.workspace_id;
@@ -5312,7 +5148,7 @@ setInterval(() => {}, 1 << 30);
     expect(await nextReport()).toMatchObject({ resumed: ID, has: false });
   }, 90_000);
 
-  it.skipIf(!NATIVE)("refuses a changed, foreign, forged, watch-only, unreadable or ambiguous source before any tab is made", async () => {
+  it.skipIf(!NATIVE)("refuses a changed, foreign, forged, unreadable or ambiguous source before any tab is made", async () => {
     const source = await sourcePane(alternate);
     const [, listed] = await list(source.pane);
     const key = listed.sessions[0]!.resume!.source!.store_key;
@@ -5328,7 +5164,6 @@ setInterval(() => {}, 1 << 30);
       expect([status, answer.error?.code]).toEqual(expected);
       expect(await tabsOf(workspaceId)).toBe(tabs);
     };
-    await refused(valid, [403, "read_only"], { "x-forwarded-for": "100.64.0.9", cookie: `ovis_device=${WATCH_TOKEN}` });
     await refused({ ...valid, pane_id: foreignPane }, [400, "pane_not_in_workspace"]);
     await refused({ ...valid, session_id: "../../outside" }, [400, "invalid_session_id"]);
     await refused({ ...valid, store_key: alternate }, [400, "invalid_store_key"]);
@@ -5430,8 +5265,8 @@ setInterval(() => {}, 1 << 30);
 });
 
 // The shared preferences (shared/preferences.ts) over HTTP and the event stream: the muted panes
-// are always in the document, the first mute is a change of the empty list, a watching device
-// reads and cannot write, and two tabs' changes land as two revisions with both kept.
+// are always in the document, the first mute is a change of the empty list, and two tabs'
+// changes land as two revisions with both kept.
 /** a preferences document saved at least once, which names its state folder */
 const namedPreferences = <T extends object>(doc: T) => ({ ...doc, state_id: expect.stringMatching(/^[0-9a-f]{32}$/) });
 
@@ -5531,18 +5366,14 @@ describe("shared preferences API", () => {
     }
   });
 
-  it("keeps both of two tabs' changes as two revisions, and lets a watching device read but not write", async () => {
+  it("keeps both of two tabs' changes as two revisions, and tells every document to an open stream", async () => {
     const root = mkdtempSync(join(tmpdir(), "herdr-web-ui-test-preferences-"));
-    const devices = new DeviceStore(root);
-    const watch = devices.pair(devices.startPairing().code, "Watch", "watch")!;
-    devices.match(watch.token);
     const server = createServer({ port: 0, stateDir: root, token: "test-preferences" });
     const base = `http://127.0.0.1:${server.port}`;
     const driving = { ...guard, authorization: "Bearer test-preferences" };
-    const watching = { ...guard, cookie: `ovis_device=${watch.token}` };
     const abort = new AbortController();
     try {
-      const events = await openEvents(base, watching, abort);
+      const events = await openEvents(base, driving, abort);
       await events.next("the opening document", (document) => document.revision === 0);
       // tab A mutes while tab B picks a theme: each change lands on the document as it is then, and neither is lost
       const [a, b] = await Promise.all([
@@ -5557,13 +5388,10 @@ describe("shared preferences API", () => {
       // tab B then clears the list tab A set: the last write wins, as for every field
       const cleared = await fetch(`${base}/api/preferences`, { method: "PUT", headers: driving, body: JSON.stringify({ settings: {}, muted_panes: [] }) });
       expect(await cleared.json()).toEqual(namedPreferences({ revision: 3, settings: { theme: "light" }, muted_panes: [] }));
-      // the watching device heard every document, and cannot write one: the revision stays
+      // the open stream heard every document
       await events.next("the cleared list", (document) => document.revision === 3);
       expect(events.documents.map((document) => document.revision)).toEqual([0, 1, 2, 3]);
-      expect(await (await fetch(`${base}/api/preferences`, { headers: watching })).json()).toEqual(namedPreferences({ revision: 3, settings: { theme: "light" }, muted_panes: [] }));
-      const refused = await fetch(`${base}/api/preferences`, { method: "PUT", headers: watching, body: JSON.stringify({ settings: {}, muted_panes: ["w1:p1"] }) });
-      expect([refused.status, ((await refused.json()) as ApiError).error.code]).toEqual([403, "read_only"]);
-      expect(await (await fetch(`${base}/api/preferences`, { headers: driving })).json()).toMatchObject({ revision: 3, muted_panes: [] });
+      expect(await (await fetch(`${base}/api/preferences`, { headers: driving })).json()).toEqual(namedPreferences({ revision: 3, settings: { theme: "light" }, muted_panes: [] }));
     } finally {
       abort.abort();
       server.stop();
@@ -5573,14 +5401,12 @@ describe("shared preferences API", () => {
 });
 
 describe("access facts on /api/health", () => {
-  type Body = { auth: HealthAuth; lan_exposure?: LanExposure; security?: SecuritySummary; herdr_core?: HerdrCoreFacts; herdr_runtime?: HerdrRuntimeFacts };
+  type Body = { auth: HealthAuth; security?: SecuritySummary; herdr_core?: HerdrCoreFacts; herdr_runtime?: HerdrRuntimeFacts };
   const SECRET = "fictional-t0k3n-value";
-  const guard = { "content-type": "application/json", "x-herdr-machine": "1" };
   /** a server of its own: a temp state dir, an empty token unless one is given, nothing from the runner's environment */
   const CORE_FACTS: HerdrCoreFacts = { version: "0.1.17", session: "default", running: false };
-  const serve = (options: { hostname?: string; token?: string; seed?: (stateDir: string) => void; runtime?: RuntimeService; accepted?: () => boolean; bridgeToken?: string } = {}) => {
+  const serve = (options: { hostname?: string; token?: string; runtime?: RuntimeService; accepted?: () => boolean; bridgeToken?: string } = {}) => {
     const stateDir = mkdtempSync(join(tmpdir(), "herdr-security-summary-"));
-    options.seed?.(stateDir);
     const instance = createServer({ port: 0, hostname: options.hostname ?? "127.0.0.1", token: options.token ?? "", stateDir, ...(options.bridgeToken ? { bridgeToken: options.bridgeToken } : {}), herdrCoreFacts: () => CORE_FACTS, ...(options.runtime ? { runtimeService: options.runtime } : {}), ...(options.accepted ? { launchAccepted: options.accepted } : {}) });
     const read = async (headers: Record<string, string> = {}, scope = "") => {
       const response = await fetch(`http://127.0.0.1:${instance.port}/api/health${scope}`, { headers });
@@ -5596,7 +5422,7 @@ describe("access facts on /api/health", () => {
       for (const scope of ["", "?scope=bridge"]) {
         const answer = await secured.read({ authorization: `Bearer ${SECRET}` }, scope);
         expect(answer.status).toBe(200);
-        expect(answer.body.security).toEqual({ token_configured: true, pairing_gate: "open", bind_scope: "loopback", observed_ingress: "direct", public_exposure: "unknown" });
+        expect(answer.body.security).toEqual({ token_configured: true, bind_scope: "loopback", observed_ingress: "direct", public_exposure: "unknown" });
         expect(answer.cacheControl).toBe("no-store");
         // no token, hash, login, address or path anywhere in the facts
         const facts = JSON.stringify(answer.body.security);
@@ -5604,18 +5430,10 @@ describe("access facts on /api/health", () => {
         expect(answer.text).not.toContain(SECRET);
       }
     } finally { secured.stop(); }
-    // another bind and a closed gate: the facts follow the configuration, not the request
+    // another bind and no token: the facts follow the configuration, not the request
     const open = serve({ hostname: "0.0.0.0" });
     try {
-      expect((await open.read()).body.security).toEqual({ token_configured: false, pairing_gate: "open", bind_scope: "other", observed_ingress: "direct", public_exposure: "unknown" });
-      const { code } = (await (await fetch(`http://127.0.0.1:${open.port}/api/devices/pair/start`, { method: "POST", headers: guard })).json()) as { code: string };
-      const paired = await fetch(`http://127.0.0.1:${open.port}/api/devices/pair`, { method: "POST", headers: { ...guard, host: "192.168.0.20" }, body: JSON.stringify({ code, label: "Phone" }) });
-      const cookie = paired.headers.get("set-cookie")!.split(";")[0]!;
-      // the first use of the cookie confirms the pairing, which closes the gate for good
-      expect((await open.read({ cookie })).body.auth).toMatchObject({ authenticated: true, via: "device" });
-      const closed = (await open.read()).body;
-      expect(closed.security).toMatchObject({ pairing_gate: "closed", bind_scope: "other" });
-      expect(closed.lan_exposure).toBeUndefined();
+      expect((await open.read()).body.security).toEqual({ token_configured: false, bind_scope: "other", observed_ingress: "direct", public_exposure: "unknown" });
     } finally { open.stop(); }
   });
 
@@ -5628,7 +5446,7 @@ describe("access facts on /api/health", () => {
           const answer = await secured.read(headers, scope);
           expect(answer.body.auth.authenticated).toBe(false);
           expect(answer.body.security).toBeUndefined();
-          for (const name of ["token_configured", "pairing_gate", "bind_scope", "observed_ingress", "public_exposure", "0.0.0.0"]) expect(answer.text).not.toContain(name);
+          for (const name of ["token_configured", "bind_scope", "observed_ingress", "public_exposure", "0.0.0.0"]) expect(answer.text).not.toContain(name);
         }
       }
     } finally { secured.stop(); }
@@ -5648,23 +5466,11 @@ describe("access facts on /api/health", () => {
     } finally { secured.stop(); }
   });
 
-  it("tells herdr-core's facts to a driving owner only: not a watching device, nor a caller on an open install", async () => {
-    let token = "";
-    const secured = serve({ token: SECRET, seed: (stateDir) => {
-      const store = new DeviceStore(stateDir);
-      token = store.pair(store.startPairing().code, "Watch", "watch")!.token;
-      store.match(token);
-    } });
-    try {
-      const watching = await secured.read({ cookie: `ovis_device=${token}`, "x-forwarded-for": "192.168.0.20" });
-      expect(watching.body.auth).toMatchObject({ authenticated: true, role: "watch" });
-      expect(watching.body.herdr_core).toBeUndefined();
-      expect((await secured.read({ authorization: `Bearer ${SECRET}` })).body.herdr_core).toEqual(CORE_FACTS);
-    } finally { secured.stop(); }
+  it("tells herdr-core's facts to the owner only: not a caller from another address of an open install", async () => {
     const open = serve({ hostname: "0.0.0.0" });
     try {
       const stranger = await open.read({ host: "192.168.0.20" });
-      expect(stranger.body.auth).toMatchObject({ authenticated: true, via: "open" });
+      expect(stranger.body.auth).toMatchObject({ authenticated: false, reason: "token_required" });
       expect(stranger.body.herdr_core).toBeUndefined();
       expect((await open.read({})).body.herdr_core).toEqual(CORE_FACTS);
     } finally { open.stop(); }
@@ -5681,33 +5487,28 @@ describe("access facts on /api/health", () => {
     } finally { server.stop(); }
   });
 
-  it("tells the runtime facts to a driving owner only, and takes a switch from that owner's own page only", async () => {
+  it("tells the runtime facts to the owner only, and takes a switch from the owner's own page only", async () => {
     const facts: HerdrRuntimeFacts = { serving: "herdr", source: "detected", tui: { installed: true, running: true }, app_installed: true, switch_to: "herdr-core", locked: null };
     const asked: unknown[] = [];
     let answer: SwitchAnswer = { ok: true };
     const runtime: RuntimeService = { facts: () => facts, request: (target) => { asked.push(target); return answer; } };
-    let token = "";
-    const secured = serve({ token: SECRET, runtime, bridgeToken: "fictional-bridge-token", seed: (stateDir) => {
-      const store = new DeviceStore(stateDir);
-      token = store.pair(store.startPairing().code, "Watch", "watch")!.token;
-      store.match(token);
-    } });
+    const secured = serve({ token: SECRET, runtime, bridgeToken: "fictional-bridge-token" });
     const bearer = { authorization: `Bearer ${SECRET}` };
     const post = (headers: Record<string, string>, body: unknown = { runtime: "herdr-core" }) =>
       fetch(`http://127.0.0.1:${secured.port}/api/runtime`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
     try {
       expect((await secured.read(bearer)).body.herdr_runtime).toEqual(facts);
-      expect((await secured.read({ cookie: `ovis_device=${token}`, "x-forwarded-for": "192.168.0.20" })).body.herdr_runtime).toBeUndefined();
+      expect((await secured.read({ "x-forwarded-for": "192.168.0.20" })).body.herdr_runtime).toBeUndefined();
       expect((await secured.read({})).body.herdr_runtime).toBeUndefined();
       // the bridge's own answer, which needs no herdr, tells the same owner the same, so a stopped TUI keeps the way back
       expect((await secured.read(bearer, "?scope=bridge")).body.herdr_runtime).toEqual(facts);
-      expect((await secured.read({ cookie: `ovis_device=${token}`, "x-forwarded-for": "192.168.0.20" }, "?scope=bridge")).body.herdr_runtime).toBeUndefined();
+      expect((await secured.read({ "x-forwarded-for": "192.168.0.20" }, "?scope=bridge")).body.herdr_runtime).toBeUndefined();
       expect((await secured.read({}, "?scope=bridge")).body.herdr_runtime).toBeUndefined();
       // the connection server reaching this PC with its bridge token shows its move badge from them
       for (const scope of ["", "?scope=bridge"]) expect((await secured.read({ authorization: "Bearer fictional-bridge-token" }, scope)).body.herdr_runtime).toEqual(facts);
-      // nobody but a driving owner, and only through the app's own request header
+      // nobody but the owner, and only through the app's own request header
       expect((await post({})).status).toBe(401);
-      expect((await post({ cookie: `ovis_device=${token}`, "x-forwarded-for": "192.168.0.20", "x-herdr-update": "1" })).status).toBe(403);
+      expect((await post({ "x-forwarded-for": "192.168.0.20", "x-herdr-update": "1" })).status).toBe(401);
       expect((await post(bearer)).status).toBe(403);
       expect(asked).toEqual([]);
       const accepted = await post({ ...bearer, "x-herdr-update": "1" });
@@ -5719,53 +5520,16 @@ describe("access facts on /api/health", () => {
       expect([refused.status, ((await refused.json()) as { error: { code: string } }).error.code]).toEqual([409, "runtime_locked"]);
       expect((await fetch(`http://127.0.0.1:${secured.port}/api/runtime`, { headers: bearer })).status).toBe(400);
     } finally { secured.stop(); }
-    // an open install lets a stranger on the network in as a driver: still no switch for them
+    // an open install refuses a stranger on the network: no switch for them, and no facts
     asked.length = 0;
     answer = { ok: true };
     const open = serve({ hostname: "0.0.0.0", runtime });
     try {
       const stranger = await fetch(`http://127.0.0.1:${open.port}/api/runtime`, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1", host: "192.168.0.20" }, body: JSON.stringify({ runtime: "herdr-core" }) });
-      expect(stranger.status).toBe(403);
+      expect(stranger.status).toBe(401);
       expect((await open.read({ host: "192.168.0.20" })).body.herdr_runtime).toBeUndefined();
       expect(asked).toEqual([]);
     } finally { open.stop(); }
-  });
-
-  it("watch can read but not change access", async () => {
-    let token = "";
-    const secured = serve({ token: SECRET, seed: (stateDir) => {
-      const store = new DeviceStore(stateDir);
-      token = store.pair(store.startPairing().code, "Watch", "watch")!.token;
-      store.match(token);
-    } });
-    try {
-      const cookie = `ovis_device=${token}`;
-      const answer = await secured.read({ cookie, "x-forwarded-for": "192.168.0.20" });
-      expect(answer.body.auth).toMatchObject({ authenticated: true, via: "device", role: "watch" });
-      expect(answer.body.security).toEqual({ token_configured: true, pairing_gate: "closed", bind_scope: "loopback", observed_ingress: "proxy", public_exposure: "unknown" });
-      // the facts change nothing: pairing, renaming and revoking stay refused to a watching device
-      const list = (await (await fetch(`http://127.0.0.1:${secured.port}/api/devices`, { headers: { cookie } })).json()) as { devices: Array<{ id: string }> };
-      const id = list.devices[0]!.id;
-      for (const [method, path] of [["POST", "pair/start"], ["PATCH", id], ["DELETE", id]] as const) {
-        const response = await fetch(`http://127.0.0.1:${secured.port}/api/devices/${path}`, { method, headers: { ...guard, cookie }, body: method === "DELETE" ? undefined : "{}" });
-        expect([method, response.status]).toEqual([method, 403]);
-      }
-      expect((await secured.read({ cookie })).body.security).toMatchObject({ pairing_gate: "closed" });
-    } finally { secured.stop(); }
-  });
-
-  it("corrupt registry is unavailable and gated", async () => {
-    const damaged = serve({ hostname: "0.0.0.0", seed: (stateDir) => writeFileSync(join(stateDir, "devices.json"), "{ not json") });
-    try {
-      const answer = await damaged.read();
-      expect(answer.body.security).toEqual({ token_configured: false, pairing_gate: "unavailable", bind_scope: "other", observed_ingress: "direct", public_exposure: "unknown" });
-      // a damaged registry is not a first installation: no open-LAN warning, and a stranger is refused
-      expect(answer.body.lan_exposure).toBeUndefined();
-      const stranger = await damaged.read({ "x-forwarded-for": "192.168.0.20" });
-      expect(stranger.body.auth).toMatchObject({ authenticated: false, reason: "pairing_required" });
-      expect(stranger.body.security).toBeUndefined();
-      expect(answer.text).not.toContain(damaged.stateDir);
-    } finally { damaged.stop(); }
   });
 
   it("auth via is not ingress", async () => {
@@ -5786,12 +5550,19 @@ describe("access facts on /api/health", () => {
         expect([headers, body.security?.observed_ingress]).toEqual([headers, ingress]);
       } finally { secured.stop(); }
     }
-    // and a local sign-in is not "direct" because of its via: a rewritten Host is a proxy on this PC
+    // a rewritten Host is a proxy on this PC, though it forwards nothing
+    const rewritten = serve({ token: SECRET });
+    try {
+      const body = (await rewritten.read({ ...bearer, host: "pc.example.com" })).body;
+      expect(body.auth).toMatchObject({ authenticated: true, via: "token" });
+      expect(body.security?.observed_ingress).toBe("proxy");
+    } finally { rewritten.stop(); }
+    // and with no token it is refused, and told no facts
     const open = serve();
     try {
       const body = (await open.read({ host: "pc.example.com" })).body;
-      expect(body.auth).toMatchObject({ authenticated: true, via: "open" });
-      expect(body.security?.observed_ingress).toBe("proxy");
+      expect(body.auth).toMatchObject({ authenticated: false, reason: "token_required" });
+      expect(body.security).toBeUndefined();
     } finally { open.stop(); }
   });
 
@@ -5801,8 +5572,7 @@ describe("access facts on /api/health", () => {
     const bearer = { authorization: `Bearer ${SECRET}` };
     try {
       const answer = await behind.read({ ...bearer, "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https" });
-      expect(answer.body.security).toEqual({ token_configured: true, pairing_gate: "open", bind_scope: "loopback", observed_ingress: "proxy", public_exposure: "unknown" });
-      expect(answer.body.lan_exposure).toBeUndefined();
+      expect(answer.body.security).toEqual({ token_configured: true, bind_scope: "loopback", observed_ingress: "proxy", public_exposure: "unknown" });
       // Funnel's own header, from loopback where Tailscale's proxy connects from, is the one evidence of the public internet
       expect((await behind.read({ ...bearer, "x-forwarded-for": "203.0.113.7", "tailscale-funnel-request": "?1" })).body.security).toMatchObject({ observed_ingress: "funnel", public_exposure: "observed" });
     } finally { behind.stop(); }
@@ -5816,7 +5586,7 @@ describe("access facts on /api/health", () => {
     try {
       const bridge = await secured.read({ authorization: `Bearer ${SECRET}` }, "?scope=bridge");
       expect(bridge.status).toBe(200);
-      expect(bridge.body.security).toEqual({ token_configured: true, pairing_gate: "open", bind_scope: "loopback", observed_ingress: "direct", public_exposure: "unknown" });
+      expect(bridge.body.security).toEqual({ token_configured: true, bind_scope: "loopback", observed_ingress: "direct", public_exposure: "unknown" });
       // the full answer needs herdr, and its failure carries no facts to be reused
       const full = await secured.read({ authorization: `Bearer ${SECRET}` });
       expect(full.status).not.toBe(200);

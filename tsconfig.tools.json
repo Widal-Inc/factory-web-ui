@@ -58,15 +58,13 @@
     "scripts/virtual-source-fixture.tsx",
     "scripts/repo-diff-browser-qa.ts",
     "scripts/repo-diff-fixture.tsx",
-    "scripts/lan-exposure-notice-regression.ts",
     "scripts/application-paging-regression.ts",
     "scripts/omo-question-wheel-regression.ts",
     "scripts/mirror-scroll-demo-regression.ts",
     "scripts/windows-terminal-browser-qa.ts",
     "scripts/terminal-cjk-punctuation-regression.ts",
     "scripts/pane-paging-demo-regression.ts",
-    "scripts/omp-question-compat.ts",
-    "app/scripts/build-web.ts"
+    "scripts/omp-question-compat.ts"
   ],
   "include": []
 }

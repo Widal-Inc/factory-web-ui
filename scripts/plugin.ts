@@ -4,14 +4,14 @@
  * herdr's startup hooks are one-shot initialization commands, not supervised
  * daemons (https://herdr.dev/docs/plugins/), so this script owns the process:
  * `start` detaches the server and records its pid under HERDR_PLUGIN_STATE_DIR,
- * `stop` takes it down, `status` reports, `pair` prints a pairing code for another device, `phone`
+ * `stop` takes it down, `status` reports, `phone`
  * publishes the app to the user's tailnet and prints its address as a QR code. Start is idempotent — a server that is
  * already answering on the port is left alone, which is what makes it safe as
  * both a startup hook and a hand-invoked action.
  *
  * The port is settled here, before the server is spawned: with no PORT set, a default that cannot
  * be opened gives way to the next one that can (scripts/plugin-port.ts), and that choice is kept
- * for later starts and for `status`, `pair` and `phone`.
+ * for later starts and for `status` and `phone`.
  *
  * Two pieces of herdr's runtime environment have to be translated:
  * - herdr injects HERDR_SOCKET_PATH; the server reads HERDR_SOCKET. Without the
@@ -32,7 +32,6 @@ import { basename, delimiter, dirname, join, resolve } from "node:path";
 import qrcode from "qrcode-generator";
 
 import { DEFAULT_PORT } from "../shared/protocol.ts";
-import type { RemoteAccess } from "../shared/protocol.ts";
 import { canServe, FALLBACK_PORTS, freePort, savedPort } from "./plugin-port.ts";
 import { activePluginScript } from "./plugin-runtime.ts";
 import { herdrStateDir } from "./plugin-state.ts";
@@ -105,7 +104,7 @@ const PHONE_AGAIN = platform() === "win32"
   : "curl -fsSL https://ovis.sh/install.sh | sh";
 
 /**
- * Run by hand (`pair` on a headless PC), herdr's env is not there to name the config dir:
+ * Run by hand (`status` on a headless PC), herdr's env is not there to name the config dir:
  * ask herdr for it, so the PORT, HOST and token the plugin runs with are the ones used.
  */
 function herdrConfigDir(): string | null {
@@ -546,7 +545,7 @@ async function startInTurn(): Promise<number> {
     if (await health()) {
       process.stdout.write(`Ovis listening at ${origin}\n`);
       if ((env["OVIS_TOKEN"] ?? "") === "") {
-        process.stdout.write(`no token set: your own Tailscale devices get in as you; pair any other device in Settings → Devices, or put OVIS_TOKEN=<token> in ${join(CONFIG_DIR, "env")}\n`);
+        process.stdout.write(`no token set: only requests from this PC itself get in; put OVIS_TOKEN=<token> in ${join(CONFIG_DIR, "env")} to let other clients in\n`);
       }
       return 0;
     }
@@ -777,40 +776,6 @@ async function stopInTurn(dependencies: StopDependencies): Promise<number> {
 }
 
 /**
- * A pairing code for another device, printed here. A headless PC has no browser of its own to
- * open Settings → Devices in, so this is how its owner lets a phone in: the code, the address the
- * phone opens (when Tailscale serves one), and that address as a QR code for a screen to scan.
- */
-async function pair(): Promise<number> {
-  if (!(await health())) {
-    process.stderr.write(`Ovis is not running at ${origin}; start it first\n`);
-    return 1;
-  }
-  const headers: Record<string, string> = { "content-type": "application/json", "x-herdr-machine": "1" };
-  if ((env["OVIS_TOKEN"] ?? "") !== "") headers["authorization"] = `Bearer ${env["OVIS_TOKEN"]}`;
-  const started = await fetch(`${origin}/api/devices/pair/start`, { method: "POST", headers, body: "{}" });
-  if (!started.ok) {
-    process.stderr.write(`could not start a pairing (${started.status}): ${await started.text()}\n`);
-    return 1;
-  }
-  const { code } = (await started.json()) as { code: string; expires_at: string };
-  let url: string | null = null;
-  try {
-    const access = (await (await fetch(`${origin}/api/access`, { headers })).json()) as { tailscale: { serving_url: string | null } };
-    url = access.tailscale.serving_url;
-  } catch { /* an older server: the code alone */ }
-  const out: string[] = [`Pairing code: ${code.slice(0, 3)} ${code.slice(3)}   (good for 10 minutes, for one device)`];
-  if (url !== null) {
-    out.push(`On the other device, open ${link(url)} and enter the code, or scan this to open it with the code filled in:`, "");
-    out.push(qr(`${url}/?pair=${code}`));
-  } else {
-    out.push("On the other device, open the app's address and enter the code. Settings → Phone, on any signed-in device, shows the address and how to get one.");
-  }
-  process.stdout.write(out.join("\n") + "\n");
-  return 0;
-}
-
-/**
  * The address a phone opens, as a QR code. When Tailscale runs on this PC but does not yet serve
  * the app, this is the one place that changes it: `tailscale serve` of the app's port on the first
  * free HTTPS port, or only on the one OVIS_TAILSCALE_HTTPS_PORT names, said out loud with the
@@ -874,46 +839,9 @@ async function phone(): Promise<number> {
   say(`On your phone: ${link(url)}`);
   // the name, not the IP, is what the HTTPS certificate is for: https://100.x.y.z would warn
   if (ip !== null) say(`Tailscale IP of this PC: ${ip}. Open the name above, not the IP: the HTTPS certificate is for the name.`);
-  say("Scan this with a phone signed in to Tailscale. It needs the access token (OVIS_TOKEN) or a pairing code the first time: Settings → Devices, or the pair command.");
+  say("Scan this with a phone signed in to Tailscale. It needs the access token (OVIS_TOKEN) the first time.");
   say(qr(url));
   return 0;
-}
-
-/** The marketplace action has a real pane, so its address, QR and pairing code stay visible. */
-async function phoneSetup(): Promise<number> {
-  const active = activePluginScript(ROOT, port, APP_STATE_DIR);
-  if (active !== join(resolve(ROOT), "scripts", "plugin.ts") && resolve(active) !== resolve(import.meta.filename)) {
-    const child = Bun.spawn([process.execPath, active, "phone-setup"], { cwd: ROOT, windowsHide: true, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-    return await child.exited;
-  }
-  process.stdout.write(`Phone setup\n\nApp on this PC: ${link(origin)}\n`);
-  let code = 0;
-  if (!(await health())) {
-    process.stdout.write("The app is not running. Run the Start Ovis action, then reopen Phone setup.\n");
-    code = 1;
-  } else {
-    const headers: Record<string, string> = {};
-    if (env["OVIS_TOKEN"]) headers["authorization"] = `Bearer ${env["OVIS_TOKEN"]}`;
-    try {
-      const response = await fetch(`${origin}/api/access`, { headers, signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`access request failed (${response.status})`);
-      const access = await response.json() as RemoteAccess;
-      if (!access.tailscale.serving_url) {
-        if (access.tailscale.serve_command) process.stdout.write(`To make a phone address, run this on the PC, then reopen Phone setup:\n\n  ${access.tailscale.serve_command}\n\n`);
-        else process.stdout.write("For a phone address, set up Tailscale on both devices, or use your own HTTPS proxy. Settings → Phone shows the connection options.\n\n");
-      }
-      code = await pair();
-    } catch {
-      process.stderr.write("Could not read phone setup. Check the app's token and connection, then reopen this pane.\n");
-      code = 1;
-    }
-  }
-  if (process.stdin.isTTY) {
-    process.stdout.write("\nPress Enter to finish. Reopen Phone setup for a fresh pairing code.\n");
-    await new Promise<void>((done) => { process.stdin.once("data", () => done()); process.stdin.resume(); });
-    process.stdin.pause();
-  }
-  return code;
 }
 
 /**
@@ -945,11 +873,9 @@ if (import.meta.main) {
   if (command === "start") process.exit(await start());
   else if (command === "stop") process.exit(await stop());
   else if (command === "status") process.exit(await status());
-  else if (command === "pair") process.exit(await pair());
   else if (command === "phone") process.exit(await phone());
-  else if (command === "phone-setup") process.exit(await phoneSetup());
   else {
-    process.stderr.write(`usage: bun scripts/plugin.ts <start|stop|status|pair|phone|phone-setup>\n`);
+    process.stderr.write(`usage: bun scripts/plugin.ts <start|stop|status|phone>\n`);
     process.exit(2);
   }
 }

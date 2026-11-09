@@ -9,11 +9,11 @@
  * repository and a commit that does not exist; the file itself opened on the owning PC; Escape,
  * Back and Close with the focus returned; a remote PC's routes; the rows in the app's palette; Find
  * in the 10 000-line diff (folded context at the top, the middle and the end, both sides, split and
- * wrap, Escape order, and a loading, refused, offline or watch-only patch with nothing to search);
+ * wrap, Escape order, and a loading, refused or offline patch with nothing to search);
  * the Branch scope against a chosen base (the picker's refs, typed and picked bases, the list from
  * the merge base with untracked files, a patch pinned to that merge base while the base moves on,
  * the refresh a moved HEAD asks for, and every refusal: an unknown base, unrelated histories, no
- * commit yet, a watching device, a bridge too old for it); and the static demo's fixture.
+ * commit yet, a bridge too old for it); and the static demo's fixture.
  *
  * The browser is Playwright's headless shell, whose clipboard is its own: a real Cmd+C here never
  * touches the clipboard of the PC running the check.
@@ -208,7 +208,7 @@ function fixtures(): { main: string; detached: string; plain: string; long: stri
 }
 
 const repos = fixtures();
-const panes = new Map([["pane-main", repos.main], ["pane-conflict", repos.detached], ["pane-plain", repos.plain], ["pane-long", repos.long], ["pane-fork", repos.fork], ["pane-unborn", repos.unborn], ["pane-orphan", repos.orphan], ["pane-crowded", repos.crowded], ["pane-observe", repos.fork], ["pane-old", repos.fork], ["pane-offline", repos.fork]]);
+const panes = new Map([["pane-main", repos.main], ["pane-conflict", repos.detached], ["pane-plain", repos.plain], ["pane-long", repos.long], ["pane-fork", repos.fork], ["pane-unborn", repos.unborn], ["pane-orphan", repos.orphan], ["pane-crowded", repos.crowded], ["pane-old", repos.fork], ["pane-offline", repos.fork]]);
 const requests: string[] = [];
 /** a patch request for `pane-held` waits on this until the check lets it through */
 let held = Promise.withResolvers<void>();
@@ -240,8 +240,6 @@ async function api(request: Request, url: URL): Promise<Response | null> {
     diffQueries.push(`${url.pathname}?${url.searchParams}`);
     const paneId = url.searchParams.get("pane_id");
     const kind = diff[2] as "files" | "file" | "refs";
-    // a device that may only watch is refused as the server refuses it, before any repository is read
-    if (paneId === "pane-observe") return Response.json({ error: { code: "read_only", message: "this device can only watch" } }, { status: 403 });
     // a bridge from before the branch scope: no refs route, and a scope it does not know
     if (paneId === "pane-old" && kind === "refs") return Response.json({ error: { code: "not_found", message: "unknown endpoint /api/workspace/diff/refs" } }, { status: 404 });
     if (paneId === "pane-old" && url.searchParams.get("scope") === "branch") return Response.json({ error: { code: "invalid_scope", message: "scope must be workspace, staged or commit" } }, { status: 400 });
@@ -255,9 +253,8 @@ async function api(request: Request, url: URL): Promise<Response | null> {
     }
     if (kind === "file" && url.searchParams.get("scope") === "branch") branchPatches.push(url.searchParams);
     const cwd = (paneId !== null ? panes.get(paneId) : undefined) ?? url.searchParams.get("directory");
-    // a PC that is offline, a device that may only watch, and a patch held on its way, each as the real routes answer
+    // a PC that is offline and a patch held on its way, each as the real routes answer
     if (diff[1] === "offline-pc") return Response.json({ error: { code: "machine_offline", message: "that PC is offline" } }, { status: 503 });
-    if (paneId === "pane-watch") return Response.json({ error: { code: "read_only", message: "this device can only watch" } }, { status: 403 });
     if (paneId === "pane-held") { await held.promise; return repoDiffResponse(diff[2] === "files" ? "files" : "file", repos.main, url.searchParams); }
     if (!cwd) return Response.json({ error: { code: "pane_not_found", message: "no such pane" } }, { status: 404 });
     return repoDiffResponse(kind, cwd, url.searchParams);
@@ -647,13 +644,7 @@ async function branchReview(page: Page, label: string, width: 390 | 1440, theme:
   await shoot("no-changes");
   await closeFiles(page, words);
 
-  // a device that may only watch, and a PC whose bridge is from before the branch scope
-  await openFiles(page, "pane-observe", "local", words);
-  await page.getByRole("button", { name: words.branch, exact: true }).click();
-  await choose.click();
-  assert.equal(await refNote(page), t("This device can only watch."), `${label}: a watching device is told so in the picker`);
-  await shoot("observe");
-  await closeFiles(page, words);
+  // a PC whose bridge is from before the branch scope
   await openFiles(page, "pane-old", "local", words);
   await page.getByRole("button", { name: words.branch, exact: true }).click();
   await choose.click();
@@ -786,9 +777,9 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
-      // the refusals asked for on purpose (a missing commit, a folder outside git, a malformed base, a watching
-      // device, a bridge too old for the branch scope) are logged by the browser as failed loads
-      if (/Failed to load resource/.test(message.text()) && /\/workspace\/diff\//.test(message.location().url ?? "") && /status of (?:400|403|404|409|503)/.test(message.text())) return;
+      // the refusals asked for on purpose (a missing commit, a folder outside git, a malformed base, a bridge
+      // too old for the branch scope) are logged by the browser as failed loads
+      if (/Failed to load resource/.test(message.text()) && /\/workspace\/diff\//.test(message.location().url ?? "") && /status of (?:400|404|409|503)/.test(message.text())) return;
       errors.push(`console: ${message.text()}`);
     });
     await page.goto(origin);
@@ -1236,7 +1227,7 @@ try {
     assert.deepEqual(errors, [], `${label}: no errors after the long line`);
     console.log(`PASS ${label}: a match past the right edge of an unwrapped row is scrolled into view across${phone ? "" : ", in split too"}, and back for one at the start; one at the end of a wrapped row taller than the view is brought into view itself`);
 
-    // a comparison changed under live results drops them; a patch on its way, an offline PC and a watch-only device have none to search.
+    // a comparison changed under live results drops them; a patch on its way, and an offline PC have none to search.
     // The Files list stays open beneath, as when a row opens a diff: closing a phone's sheet goes Back in history, which would race the next open
     const target = { machineId: "local", paneId: "pane-main", directory: repos.main, scope: "commit" as const, base: "HEAD~1", head: "HEAD", comparison: null, path: "src/money.ts", oldPath: null };
     await page.evaluate((target) => window.repoDiffQA.openDiff(target), target);
@@ -1266,7 +1257,7 @@ try {
     assert.equal(await findButton.isDisabled(), true, `${label}: Find is off without a patch`);
     await page.keyboard.press("Escape");
     await page.locator(".repo-diff-viewer").waitFor({ state: "detached" });
-    for (const [state, override, words] of [["offline", { machineId: "offline-pc" }, "That PC is not reachable right now."], ["watch", { paneId: "pane-watch" }, "This device can only watch."]] as const) {
+    for (const [state, override, words] of [["offline", { machineId: "offline-pc" }, "That PC is not reachable right now."]] as const) {
       await page.evaluate((target) => window.repoDiffQA.openDiff(target), { ...target, scope: "workspace" as const, base: null, head: null, ...override });
       assert.equal(await note(page), words, `${label}: ${state} says why`);
       assert.equal(await findButton.isDisabled(), true, `${label}: Find is off when ${state}`);
@@ -1286,7 +1277,7 @@ try {
     }
     await closeFiles(page);
     assert.deepEqual(errors, [], `${label}: no errors after Find`);
-    console.log(`PASS ${label}: a changed comparison drops live results; loading, refused, offline, watch-only, binary and too-large patches leave Find off and say why`);
+    console.log(`PASS ${label}: a changed comparison drops live results; loading, refused, offline, binary and too-large patches leave Find off and say why`);
 
     // the branch against a chosen base: nothing is compared until a base is chosen and Compare pressed
     await branchReview(page, label, width, theme, EN);

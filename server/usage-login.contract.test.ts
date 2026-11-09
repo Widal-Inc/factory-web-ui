@@ -5,8 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import type { UsageLoginStarted } from "../shared/usage-login.ts";
 import { createServer } from "./index.ts";
-import { DEVICE_COOKIE } from "./auth.ts";
-import { DeviceStore } from "./devices.ts";
+import { TOKEN_COOKIE } from "./auth.ts";
 import { paneClose, workspaceClose, workspaceCreate } from "./herdr/client.ts";
 import * as herdr from "./herdr/client.ts";
 import * as collector from "./collector.ts";
@@ -178,7 +177,7 @@ for (const provider of ["claude", "codex"] as const) {
   });
 }
 
-it("follows a sign-in in the server's own terminal: no herdr pane, on any device, ever holds its address", async () => {
+it("follows a sign-in in the server's own terminal: no herdr pane ever holds its address", async () => {
   const response = await start({ provider: "claude", name: "private", follow: true });
   expect(response.status).toBe(200);
   const started = await response.json() as Record<string, unknown>;
@@ -197,7 +196,7 @@ it("follows a sign-in in the server's own terminal: no herdr pane, on any device
   }
   const state = /state=([\w-]+)/.exec(String(shown["url"]))?.[1];
   expect(state).toBeString();
-  // every pane herdr has, read as any device's GET /api/pane/read would: none shows the sign-in's address
+  // every pane herdr has, read as GET /api/pane/read would: none shows the sign-in's address
   const panes = (await herdr.sessionSnapshot()).panes;
   const screens = await Promise.all(panes.map((pane) => herdr.paneRead({ paneId: pane.pane_id, source: "recent_unwrapped", lines: 500 }).then((read) => read.text, () => "")));
   expect(screens.filter((text) => text.includes(state!))).toEqual([]);
@@ -209,18 +208,11 @@ it("follows a sign-in in the server's own terminal: no herdr pane, on any device
   expect(readFileSync(join(root, ".claude-private", "pasted-code"), "utf8")).toBe("fixture-code#fixture-state");
 });
 
-it("binds prompt, code and cancel to the paired device even after another driver reads the lock file", async () => {
+it("binds prompt, code and cancel to the browser that started the sign-in even after another browser reads the lock file", async () => {
   const stateDir = mkdtempSync(join(root, "owner-state-"));
-  const devices = new DeviceStore(stateDir);
-  const pair = (label: string, role: "drive" | "watch") => {
-    const paired = devices.pair(devices.startPairing().code, label, role);
-    if (!paired) throw new Error("fixture pairing failed");
-    devices.match(paired.token);
-    return `${DEVICE_COOKIE}=${paired.token}`;
-  };
-  const owner = pair("Owner", "drive");
-  const other = pair("Other driver", "drive");
-  const watcher = pair("Watcher", "watch");
+  // two browsers signed in with the server's token: only the one that started the sign-in holds its cookie
+  const owner = `${TOKEN_COOKIE}=fixture-only`;
+  const other = `${TOKEN_COOKIE}=fixture-only`;
   const service = new UsageLoginService(root, { PATH: bin }, ctx);
   const app = createServer({ port: 0, stateDir, token: "fixture-only", machines: false, registerBridge: false,
     sidecar: false, terminalAttach: false, usageLogin: service });
@@ -247,9 +239,7 @@ it("binds prompt, code and cancel to the paired device even after another driver
     }
     for (const endpoint of ["/code", "/cancel"]) {
       expect((await post(endpoint, other, { login, code: "never-typed" })).status).toBe(404);
-      expect((await post(endpoint, watcher, { login, code: "never-typed" })).status).toBe(403);
     }
-    expect((await fetch(`${base}/api/usage/login/prompt?login=${login}`, { headers: headers(watcher) })).status).toBe(403);
     expect((await fetch(`${base}/api/usage/login/prompt?login=${login}`, { headers: headers(ownerBrowser) })).status).toBe(200);
     expect((await post("/cancel", ownerBrowser, { login })).status).toBe(204);
   } finally {

@@ -87,8 +87,6 @@ export interface FileViewerProps {
   panelStart?: ReactNode;
   onKind?: (presentation: FilePresentation) => void;
   onTogglePresentation?: () => void;
-  /** this browser drives the PC (not a watching device or an open LAN window): with Settings → Edit text files on, a text file can be edited */
-  editable?: boolean;
 }
 
 /**
@@ -153,7 +151,7 @@ function selectSource(element: HTMLElement): void {
  * A file an agent wrote, opened in the browser: images, video and audio (streamed, so they
  * play and seek at once), PDFs, HTML pages, and the start of a text file (markdown drawn, its images read through the file endpoint). Anything can be downloaded.
  */
-export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActive = true, page = false, docked = false, panelStart, onKind, onTogglePresentation, editable = false }: FileViewerProps) {
+export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActive = true, page = false, docked = false, panelStart, onKind, onTogglePresentation }: FileViewerProps) {
   const t = useT();
   const { settings } = useSettings();
   // the file's text in an editor (TextFileEditor), and whether it holds changes not saved, which nothing closes over but Cancel and Close
@@ -429,7 +427,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
   const noticed = notes.length > 0;
   const copyable = textFile && loaded !== null && !loaded.truncated;
   // shown as text (an HTML page as its source), in a pane's folder the server checks it lies in, and small enough
-  const canEdit = editable && settings.editTextFiles && !page && paneId !== null && textFile && (!htmlPage || source) && info.size <= MAX_EDITABLE_TEXT_BYTES;
+  const canEdit = settings.editTextFiles && !page && paneId !== null && textFile && (!htmlPage || source) && info.size <= MAX_EDITABLE_TEXT_BYTES;
   // text typed and not saved (closed, or the viewer moved): the file opens in its editor again, with it
   const draftWaits = canEdit && hasDraft(machineId, info.path);
   useEffect(() => { if (draftWaits) setEditing(true); }, [draftWaits]);

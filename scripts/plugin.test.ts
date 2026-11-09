@@ -9,7 +9,7 @@ import { readProcessBirth } from "../server/process-owner.ts";
 import { updateStateDir } from "../server/update-state.ts";
 
 /**
- * The plugin's settings files, read by hand the way a headless PC runs `status` or `pair`:
+ * The plugin's settings files, read by hand the way a headless PC runs `status`:
  * no HERDR_PLUGIN_CONFIG_DIR, so the script asks herdr (a fake one here) for the config dir.
  */
 

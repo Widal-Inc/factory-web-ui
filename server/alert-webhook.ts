@@ -38,8 +38,6 @@ interface StoredWebhook {
   alerts: AlertPrefs;
   /** the app's address as the browser that saved it reached it: the base of each message's link */
   link_base?: string;
-  /** who saved it, as a push subscription's `device_id`: a device, null for a local/token sign-in, absent for the open LAN */
-  owner?: string | null;
 }
 
 /** One pane alert, as push.ts tells it. */
@@ -70,7 +68,7 @@ export interface AlertWebhook {
   send(alert: WebhookAlert): void;
   test(): Promise<WebhookResult | null>;
   view(): AlertWebhookView;
-  save(input: AlertWebhookSave, linkBase: string | undefined, owner?: string | null): AlertWebhookView;
+  save(input: AlertWebhookSave, linkBase: string | undefined): AlertWebhookView;
   remove(): void;
   /** resolves once nothing is being sent or waits to be (tests wait) */
   settled(): Promise<void>;
@@ -84,8 +82,6 @@ export interface AlertWebhookOptions {
   telegramApi?: string;
   /** accept a plain-http loopback URL for every preset: only for the tests' fake destination */
   loopbackHttp?: boolean;
-  /** whether whoever saved it may still hear alerts (push.ts canDeliver): asked before each try */
-  canDeliver?: (owner: string | null | undefined) => boolean;
 }
 
 export class WebhookInputError extends Error {}
@@ -102,7 +98,6 @@ function parseStored(value: unknown): StoredWebhook | null {
     ...(typeof record["chat_id"] === "string" ? { chat_id: record["chat_id"] } : {}),
     alerts: parseAlerts(record["alerts"]),
     ...(typeof record["link_base"] === "string" ? { link_base: record["link_base"] } : {}),
-    ...(typeof record["owner"] === "string" || record["owner"] === null ? { owner: record["owner"] as string | null } : {}),
   };
 }
 
@@ -236,7 +231,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
       const at = generation;
       for (let attempt = 0; ; attempt += 1) {
         const target = current();
-        if (target === null || at !== generation || options.canDeliver?.(target.owner) === false || alert.current?.() === false || !alertKindAllowed(target.alerts, alert.kind)) break;
+        if (target === null || at !== generation || alert.current?.() === false || !alertKindAllowed(target.alerts, alert.kind)) break;
         const result = await post(target, alert);
         if (at !== generation) break;
         record(result);
@@ -303,7 +298,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
       return run;
     },
     view,
-    save(input, linkBase, owner) {
+    save(input, linkBase) {
       if (!(ALERT_WEBHOOK_PRESETS as readonly string[]).includes(input.preset)) throw new WebhookInputError("unknown destination");
       const before = current();
       const same = before?.preset === input.preset ? before : null;
@@ -332,7 +327,6 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
         preset: input.preset, secret, ...(chatId ? { chat_id: chatId } : {}),
         alerts: input.alerts === undefined ? same?.alerts ?? DEFAULT_ALERTS : parseAlerts(input.alerts),
         ...(base ? { link_base: base } : {}),
-        ...(owner === undefined ? {} : { owner }),
       };
       writePrivateState(path, saved);
       const changed = before === null || before.preset !== saved.preset || before.secret !== saved.secret || before.chat_id !== saved.chat_id;
@@ -351,8 +345,8 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
   };
 }
 
-/** /api/alerts/webhook routes (shared/alert-webhook.ts). A watching device is refused every change before it gets here (dispatch.ts). */
-export async function handleAlertWebhookRequest(request: Request, pathname: string, webhook: AlertWebhook, owner?: string | null): Promise<Response | null> {
+/** /api/alerts/webhook routes (shared/alert-webhook.ts). */
+export async function handleAlertWebhookRequest(request: Request, pathname: string, webhook: AlertWebhook): Promise<Response | null> {
   if (pathname !== "/api/alerts/webhook" && pathname !== "/api/alerts/webhook/test") return null;
   setRequestRoute(pathname);
   const route = `${request.method} ${pathname}`;
@@ -377,7 +371,7 @@ export async function handleAlertWebhookRequest(request: Request, pathname: stri
       ...(text("token") === undefined ? {} : { token: text("token")! }),
       ...(text("chat_id") === undefined ? {} : { chat_id: text("chat_id")! }),
       ...(body["alerts"] === undefined ? {} : { alerts: parseAlerts(body["alerts"]) }),
-    }, request.headers.get("origin") ?? new URL(request.url).origin, owner);
+    }, request.headers.get("origin") ?? new URL(request.url).origin);
     return jsonResponse(saved, 200, noStore);
   } catch (error) {
     if (error instanceof WebhookInputError) return badRequest("invalid_webhook", error.message);

@@ -1673,7 +1673,7 @@ export class MachineManager {
       try { response = await get("/api/updates"); }
       catch (error) { return { refused: bridgeUnreachable(descriptor, error) }; }
       // an older Ovis takes the tunnel as this PC's own connection only on its loopback and without OVIS_TOKEN (server/access.ts)
-      if (response.status === 401 || response.status === 403) { await discard(response); return { refused: `That PC's Ovis refused this app's request: it asks for its own access token (OVIS_TOKEN) or a paired device, and this app has neither. ${there}` }; }
+      if (response.status === 401 || response.status === 403) { await discard(response); return { refused: `That PC's Ovis refused this app's request: it asks for its own access token (OVIS_TOKEN), and this app has none. ${there}` }; }
       if (!response.ok) { await discard(response); return { refused: `That PC's Ovis did not tell its update status (${response.status}). ${there}` }; }
       try { return { status: await readCappedJson<Partial<UpdateStatus> | null>(response, REMOTE_LIMITS.ownUpdates) }; }
       catch { return { refused: `That PC's Ovis did not tell its update status. ${there}` }; }

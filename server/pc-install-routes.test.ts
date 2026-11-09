@@ -45,22 +45,20 @@ function fixture() {
   forgetSshAddresses();
   cleanups.push(() => { resolve.mockRestore(); forgetSshAddresses(); });
   cleanups.push(() => { manager.stop(); Object.assign(SshConnection.prototype, real); reconnect.mockRestore(); rmSync(dir, { recursive: true, force: true }); });
-  /** as this PC's owner from this app's own page, unless the test says otherwise */
-  const call = (path: string, method = "POST", body?: unknown, readOnly = false, owner = !readOnly, headers: Record<string, string> = { "x-herdr-update": "1" }) => handleMachineRequest(new Request(`http://localhost:7317/api/machines/${path}`,
-    { method, headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "content-type": "application/json", ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), manager, undefined, undefined, readOnly, undefined, undefined, undefined, owner);
+  /** from this app's own page, unless the test says otherwise */
+  const call = (path: string, method = "POST", body?: unknown, headers: Record<string, string> = { "x-herdr-update": "1" }) => handleMachineRequest(new Request(`http://localhost:7317/api/machines/${path}`,
+    { method, headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "content-type": "application/json", ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), manager);
   /** an install job once it has ended, as the installer itself settles it */
   const ended = async (id: string) => { await (manager as unknown as { installer: { finished(id: string): Promise<void> } }).installer.finished(id); return manager.installJob(id)!; };
   return { manager, internals: manager as unknown as Internals, waiting, reached, call, ended };
 }
 
-it("starts an install on a PC not added here, tells its job, refuses a watching device and an address already added", async () => {
+it("starts an install on a PC not added here, tells its job, refuses a request from outside this app's page and an address already added", async () => {
   const { manager, waiting, reached, call, ended } = fixture();
-  expect((await call("install", "POST", { destination: "me@new.invalid" }, true)).status).toBe(403);
-  // running the installer on another PC is the owner's only (access.ts ownerAccess), from this app's own page
-  for (const refused of [await call("install", "POST", { destination: "me@new.invalid" }, false, false), await call("install", "POST", { destination: "me@new.invalid" }, false, true, {}), await call("install/any-job", "GET", undefined, false, false)]) {
-    expect(refused.status).toBe(403);
-    expect((await refused.json() as { error: { code: string } }).error.code).toBe("forbidden");
-  }
+  // running the installer on another PC is asked from this app's own page (the update header)
+  const refused = await call("install", "POST", { destination: "me@new.invalid" }, {});
+  expect(refused.status).toBe(403);
+  expect((await refused.json() as { error: { code: string } }).error.code).toBe("forbidden");
   const added = await call("install", "POST", { destination: "me@lab.invalid" });
   expect(added.status).toBe(409);
   expect((await added.json() as { error: { code: string } }).error.code).toBe("install_unavailable");

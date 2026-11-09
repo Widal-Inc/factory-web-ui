@@ -143,16 +143,15 @@ describe("diff line notes", () => {
     expect(noteOverflows([...waiting, { id: "big", quote: "q", comment: "z".repeat(MAX_COMPOSER_CHARS) }], "Go ahead", "quote", "note", new Set(["big"]))).toBe(false);
   });
 
-  it("says why a pane cannot take a note: none, gone, a watching device, or no agent in it", () => {
+  it("says why a pane cannot take a note: none, gone, or no agent in it", () => {
     const agent = { agent: "codex", agent_status: "done" as const };
-    expect(noteBlock({ paneId: "p1", pane: agent, watching: false })).toBeNull();
-    expect(noteBlock({ paneId: null, pane: undefined, watching: false })).toBe("no-pane");
-    expect(noteBlock({ paneId: "p1", pane: undefined, watching: false })).toBe("pane-gone");
-    expect(noteBlock({ paneId: "p1", pane: undefined, watching: false, reachable: false })).toBe("pc-offline");
-    expect(noteBlock({ paneId: "p1", pane: agent, watching: true })).toBe("watching");
-    expect(noteBlock({ paneId: "p1", pane: agent, watching: false, observing: true })).toBe("observing");
+    expect(noteBlock({ paneId: "p1", pane: agent })).toBeNull();
+    expect(noteBlock({ paneId: null, pane: undefined })).toBe("no-pane");
+    expect(noteBlock({ paneId: "p1", pane: undefined })).toBe("pane-gone");
+    expect(noteBlock({ paneId: "p1", pane: undefined, reachable: false })).toBe("pc-offline");
+    expect(noteBlock({ paneId: "p1", pane: agent, observing: true })).toBe("observing");
     // a pane this window has not mounted: whether it may type there is not known, so no note
-    expect(noteBlock({ paneId: "p1", pane: agent, watching: false, mounted: false })).toBe("pane-not-open");
-    expect(noteBlock({ paneId: "p1", pane: { agent: null, agent_status: "unknown" }, watching: false })).toBe("no-agent");
+    expect(noteBlock({ paneId: "p1", pane: agent, mounted: false })).toBe("pane-not-open");
+    expect(noteBlock({ paneId: "p1", pane: { agent: null, agent_status: "unknown" } })).toBe("no-agent");
   });
 });

@@ -524,7 +524,6 @@ The values are the ones in `src/styles.css`. Every token but `--fs-input` is `ca
 | Title | `--fs-xl` | `calc(18px * var(--ui-scale))` | `calc(17px * var(--ui-scale))` | Markdown h1 |
 | Display | `--fs-display` | `calc(22px * var(--ui-scale))` | `calc(21px * var(--ui-scale))` | The empty chat's greeting |
 | Input | `--fs-input` | `16px` | `16px` | Mobile-safe text input |
-| Pairing | `--fs-pairing` | `calc(32px * var(--ui-scale))` | `calc(26px * var(--ui-scale))` | The pairing code in Settings → Devices |
 
 | Token | Value | Usage |
 |-------|-------|-------|
@@ -906,8 +905,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   `--touch-target-header` wide. Mod+Shift+J switches too.
 - From `769px` with a fine pointer (a touch screen keeps the room for its key bar) the pane column ends in a 28px status bar (`.status-bar`, after the Herdr app's
   workspace status line) on `--bg-panel` under a `--divider` rule: the PC › workspace (› folder)
-  and the branch at its start, the session's worked time; at its end View only on a watching
-  device, a tinted "N waiting for you" button that opens the next session waiting, and the
+  and the branch at its start, the session's worked time; at its end a tinted "N waiting for you" button that
+  opens the next session waiting, and the
   connection (Connected, or the word while it is not live). The header draws no session counts
   and no connection route; More's first item still jumps to the next waiting session, with a
   waiting dot on its button on a phone. More's header keeps the session's lines and the route, and
@@ -924,21 +923,9 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   `--bg`; under the terminal lens, with no pane, or with a pane herdr could not restore, `--term-bg`
   and the rule. A split view's strips take the same surface as the header over them (`--strip-bg`:
   `--bg` under the chat lens, `--term-bg` otherwise, `--bg-panel` below `769px`) and keep their
-  hairline, under the chat the one line over the transcript (no fade under it). The update notice, the alerts health notice, a PC's action banner and the pairing line (below) are drawn in
+  hairline, under the chat the one line over the transcript (no fade under it). The update notice, the alerts health notice and a PC's action banner are drawn in
   the pane column, over the tab strip, never across the window: the sidebar and its top row stay
-  one piece. A device pairing with this server while a window is open (`device-paired` on the
-  machines event stream) is one `.update-notice.is-paired` line there: a `--accent` phone glyph
-  (`--icon-size`), one sentence naming the device and the time with the warning in words ("If that
-  was not you, revoke it."), a neutral **Phone & devices** button that opens Settings there and
-  takes the line down, and an X (**Dismiss**). It has no tint of its own, since the usual case is
-  the owner's own phone: the words carry the other case, so no colour has to. Up to three lines
-  wait, the oldest giving way, until read; on a phone the two controls sit together on a row
-  under the sentence. The device that paired never sees it, not even a browser that paired itself
-  with its window already open, in any tab, nor is it pushed to that browser (its stream keys,
-  shared/protocol.ts "Browser stream keys"); nor does anyone see a pairing whose write failed. The
-  line follows this app's own update and LAN-exposure notice lines, which it sits beside, so a new
-  device reads as one more thing to look at; the Codex and Claude apps have no verified device
-  alert to follow. A layout
+  one piece. A layout
   call the palette made that a PC's bridge from before the route answered 404 to reads there too,
   for a moment, as a `.pane-notice` line of `--status-blocked` `--fs-xs` text under a hairline
   ("This PC's bridge does not offer this yet"); the tab's menu says the same at the strip's end. With the
@@ -981,10 +968,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
 ### Button (`.btn`, `.icon-button`)
 - `.btn` is a medium text control. Variants: neutral, `.btn-primary`, `.btn-danger`, `.btn-ghost`.
   Primary uses `--primary`; danger uses danger tint plus blocked border; ghost removes fill/edge.
-  A destructive action that asks twice (Settings → Phone & devices, Revoke) is a neutral
-  `.icon-button` (the trash glyph, named "Revoke {name}") at rest and becomes `.btn-danger` with
-  its "Revoke?" label only while it asks to confirm; the same element through both steps, so focus
-  stays on it. A trust decision (the SSH host key) shows the fingerprint to compare
+  A trust decision (the SSH host key) shows the fingerprint to compare
   (`.machine-fingerprint`: `--font-mono`, `--fs-md`, `--text-strong`, under a dim "Fingerprint of
   {host}" label) over one sentence, "Trust it only if it matches the fingerprint shown on the PC.";
   ssh's own words wait behind a Show SSH output fold, and no status box sits above the question.
@@ -1046,19 +1030,6 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   named (git refusing a dirty checkout) turns the action into its escalation (**Delete anyway**),
   with the refusal's words above it. Closing a repository workspace over open worktrees says so
   and closes the group, as herdr's `--group` does.
-- Revoking every paired device (Settings → Phone & devices, **Revoke every device**) is one Settings
-  row under the pairing controls, parted from them by a hairline: the label, one sentence that says
-  the caller's own pairing goes too and what does not (the access token, this PC), and a neutral `.btn` **Revoke all** at the line's end. It opens the confirm above, whose
-  body says the same in two sentences (each device needs a new code to get back in) and whose danger
-  action is **Revoke all**; a refused write stays in it as a sentence that says nothing was revoked
-  and to try again, naming the server's log reference (never a file name). A device that only
-  watches reads a sentence that says who can do it, with no button (a disabled one would only be a
-  fainter dead control); an empty list has no row. After a yes the
-  list and the row are gone and one `role="status"` line says every device went and what still
-  gets in. No keep-this-device choice: the one action the owner needs when a credential is lost
-  is the one that ends them all. The design follows this app's own paired-device model (the
-  single Revoke above, the Sign out row's confirm): the Codex and Claude apps have no verified
-  device-management surface to follow.
 
 ### Field (`.field`, `.input`, `.select`)
 - Stacked uppercase label, optional hint and `--bg-input` field. Desktop fields use `--fs-sm`;
@@ -1102,9 +1073,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   Mute alerts or Unmute alerts, with the check mark while muted; a muted row draws a crossed bell
   beside its state (`.agent-muted`, `--text-dim`, `--space-3`; `--text` in the half-faded row of a
   PC that is away, so it keeps 3:1 there), named Alerts muted for a screen reader and the tooltip, so the state is never told by colour alone. A pane's status is tracked
-  while it is muted, and Unmute alerts tells only what changes after it. A watching device sees
-  the state in the menu, in `--text-dim` and `aria-disabled` (`.is-disabled`, not faded, so it keeps AA contrast), and
-  cannot change it; a server too old to keep the list offers no item. This follows Slack's and
+  while it is muted, and Unmute alerts tells only what changes after it. A server too old to keep the
+  list offers no item. This follows Slack's and
   Discord's per-channel mute, a checkbox item in the row's own menu, not a per-channel switch
   (Codex's and Claude's apps have no mute of their own); agent-of-empires has a per-channel
   override, which the shared, PC-keyed list replaces.
@@ -1116,7 +1086,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   worktree checkout for a workspace whose close would take it; a confirmation already open when a
   lock lands goes, and a workspace or group close also goes unsent when the workspaces or panes it
   would take differ from those it was opened over. A tab is checked by every pane in it, by id,
-  whatever the strip lists. A watching device sees the item disabled, as Mute alerts is. The locks are the shared `lockedAgents`
+  whatever the strip lists. The locks are the shared `lockedAgents`
   setting, pin keys that hold only while the row is pinned, so every browser and phone honours
   them; a lock moves with its pin when herdr moves the pane. Closing from herdr, the Herdr app or a
   script is untouched. Browsers' pinned tabs keep their place but still close; this adds the
@@ -1612,8 +1582,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   them to every browser as `seen` events on `/api/machines/events`: all of them when the stream
   opens, then each change. A received record is laid over this browser's own with the same
   max-finish rule, so it can mark a finish read, never bring a dot back. Each finish is sent once
-  per page, again with its answer fingerprint once the chat has it, and again after a failure. A
-  watching device's views stay its own (its POST is refused), and an older server without the
+  per page, again with its answer fingerprint once the chat has it, and again after a failure. An
+  older server without the
   route keeps every browser's record local. Saved read records survive reconnecting/offline rosters, which
   hide their status badges and cannot create new acknowledgements. Retention cleanup after a save runs only
   when storage was actually written, not on every repeated DONE frame. Raw statuses and herdr
@@ -1721,13 +1691,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   It carries no product name or version: the running versions are read in Settings. Nor does it
   offer **Install app**: the page can only tell it is installed from inside the app's own window,
   so a footer row kept showing in every browser tab and in browsers that never prompt. Settings →
-  Phone & devices → Install offers it when the browser can install, and the steps otherwise,
+  Devices and PCs → More settings → Install offers it when the browser can install, and the steps otherwise,
   as the Claude web app keeps getting its apps in the account menu rather than a sidebar row.
-- Above that row, only where the page is one PC of a phone's list (the phone app), one full-width row (`.sidebar-footer-pc`) names the PC, the lone
-  Host's name its header no longer shows, then **Change PC** in `--text-dim` and a switch glyph: a
-  tap goes back to the list of PCs (the shell's front page, or the app's list), as the Claude app's
-  sidebar foot names whose account it is and switches it in one tap. Settings → Phone & devices
-  keeps its Change PC row. A PC's own app never shows it: its sidebar lists its PCs itself.
 
 ### Plan meters (`.usage*`)
 - Right of the Settings gear, one button holding as many chips as the row has room for (judged
@@ -1866,8 +1831,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   JSON goes as the path of a file holding the same text (`server/claude-settings-file.ts`).
   Under the message, **Skills**: the agent's skills in the folder before any process exists
   (`GET /api/agent/commands?agent=&cwd=`, the pane commands route without a pane: the bridge's
-  tables and a disk scan, no agent started; a device that may only watch is refused it as it is a
-  directory listing and a file read), as mono `.btn` chips with `--radius-pill` that wrap to
+  tables and a disk scan, no agent started), as mono `.btn` chips with `--radius-pill` that wrap to
   three rows and then scroll, each the token the agent types (`$review-pr` for Codex, `/review-pr`
   elsewhere, `@name` where that is the trigger) with the skill's description as its tooltip; a tap
   puts the token at the message's caret, spaced, and focuses the box. An empty list says **No skills
@@ -1929,7 +1893,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   held, queued or answering a question). Only a user's action shares it (the dialog's Start, a message
   delivered from Chat to an agent's pane): a label read from a transcript shows in that page alone until
   then, and a label dropped for a closed pane goes out with the next change someone makes, so reading or
-  watching a page never writes the shared preferences. A watching device shows the labels and learns none.
+  watching a page never writes the shared preferences.
   Settings → Appearance, Name tabs from the first message (on by default, its description says what is
   kept), keeps tabs as herdr names them.
 - A vertical mouse wheel over a strip whose tabs do not fit scrolls it sideways, as Zed's tab bar
@@ -2274,7 +2238,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   and wrap; Escape closes Find first and returns the focus to what first opened it (a repeated
   Ctrl/Cmd+F only refocuses the query), the viewer on the next press. Reopened, Find shows its
   query, count and active match again. A new file, comparison or patch drops the query and its anchor; without a patch
-  (on its way, binary, too large, a conflict, a refusal, an offline PC, a watch-only device)
+  (on its way, binary, too large, a conflict, a refusal, an offline PC)
   Find is off and says there is no loaded patch to search. Nothing is fetched to widen the
   search: the routes serve the patch alone. Precedent: a browser's or an editor's find bar
   (Zed, VS Code), scoped to the one virtualized diff; that the Codex or Claude apps search their
@@ -2307,7 +2271,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   full refname, so a tag of the same name is never meant). What the list has to say takes a
   `.repo-changes-refs-note` in its own words: on its way, no branches yet (a commit can still be
   typed), none matching (Compare takes the name as typed), cut at 200 (another can be typed by
-  name), and every refusal (a watching device, a bridge too old for the route). The branch is
+  name), and every refusal (a bridge too old for the route). The branch is
   compared from its merge base with the base, untracked files included, so the base's own later
   changes stay out; a second mono line under the repository line (`.repo-changes-identity`, a
   `GitMerge` glyph, wrapping on a phone) says so: `Compared from 3f1c2aa, the merge base with
@@ -2415,8 +2379,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   **local** (loopback: this PC, or a tunnel to another, which nothing can tell apart). The route,
   not the connection's state, is its title and accessible text ("Via Tailscale"); the chip tells the
   state. It is read from what the page owns and the server's own word on the request
-  (`observed_ingress`), never guessed. It is not a button and never wraps. The phone app's demo
-  shows none.
+  (`observed_ingress`), never guessed. It is not a button and never wraps.
 - The header draws no session counts: the sidebar and each tab's mark say every session's state, and
   the status bar (from `769px` with a fine pointer) its waiting count. Its "N waiting for you" button
   (`lib/headerSessions.ts` `nextWaitingPane`) opens the next waiting session after the selected one in
@@ -2526,13 +2489,6 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
 - Markdown supports headings, lists (a task item `- [x]` / `- [ ]` shows a checked or empty box in
   place of its bullet, not clickable), links, quotes, tables, inline/fenced code and code-copy
   actions.
-  A long press on a rendered link in the Android app opens the phone's sheet (RowMenu,
-  `MarkdownLinkMenu.tsx`) with **Copy link**, **Open link** (the tap's own way) and, where the
-  WebView has `navigator.share`, **Share link**; the link's words are its title, the address under
-  them. Android's WebView draws no link menu of its own, while Chrome, Safari and the iOS app's
-  WKWebView do, and keep theirs: the sheet follows Android Chrome's link menu, cut to those three.
-  Only the WebView's own long press (its `contextmenu`, not a mouse's) opens it, so a tap, a swipe
-  and a press on other words keep their meaning.
   Markdown files use the same renderer in the file viewer. **Open in a new tab** opens an
   app link to the resolved absolute file on its own PC, independent of the originating pane.
   **Open raw file** (Code glyph) opens the original bytes; Download still saves those bytes.
@@ -3174,12 +3130,12 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   Bounded byte-exact tail checks assume Pi's append-only history contract, not arbitrary older
   history corruption detection; changed inode, header, anchor tail or branch fails closed. Pi may
   stage input while status says idle/done during automatic compaction, so status and screen text are
-  not delivery evidence. A receipt belongs to its sending browser and authenticated device,
+  not delivery evidence. A receipt belongs to its sending browser,
   not another attached typist. The bridge retains disconnected presentation receipts and exact
   consumed IDs for up to ten minutes, capped at 1024 each. An authorized, non-observing reattach
-  with the same opaque browser resume ID and device can resume that receipt or receive its exact
+  with the same opaque browser resume ID can resume that receipt or receive its exact
   consumed removal on the local machine only. Remote-machine relays strip the resume ID from every
-  attach because their shared bridge token carries no trusted origin-device namespace; remote
+  attach because their shared bridge token carries no trusted origin namespace; remote
   reconnection cannot resume presentation receipts. This conveys no input permission. The browser's saved, non-resendable
   **transcript confirmation unavailable** copy remains after server restart or retention expiry;
   neither matching text nor an empty queue clears it. A changed terminal or session also makes
@@ -3188,7 +3144,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   now action claim the same server ID. Connection loss never resumes automatic input. Previously
   held browser messages retain their explicit Send now/Discard recovery.
   Any other follow-up's exact `sent` or `discarded` receipt is kept the same way (ten minutes, 1024,
-  same browser resume ID and device, local machine only) and replayed with `resumed: true` on its
+  same browser resume ID, local machine only) and replayed with `resumed: true` on its
   browser's reattach, or to that browser's already attached successor when the Enter's reply comes
   after the reload. It settles only that exact ID's saved copy: an uncertain copy, which ages out as
   `dismissed`, stays unconfirmed, and nothing is typed again (#2421).
@@ -3278,8 +3234,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   transcript, in the box the hidden grid already holds. It is this browser's state alone: the
   lens stays Chat (the header keeps Chat pressed; `ovis:view:<pane>` and `?view=` are not
   written), nothing attaches anew and herdr's focus never moves. Queue acceptance and automatic
-  delivery open none, refused or unconfirmed sends keep the draft and existing note, and a
-  view-only device has no composer to open one from. The chat stays mounted under the grid
+  delivery open none, and refused or unconfirmed sends keep the draft and existing note. The chat stays mounted under the grid
   (`visibility: hidden`), keeping its layout, reading position and reads. A `--hairline` ring in
   `--accent` marks the grid as a passing view; it snaps open and closed, with no motion. On a
   desktop the composer, held messages and prompt card stay where they are, dimmed and `inert`,
@@ -3413,7 +3368,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   shook the chat, #1922). With a mouse it stands under the point where the button was released; on a touch
   screen `28px` under the selection, clear of its handles, while the system's own menu stays above it.
   A selection reaching a user message, a work block, a skill or goal line or the copy row offers nothing;
-  a watching device and an ended pane offer nothing either.
+  an ended pane offers nothing either.
 - Quote puts the words in the pane's draft as `> ` quote lines and a blank line, after what the draft
   holds (kept as typed), and the message box takes the keyboard with its caret at the end; nothing is
   sent, and quotes stack. The draft is then `agent_only`, as a message carrying comments is. A quote that
@@ -3445,8 +3400,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   diff color, a field, Cancel and **Add to next message** (Mod+Enter); Escape closes it while empty.
   The quote names the PC, repository, path, side and one-based line, the comparison as read (full
   commits, the branch's three commits, or HEAD and the patch's identity) and the line in a fence longer
-  than any backtick run in it. Only the diff's own pane takes it: none, closed, no agent or a watching
-  device disables Add a note with the reason in the bar. A note that would take the next message past
+  than any backtick run in it. Only the diff's own pane takes it: none, closed or no agent
+  disables Add a note with the reason in the bar. A note that would take the next message past
   the composer's limit is refused in the editor; nothing is cut or replaced.
 - Precedent for the diff note: GitHub's and Codex's review gutter `+` on a diff line; it differs in
   collecting the note for the next message instead of posting a review thread.
@@ -3608,8 +3563,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   **Alerts** (the test, sound and other destinations; which alerts come is the **Alert me when**
   group of its More settings, as almost every install keeps them), **Agents**, **Shortcuts** (the
   platform-resolved global bindings), **Devices and PCs**
-  (**My devices**: Connect a device, this PC, the other PCs and the paired
-  phones and browsers in one list; its More settings: This device, Show in sidebar,
+  (**My devices**: Add a connection, this PC and the other PCs in one list; its More settings:
+  Sign out of this PC, This device, Show in sidebar,
   Access, the PCs' bridge updates and load line), **About** (Updates,
   herdr, the repository links). Each page's other rows are in its folds (above). Voice input was a
   page and is Chat's group (its dictation language, speech recognition, tidying and OpenAI key in
@@ -3671,19 +3626,17 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
 - A font family is a text field saved when it is left, on Enter or when the dialog closes, not
   per keystroke.
 - Devices and PCs follows WhatsApp's **Linked devices**: one list of
-  everything connected (**My devices**) under one **Connect a device** row whose **Connect** button
-  opens every way in, as Tailscale's admin **Add device** does. Devices and other PCs are one list
+  everything connected (**My devices**) under one **Add a connection** row whose button
+  opens every way in, as Tailscale's admin **Add device** does. This PC and the other PCs are one list
   because to the person they are one thing: something connected to this PC. Rows are as short as
-  the page allows; what pairing means is one folded sentence, and what few people change is in
-  More settings. Old links to the Phone and Remote PCs groups land on My devices.
-- My devices (`MyPcRows` in SettingsDialog.tsx, then `components/DevicesPanel.tsx`): this PC
+  the page allows, and what few people change is in More settings. Old links to the Phone and
+  Remote PCs groups land on My devices.
+- My devices (`MyPcRows` in SettingsDialog.tsx): this PC
   first (its name and a **This PC** pill in the accent), then the PCs this app shows (a neutral **PC**
   pill and their state; one that is not connected is dimmed, and one this app added over SSH carries a
-  **Remove PC** trash button that asks once, as the sidebar's PC menu does), then the paired phones and
-  browsers with a neutral kind pill (Phone, Tablet or Browser, read from the name the app first gave the
-  device), Rename and Revoke as before, then **Revoke every device**. **Sign out of this PC** (the
-  browser's own pairing) is named apart.
-- Add a connection (`components/ConnectPhoneDialog.tsx`, a `.modal`, a bottom sheet on a phone) follows
+  **Remove PC** trash button that asks once, as the sidebar's PC menu does). **Sign out of this PC**
+  (this browser's token cookie) is in More settings, apart from the list.
+- Add a connection (`components/AddConnectionDialog.tsx`, a `.modal`, a bottom sheet on a phone) follows
   herdr's own **Add a machine** sheet: one tab per way across the top (the `.segmented` primitive,
   as FilesDialog's tabs), and under each the things that way found, each with one action, then a
   field to type one. **SSH** (only for the PC's owner on its own page) lists the PCs saved in herdr
@@ -3691,24 +3644,21 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   the address dim and ellipsized (under the name on a phone), a neutral pill for where it was found
   (herdr, ssh config, Tailscale), then **Add** or a quiet **Added** in the done green; **Add** and the
   typed address close Settings and open the PC setup dialog with the address filled in. **Phones and
-  devices** stacks, under a hairline each, the Tailscale address and QR code, the six-digit pairing
-  code (`components/CompactPair.tsx`, started when the tab first opens). A phone
-  opens on Phones and devices, a PC's window on SSH; a tab once opened stays mounted, so its code
-  is not minted again. The dialog closes by itself once My devices sees the device a code let in.
+  devices** holds the Tailscale address and its QR code (`components/PhonePanel.tsx`). A phone
+  opens on Phones and devices, a PC's window on SSH; a tab once opened stays mounted.
 - Install (a row of More settings' This device, shown only when the browser can install) offers it;
   About links the repository.
 - Access, a group of Devices and PCs' More settings, is read-only: one row per fact the server reports
   (`security` on `/api/health`), each a label, its dim sentence and the value in place of a
   control (`.settings-fact`: `--fs-md`, `--fw-medium`, `--text-strong`, end-aligned, at most 45%
-  of the line). Access token Set or Not set; Pairing gate Not yet closed, Closed or Unavailable;
+  of the line). Access token Set or Not set;
   Listens on Loopback, Tailscale address or Other address; This connection No proxy seen (with a line saying a proxy that adds nothing looks the same), Through a proxy,
   Through Tailscale Funnel or Unknown; Public internet Reachable (only seen on a
   Funnel request) or Unknown. No colour, icon or summary line carries a meaning, and nothing reads
   "safe", "secure" or "local only": a proxy or router in front can expose any bind, and only this
   request's own path is known. Before the server answers the group is one Loading line; a server
   that answers without the facts (an older one) and a check that failed are one sentence each, and
-  neither shows an earlier answer or rebuilds one from `auth` or a missing LAN warning. The open-LAN
-  warning stays where and as it was. Neither the Codex nor the Claude app shows such a summary, so
+  neither shows an earlier answer or rebuilds one from `auth`. Neither the Codex nor the Claude app shows such a summary, so
   there is no app to follow; Agent of Empires' security page was the prompt, but its short summary
   calls a loopback bind local-only, which this group does not.
 - The running versions are always written, since the sidebar carries none. Updates opens with
@@ -3730,7 +3680,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   pattern.
 - Agents (`AgentsSettings`) took the place of Subscription usage and Agent integrations, after the
   owner-approved mockup (Codex app's settings list one row per connected thing, shut until opened,
-  as Zed's agent settings list each agent): **Open setup guide** (this PC, not a watching device),
+  as Zed's agent settings list each agent): **Open setup guide** (this PC),
   then **On this PC**, one row per installed catalog agent in the catalog's order (mark, name, dim
   version, one state line: a status dot and Signed in · account, N accounts · M need attention, Not
   signed in, or Installed where Ovis reads no sign-in for it), with one action while shut (Sign in
@@ -3770,8 +3720,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   finds its home among the sign-ins on disk at that moment, never from a path the browser sends,
   and the tab's command sets that home (or removes an inherited one, for the default home). A hub's
   account (its sign-in lives in the hub), the other providers (their CLIs may keep a sign-in apart
-  from the one read here: Cursor's app, Copilot's editor; Antigravity signs in only in its app) and
-  a watching device get no button, and the popover keeps its "Open X" note for them. A refusal shows under the button; a
+  from the one read here: Cursor's app, Copilot's editor; Antigravity signs in only in its app) get no
+  button, and the popover keeps its "Open X" note for them. A refusal shows under the button; a
   started sign-in closes the popover or Settings and selects the new tab. This follows Claude
   Code's `/login` and `codex login`, which re-authenticate the config home they run in rather than
   adding an account.
@@ -3884,7 +3834,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   erase it), the grid at its size panned sideways as before, and Wrap to screen back. Until the
   user chooses, a narrow screen (a touch screen, or 768px and under) folds and a desktop does not. A
   watching phone folds too. An attached pane's grid folds the same way while this device does not
-  size the pty: watching it (a device paired to watch), or under a phone's soft keyboard, where the
+  size the pty: under a phone's soft keyboard, where the
   grid stays at another device's size until the keyboard goes (#1045). It is drawn from the xterm
   buffer the attach stream wrote, never from a pane read, and the pane is never resized for it; the
   pane menu then offers the same choice, under the same setting. A cursor the grid shows (an attached
@@ -4204,8 +4154,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
 ### Setup guide (`.setup-*`)
 - Follows the Claude and Codex apps' first runs: one screen in the pane area, the sidebar left in
   place, nothing modal. It opens by itself once, on a fresh install only (no herdr workspace, no
-  saved settings, no shared settings, no paired device); Settings opens it again. A watching device
-  never sees it.
+  saved settings, no shared settings); Settings opens it again.
 - The welcome is centered: the app mark, "Is this your first time using Ovis?" and two big choice rows
   (`--radius-xl` cards on `--bg-panel`, an accent border on hover).
 - Then one screen in a 552px column, "Set up Ovis" and "Skip setup" over it, no progress bar. It first
@@ -4225,23 +4174,14 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   the agent asks for its own when it first starts. On a first run, plan usage turns on by itself for
   accounts already signed in; the guide opened again from Settings changes no setting (nor says it
   will).
-- "Start with …" and beside it a plain "Connect your phone", which opens a `--bg-panel` box under them on a tap. It shows a QR code that opens the app on the phone with a fresh pairing code filled in, the address and the
-  code. The code is asked for when the box opens and never renewed behind the user's back (it would
-  replace one Settings shows); once a phone pairs ("Paired: …") or it runs out, New code asks again.
-  A browser in only because nothing is paired yet pairs itself first, as Settings → Phone's Pair this
-  device now does (a paired phone turns the app's sign-in on), and a line says other browsers now need
-  pairing too; one such pairing runs at a time across the guide and Settings, and none runs for a
-  browser the server already lists. Where the page has no address a phone can open (the PC's
-  loopback), or the server does not say how this browser got in, it opens Settings → Phone instead. Start opens the folder this browser used last, else the server's home, without asking.
+- "Start with …" opens the folder this browser used last, else the server's home, without asking.
   Alerts are not offered here: they hang on the browser's permission and, on an iPhone, on the app
   being on the home screen first, so they stay in Settings → Alerts. A failed check says "Couldn't
-  check this PC" with its error and Look again. On a phone Start and Connect your phone take the full
-  width.
+  check this PC" with its error and Look again. On a phone Start takes the full width.
 - The tile is `AgentTile` (`AgentTile.css`), shared with a creation dialog's Add another agent… and
   Settings → Agents, where the PC's agents that can be installed are the same tiles (an
   installed one there is only shown, never picked). Settings → Agents starts with **Open
-  setup guide**, which opens this guide again (`lib/setupGuide.ts`); a watching device gets neither
-  the row nor the Install buttons.
+  setup guide**, which opens this guide again (`lib/setupGuide.ts`).
 
 ### Token gate
 - A centered password card replaces the entire shell while authentication is required. It has a real

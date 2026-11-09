@@ -27,9 +27,8 @@ function lanHost(host: string): boolean {
   return host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa");
 }
 
-/** The route, or null in the phone app's bundled demo, which reaches no PC at all. */
-export function connectionRoute(page: { ingress: ObservedIngress | null; protocol: string; hostname: string }): ConnectionRoute | null {
-  if (page.protocol === "capacitor:") return null;
+/** The route this page reaches Ovis by. */
+export function connectionRoute(page: { ingress: ObservedIngress | null; hostname: string }): ConnectionRoute {
   if (page.ingress === "funnel") return "direct";
   // a trailing root dot names the same host (the server's own host check drops it too)
   const host = page.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");

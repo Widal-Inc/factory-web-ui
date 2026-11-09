@@ -38,7 +38,7 @@ describe("the setup guide closed in another tab", () => {
   async function resumeAt(state: GuideState): Promise<void> {
     records.set(GUIDE_STORAGE_KEY, JSON.stringify({ status: "open", state }));
     function Probe() {
-      hook = useSetupGuide({ enabled: true, workspaces: 0, pairingGate: "open", watching: false });
+      hook = useSetupGuide({ enabled: true, workspaces: 0 });
       return null;
     }
     await act(async () => { renderer = create(createElement(Probe)); });
@@ -149,64 +149,5 @@ describe("the setup guide closed in another tab", () => {
     await act(async () => { window.dispatchEvent(new Event("ovis:open-setup-guide")); });
     expect(hook.guide?.step).toBe("setup");
     expect(JSON.parse(records.get(GUIDE_STORAGE_KEY)!).status).toBe("open");
-  });
-});
-
-describe("the setup guide on a watching device", () => {
-  const descriptors = new Map<string, PropertyDescriptor | undefined>();
-  let records: Map<string, string>;
-  let events: EventTarget;
-  let renderer: ReactTestRenderer | undefined;
-  let hook: ReturnType<typeof useSetupGuide>;
-
-  beforeEach(() => {
-    for (const key of ["window", "IS_REACT_ACT_ENVIRONMENT"]) descriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-    records = new Map();
-    events = new EventTarget();
-    Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
-    Object.defineProperty(globalThis, "window", { configurable: true, value: {
-      localStorage: { getItem: (key: string) => records.get(key) ?? null, setItem: (key: string, value: string) => records.set(key, value) },
-      addEventListener: events.addEventListener.bind(events),
-      removeEventListener: events.removeEventListener.bind(events),
-      dispatchEvent: events.dispatchEvent.bind(events),
-    } });
-  });
-
-  afterEach(async () => {
-    await act(async () => { renderer?.unmount(); });
-    renderer = undefined;
-    for (const [key, descriptor] of descriptors) {
-      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-      else Reflect.deleteProperty(globalThis, key);
-    }
-    descriptors.clear();
-  });
-
-  function Probe({ watching }: { watching: boolean }) {
-    hook = useSetupGuide({ enabled: true, workspaces: 0, pairingGate: "open", watching });
-    return null;
-  }
-
-  async function mount(watching: boolean, saved: GuideState | null): Promise<void> {
-    if (saved !== null) records.set(GUIDE_STORAGE_KEY, JSON.stringify({ status: "open", state: saved }));
-    await act(async () => { renderer = create(createElement(Probe, { watching })); });
-  }
-
-  it("does not resume a saved guide", async () => {
-    await mount(true, REOPENED);
-    expect(hook.guide).toBeNull();
-  });
-
-  it("does not open it again when Settings asks", async () => {
-    await mount(true, null);
-    await act(async () => { window.dispatchEvent(new Event("ovis:open-setup-guide")); });
-    expect(hook.guide).toBeNull();
-  });
-
-  it("drops an open guide when the device turns into a watching one", async () => {
-    await mount(false, REOPENED);
-    expect(hook.guide?.step).toBe("setup");
-    await act(async () => { renderer!.update(createElement(Probe, { watching: true })); });
-    expect(hook.guide).toBeNull();
   });
 });

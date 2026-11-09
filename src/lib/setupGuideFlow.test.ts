@@ -1,12 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { AGENT_CATALOG, catalogRow, type AgentCatalogRow, type AgentInstallState } from "../../shared/agent-catalog.ts";
-import type { HealthAuth } from "../../shared/protocol.ts";
 import type { ProviderUsage } from "../../shared/usage.ts";
 import { onSetupGuideRequest, openSetupGuide } from "./setupGuide.ts";
-import { agentRows, autoOpen, CHECK_SETTLE_MS, checkList, checkStatus, foundAgents, guideStep, INSTALL_GIVE_UP_MS, installedHere, openInFolder, phoneBoxMode, preferredAgent, readGuide, readSignedIn, REOPENED, saveGuide, settleDelay, setupView, signedInAgents, tileState, turnsUsageOn, WELCOME, type FreshFacts, type PcCheck } from "./setupGuideFlow.ts";
+import { agentRows, autoOpen, CHECK_SETTLE_MS, checkList, checkStatus, foundAgents, guideStep, INSTALL_GIVE_UP_MS, installedHere, openInFolder, preferredAgent, readGuide, readSignedIn, REOPENED, saveGuide, settleDelay, setupView, signedInAgents, tileState, turnsUsageOn, WELCOME, type FreshFacts, type PcCheck } from "./setupGuideFlow.ts";
 
-const FRESH: FreshFacts = { workspaces: 0, savedSettings: false, sharedRevision: 0, pairingGate: "open", watching: false };
+const FRESH: FreshFacts = { workspaces: 0, savedSettings: false, sharedRevision: 0 };
 
 const memory = (): Pick<Storage, "getItem" | "setItem"> & { values: Map<string, string> } => {
   const values = new Map<string, string>();
@@ -16,16 +15,12 @@ const memory = (): Pick<Storage, "getItem" | "setItem"> & { values: Map<string, 
 describe("autoOpen", () => {
   it("opens the welcome on a fresh install only", () => {
     expect(autoOpen(FRESH)).toBe(true);
-    // a server whose pairing state is not known has no paired device to show for it
-    expect(autoOpen({ ...FRESH, pairingGate: "unavailable" })).toBe(true);
   });
 
   it("stays shut once anything shows Ovis was used here before", () => {
     expect(autoOpen({ ...FRESH, workspaces: 1 })).toBe(false);
     expect(autoOpen({ ...FRESH, savedSettings: true })).toBe(false);
     expect(autoOpen({ ...FRESH, sharedRevision: 3 })).toBe(false);
-    expect(autoOpen({ ...FRESH, pairingGate: "closed" })).toBe(false);
-    expect(autoOpen({ ...FRESH, watching: true })).toBe(false);
   });
 
   it("does not guess while a fact is still unknown", () => {
@@ -253,28 +248,6 @@ describe("tileState", () => {
     expect(tileState(false, { kind: "failed", message: "offline", after: "install" }, true, 0)).toBe("installing");
     // the request itself never answered: stuck too, not back to Install
     expect(tileState(false, { kind: "idle" }, true, INSTALL_GIVE_UP_MS)).toBe("stuck");
-  });
-});
-
-describe("phoneBoxMode", () => {
-  const auth = (via: HealthAuth["via"]): HealthAuth => ({ required: false, authenticated: true, via, role: "drive" });
-  it("waits until it knows the address and how this browser got in", () => {
-    expect(phoneBoxMode(undefined, auth("local"))).toBe("wait");
-    expect(phoneBoxMode("http://100.1.2.3:7317", null)).toBe("wait");
-  });
-
-  it("shows the QR where this browser is in on its own", () => {
-    expect(phoneBoxMode("http://100.1.2.3:7317", auth("local"))).toBe("qr");
-    expect(phoneBoxMode("http://100.1.2.3:7317", auth("device"))).toBe("qr");
-  });
-
-  it("pairs this browser first where it is in only because nothing is paired yet", () => {
-    expect(phoneBoxMode("http://100.1.2.3:7317", auth("open"))).toBe("pair-self");
-  });
-
-  it("leaves it to Settings with no address a phone can open, or an access the server does not name", () => {
-    expect(phoneBoxMode(null, auth("local"))).toBe("settings");
-    expect(phoneBoxMode("http://100.1.2.3:7317", auth(undefined))).toBe("settings");
   });
 });
 

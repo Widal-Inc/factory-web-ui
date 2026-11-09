@@ -1,6 +1,6 @@
 # Project artwork
 
-The Ovis artwork is the sleeping sheep on navy that the native apps and
+The Ovis artwork is the sleeping sheep on navy that the desktop apps and
 [ovis.sh](https://ovis.sh) use: `app/assets/icon-only.png` (the app icon),
 `app/assets/ovis-sheep.png` (the sheep on transparent) and ovis.sh's link preview
 `ovis-site/assets/og-icon.png`. Exports preserve the artwork. `icon-source.png` here is the

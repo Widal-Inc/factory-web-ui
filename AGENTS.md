@@ -41,9 +41,11 @@ to change. Also read [server/AGENTS.md](server/AGENTS.md) and [src/AGENTS.md](sr
   `herdr update` in a test.
 - Screenshots and recordings come from the demo or a test session, never the user's live one.
 - An Ovis server an agent starts for someone to open (manual QA, a preview) binds to this PC's
-  Tailscale address, not loopback: `HOST=$(tailscale ip -4) PORT=<free port> bun run server`,
-  then hand over `http://<that address>:<port>`. A Tailscale-only bind stays inside the tailnet
-  (`lanExposed` in `server/access.ts`); never bind `0.0.0.0` for it. Tests keep `port: 0` on
+  Tailscale address, not loopback: `OVIS_TOKEN=<token> HOST=$(tailscale ip -4) PORT=<free port> bun run server`,
+  then hand over `http://<that address>:<port>` and the token: without a token the server lets in only
+  requests from this PC itself (`server/access.ts`), so a preview reached from another device needs one.
+  A Tailscale-only bind stays inside the tailnet (`bindScope` in `server/access.ts`); never bind
+  `0.0.0.0` for it. Tests keep `port: 0` on
   loopback.
 - That bind is for a throwaway preview only. A server someone installs as an app from another
   device needs HTTPS (only `localhost` installs over plain http): bind it to `127.0.0.1` and let

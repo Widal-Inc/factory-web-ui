@@ -206,9 +206,6 @@ it("serves bounded outcomes, strips observer previews, and records only a succes
     expect(answer.outcomes[0]?.id).toBe("unknown-1");
     expect(answer.outcomes.every((outcome) => outcome.state === "unknown")).toBe(true);
     expect(answer.outcomes.at(-1)?.preview).toBeUndefined();
-    const observer = await handlePromptRequest(new Request(url), url, { readOnly: true });
-    const watched = await observer?.json() as { outcomes: { preview?: string }[] };
-    expect(watched.outcomes.every((outcome) => outcome.preview === undefined)).toBe(true);
     agent = "claude";
     status = "blocked";
     screen = " Accessing workspace:\n\n Quick safety check: Is this a project you created or one you trust?\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel";

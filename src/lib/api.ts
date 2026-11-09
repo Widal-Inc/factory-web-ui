@@ -21,14 +21,12 @@ import type {
   CreateWorktreeRequest,
   CreateTabRequest,
   CreateWorkspaceRequest,
-  DevicesRevokedAll,
   DirectoryCreated,
   DirectoryListing,
   FileInfo,
   FocusPaneRequest,
   HealthAuth,
   IntegrationsResponse,
-  LanExposure,
   SecuritySummary,
   InteractivePrompt,
   MoveTabRequest,
@@ -40,8 +38,6 @@ import type {
   OmpBtwHistory,
   PaneBackgroundAgentDetail,
   OpenWorktreeRequest,
-  PairedDevice,
-  PairingCode,
   PaneDirection,
   PaneInfo,
   PanePlan,
@@ -291,14 +287,14 @@ export async function savePreferences(body: PreferencesChange, keepalive = false
 
 /**
  * Tells every browser of this server that this one presented a finish (shared/seen.ts). A server
- * that predates it (404) or a watching device (403) keeps the read to this browser; one that
+ * that predates it (404) keeps the read to this browser; one that
  * predates `presented` ignores it.
  */
 export async function shareSeen(finish: SeenFinish, presented?: SeenPresentation): Promise<void> {
   const url = "/api/seen";
   const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(presented === undefined ? finish : { ...finish, presented }) });
-  if (response.ok || response.status === 404 || response.status === 403) return;
+  if (response.ok || response.status === 404) return;
   throw await errorFrom(url, response);
 }
 
@@ -807,8 +803,6 @@ export interface HealthInfo {
   web_ui?: { boot_id: string | null; revision: string | null };
   /** Absent only on a server that predates the token gate. */
   auth?: HealthAuth;
-  /** present only while this server is reachable beyond this PC with no token and nothing paired */
-  lan_exposure?: LanExposure;
   /** authenticated only; absent from an older server, which the summary shows as unavailable */
   security?: SecuritySummary;
   /** authenticated only; absent from an older server and until the server's first look for hc has ended */
@@ -836,39 +830,7 @@ export async function authenticate(token: string): Promise<void> {
   resumeConnectionTraces();
 }
 
-/** POST /api/devices/pair: the code shown on the PC, once; the server answers with this device's own HttpOnly cookie. */
-export async function pairDevice(code: string, label: string): Promise<void> {
-  const response = await apiFetch("/api/devices/pair", { method: "POST", headers: { "content-type": "application/json", "x-herdr-machine": "1" }, body: JSON.stringify({ code, label }) });
-  if (!response.ok) throw await errorFrom("/api/devices/pair", response);
-  resumeConnectionTraces();
-}
-
-export async function fetchDevices(): Promise<PairedDevice[]> {
-  return (await getJson<{ devices: PairedDevice[] }>("/api/devices")).devices;
-}
-
-export async function startPairing(): Promise<PairingCode> {
-  return (await sendJson("/api/devices/pair/start", "POST", {})).json();
-}
-
-export async function renameDevice(id: string, label: string): Promise<PairedDevice> {
-  return (await sendJson(`/api/devices/${encodeURIComponent(id)}`, "PATCH", { label })).json();
-}
-
-export async function revokeDevice(id: string): Promise<void> {
-  await sendJson(`/api/devices/${encodeURIComponent(id)}`, "DELETE", {});
-}
-
-/**
- * POST /api/devices/revoke-all: every paired device loses its pairing access in one durable step,
- * this browser's own included (the answer clears its device cookie). The access token, the PC
- * itself gets in as before.
- */
-export async function revokeAllDevices(): Promise<DevicesRevokedAll> {
-  return (await sendJson("/api/devices/revoke-all", "POST", {})).json();
-}
-
-/** DELETE /api/auth: clears the session and device cookies, so the next health check reports the gate again. */
+/** DELETE /api/auth: clears the session cookie, so the next health check reports the gate again. */
 export async function signOut(): Promise<void> {
   const response = await apiFetch("/api/auth", { method: "DELETE" });
   if (!response.ok) throw await errorFrom("/api/auth", response);
@@ -1267,7 +1229,7 @@ export async function resumeSession(request: SessionResumeRequest, machineId = "
 /**
  * Whether the PC's bridge has the session history route, asked without a query so no session is
  * listed: a bridge that has it refuses the query (400), one from before it answers not_found (404).
- * Any other refusal (403 for a device that only watches) still says the route is there; a PC that
+ * Any other refusal still says the route is there; a PC that
  * could not be asked rejects, so the caller asks again when it comes back.
  */
 export async function sessionHistoryOffered(machineId = "local"): Promise<boolean> {

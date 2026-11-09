@@ -39,8 +39,6 @@ import "./AgentsSettings.css";
 type Translate = ReturnType<typeof useT>;
 
 export interface AgentsSettingsProps {
-  /** a watching device reads the page, but installs, signs in and adds nothing */
-  watching: boolean;
   /** an account's sign-in tab opened, on the server's PC */
   onLocalLogin: (paneId: string) => void;
   /** shows a pane of `machineId` in its terminal: the tab an install runs in */
@@ -229,7 +227,7 @@ function stateLine(entry: AgentsPageRow, read: boolean, t: Translate): { text: s
   }
 }
 
-function AgentItem({ entry, open, onToggle, allProviders, removed, read, limitsOn, local, watching, integrationsRead, onLocalLogin, onAddAccount, onFollow }: {
+function AgentItem({ entry, open, onToggle, allProviders, removed, read, limitsOn, local, integrationsRead, onLocalLogin, onAddAccount, onFollow }: {
   entry: AgentsPageRow;
   open: boolean;
   onToggle: () => void;
@@ -243,7 +241,6 @@ function AgentItem({ entry, open, onToggle, allProviders, removed, read, limitsO
   limitsOn: boolean;
   /** the PC shown is the server's, where the accounts are read */
   local: boolean;
-  watching: boolean;
   /** herdr's integrations were read for this PC: a row without one has none */
   integrationsRead: boolean;
   onLocalLogin: (paneId: string) => void;
@@ -254,11 +251,11 @@ function AgentItem({ entry, open, onToggle, allProviders, removed, read, limitsO
   const t = useT();
   const { agent, provider, accounts } = entry;
   const line = stateLine(entry, read, t);
-  const again = read && !watching ? accounts.filter(canSignInAgain) : [];
+  const again = read ? accounts.filter(canSignInAgain) : [];
   const detailsId = `agents-details-${agent.id}`;
   // the one sign-in it lacks is a tap away while the row is shut; open, the list below has its own
   // without the command it is read with, a sign-in would not show here either: the note says what to install instead
-  const action = open || watching || !read || provider === null || (entry.missing !== null && accounts.length === 0) ? null
+  const action = open || !read || provider === null || (entry.missing !== null && accounts.length === 0) ? null
     : again.length === 1 ? <UsageSignInAgain usage={again[0]!} onStarted={onLocalLogin} onFollow={onFollow} />
       : accounts.length === 0 ? <button type="button" className="btn agents-row-action" aria-label={t("Sign in to {agent}", { agent: agent.name })} onClick={() => provider === "claude" || provider === "codex" ? onFollow({ provider, default: true }) : onAddAccount(provider)}><KeyRound aria-hidden="true" /><span className="agents-row-action-label">{t("Sign in")}</span></button>
         : null;
@@ -287,10 +284,10 @@ function AgentItem({ entry, open, onToggle, allProviders, removed, read, limitsO
           {entry.missing !== null && <p className="agents-detail-note settings-condition" role="status">{t("Ovis reads {agent}'s sign-in from the desktop keyring with {command}, which this PC does not have. Install it (the libsecret-tools package on Debian and Ubuntu, libsecret on Fedora and Arch), then open this page again.", { agent: agent.name, command: entry.missing })}</p>}
           <div className="agents-detail-head">
             <span>{t("Accounts")} <span className="usage-account-count">{accounts.length}</span></span>
-            {!watching && <button type="button" className="btn btn-ghost" onClick={() => onAddAccount(provider)}><Plus aria-hidden="true" />{t("Add account")}</button>}
+            <button type="button" className="btn btn-ghost" onClick={() => onAddAccount(provider)}><Plus aria-hidden="true" />{t("Add account")}</button>
           </div>
           {/* with the sign-in unreadable, "No accounts signed in" would be the guess the note replaces */}
-          {(entry.missing === null || accounts.length > 0) && <ProviderAccounts id={provider} providers={allProviders} removed={removed} onLocalLogin={watching ? undefined : onLocalLogin} onFollow={onFollow} />}
+          {(entry.missing === null || accounts.length > 0) && <ProviderAccounts id={provider} providers={allProviders} removed={removed} onLocalLogin={onLocalLogin} onFollow={onFollow} />}
         </> : <p className="agents-detail-note" role="status">{limitsOn ? t("Loading…") : t("Turn on plan limits to see accounts.")}</p>)}
         {provider === null && signIn !== null && (local && signIn.provider === null
           ? <p className="agents-detail-note">{signIn.in_agent !== null ? t("{agent} signs in inside the agent ({how}). Ovis cannot read that sign-in, so it shows none here.", { agent: agent.name, how: signIn.in_agent }) : t("Ovis cannot read {agent}'s sign-in, so it shows none here.", { agent: agent.name })}</p>
@@ -305,7 +302,7 @@ function AgentItem({ entry, open, onToggle, allProviders, removed, read, limitsO
 }
 
 /** Plan limits: whether they are shown, and how. The status-line switch is Claude's, for networks that refuse its usage API. */
-function PlanLimits({ watching }: { watching: boolean }) {
+function PlanLimits() {
   const { settings, update } = useSettings();
   const t = useT();
   const statusline = useStatuslineSwitch(settings.showUsage);
@@ -322,7 +319,7 @@ function PlanLimits({ watching }: { watching: boolean }) {
         </SettingsRow>
         {statusline.state?.supported && <SettingsRow icon={SquareTerminal} label={t("Read Claude's limits from its status line")}
           description={t("For networks where Claude's usage API is refused. Wraps Claude Code's status line on this PC and keeps only the limits; turning it off puts Claude's settings back.")}>
-          <Toggle label={t("Read Claude's limits from its status line")} checked={statusline.state.installed} disabled={statusline.busy || watching}
+          <Toggle label={t("Read Claude's limits from its status line")} checked={statusline.state.installed} disabled={statusline.busy}
             onChange={(enabled) => void statusline.set(enabled)} />
         </SettingsRow>}
         {statusline.error && <p className="settings-hint account-error" role="alert">{statusline.error}</p>}
@@ -336,7 +333,7 @@ function SectionHead({ children }: { children?: ReactNode }) {
   return <div className="agents-head">{children}</div>;
 }
 
-export function AgentsSettings({ watching, onLocalLogin, onOpenPane, onOpenGuide }: AgentsSettingsProps) {
+export function AgentsSettings({ onLocalLogin, onOpenPane, onOpenGuide }: AgentsSettingsProps) {
   const t = useT();
   const { settings } = useSettings();
   // a search finds an agent's own settings in a group of its own, as its row is shut
@@ -421,8 +418,8 @@ export function AgentsSettings({ watching, onLocalLogin, onOpenPane, onOpenGuide
   const otherIntegrations = page?.otherIntegrations ?? [];
   return (
     <SettingsBare.Provider value={true}>
-      {/* the first-run guide again (lib/setupGuide.ts): it sets up this PC, and a watching device is never shown it */}
-      {!watching && local && <SettingsGroup section="guide">
+      {/* the first-run guide again (lib/setupGuide.ts): it sets up this PC */}
+      {local && <SettingsGroup section="guide">
         <SettingsRow icon={Compass} label={t("Setup guide")}>
           <button type="button" className="btn" onClick={() => { onOpenGuide(); openSetupGuide(); }}>{t("Open setup guide")}</button>
         </SettingsRow>
@@ -439,7 +436,7 @@ export function AgentsSettings({ watching, onLocalLogin, onOpenPane, onOpenGuide
             : page.rows.length === 0 ? <div className="settings-card"><p className="settings-item settings-hint">{page.installsUnknown ? t("Ovis cannot tell which agents this PC has. Install them from a terminal on it.") : t("None on this PC yet.")}</p></div>
               : <ul className="settings-card agents-card">
                 {page.rows.map((entry) => <AgentItem key={entry.agent.id} entry={entry} open={open.has(entry.agent.id)} onToggle={() => toggle(entry.agent.id)}
-                  allProviders={providers} removed={removed} read={settings.showUsage && usage.report !== null} limitsOn={settings.showUsage} local={local} watching={watching} integrationsRead={integrationOutcome?.kind === "list"}
+                  allProviders={providers} removed={removed} read={settings.showUsage && usage.report !== null} limitsOn={settings.showUsage} local={local} integrationsRead={integrationOutcome?.kind === "list"}
                   onLocalLogin={onLocalLogin} onAddAccount={(provider) => setDialog({ kind: "add", provider })} onFollow={setSigningIn} />)}
               </ul>}
         {integrationNote}
@@ -467,7 +464,7 @@ export function AgentsSettings({ watching, onLocalLogin, onOpenPane, onOpenGuide
         <SettingsGroup>
           <SettingsRow icon={Users} label={t("Other accounts")}
             condition={!settings.showUsage ? <span className="settings-condition">{t("Turn on plan limits to see accounts.")}</span> : !local ? <span className="settings-condition">{t("Accounts are read on the PC Ovis runs on.")}</span> : undefined}>
-            {!watching ? <button ref={addButton} className="btn btn-ghost" type="button" onClick={() => setDialog({ kind: "add", provider: null })}><Plus aria-hidden="true" />{t("Add account")}</button> : <span />}
+            <button ref={addButton} className="btn btn-ghost" type="button" onClick={() => setDialog({ kind: "add", provider: null })}><Plus aria-hidden="true" />{t("Add account")}</button>
           </SettingsRow>
         </SettingsGroup>
         {settings.showUsage && otherProviders.map((id) => <SettingsGroup key={id} className="usage-accounts usage-provider" section={page === null ? undefined : `accounts-${id}`}>
@@ -475,7 +472,7 @@ export function AgentsSettings({ watching, onLocalLogin, onOpenPane, onOpenGuide
             <AgentMark agent={PROVIDER_MARK[id]} size={20} /><span>{PROVIDER_NAME[id]}</span>
             <span className="usage-account-count">{providers.filter((entry) => entry.id === id).length}</span>
           </div>
-          <ProviderAccounts id={id} providers={providers} removed={removed} onLocalLogin={watching ? undefined : onLocalLogin} onFollow={setSigningIn} />
+          <ProviderAccounts id={id} providers={providers} removed={removed} onLocalLogin={onLocalLogin} onFollow={setSigningIn} />
         </SettingsGroup>)}
         {settings.showUsage && providers.length === 0 && <p className="settings-note settings-hint">{usage.loading ? t("Loading…") : t("No accounts yet.")}</p>}
         {hubError && <p className="settings-hint account-error" role="alert">{hubError}</p>}
@@ -483,15 +480,15 @@ export function AgentsSettings({ watching, onLocalLogin, onOpenPane, onOpenGuide
           <div className="settings-item usage-connection">
             <Network size={20} aria-hidden="true" />
             <div className="usage-connection-info"><span className="settings-label">{t("Hub")}</span><span className="settings-hint" role="status">{hub.url} · {hub.ok ? t("Connected") : hub.problem ?? t("Check the hub connection")}</span></div>
-            {!watching && <div className="usage-connection-actions">
+            <div className="usage-connection-actions">
               <button className="btn btn-ghost" type="button" onClick={() => setDialog({ kind: "hub" })}>{t("Edit")}</button>
               <button className="btn btn-ghost" type="button" onClick={() => setConfirmRemoval(true)}>{t("Remove")}</button>
-            </div>}
+            </div>
           </div>
         </SettingsGroup>}
       </section>
 
-      {!watching && page !== null && page.installable.length > 0 && <details className="settings-section agents-more" data-section="install">
+      {page !== null && page.installable.length > 0 && <details className="settings-section agents-more" data-section="install">
         <summary className="agents-more-toggle"><ChevronRight className="agents-more-chevron" aria-hidden="true" />{t("Install another agent ({count})", { count: page.installable.length })}</summary>
         <ul className="setup-found settings-agent-tiles">
           {page.installable.map((agent) => (
@@ -507,7 +504,7 @@ export function AgentsSettings({ watching, onLocalLogin, onOpenPane, onOpenGuide
         {failed.length > 0 && <p className="settings-hint settings-agent-error" role="alert">{failed.join(" ")}</p>}
       </details>}
 
-      <PlanLimits watching={watching} />
+      <PlanLimits />
 
       {confirmRemoval && <ConfirmDialog title={t("Remove hub?")}
         body={t("Its accounts disappear from this list. The hub itself is not changed.")}

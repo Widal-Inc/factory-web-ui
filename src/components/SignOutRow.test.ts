@@ -18,9 +18,9 @@ function render(): string {
 }
 
 describe("Sign out in Settings → Devices", () => {
-  it("is a Sign out button that says the way back in is the access token or a pairing code", () => {
+  it("is a Sign out button that says the way back in is the access token", () => {
     const html = render();
     expect(html).toContain(">Sign out</button>");
-    expect(html).toContain("Getting back in takes the access token or a pairing code.");
+    expect(html).toContain("Getting back in takes the access token.");
   });
 });

@@ -3,8 +3,7 @@
  * The wheel or a pinch zooms at the pointer, a drag pans, a double-click toggles fit and the
  * picture's own pixels, and the bar and the keys (+ - 0, arrows) do the same; at fit, Left and
  * Right step through the gallery. Copy puts the picture on the clipboard as PNG and Download
- * saves it under its name (in the iOS app and a home-screen app, through the share sheet; in the
- * Android app, to Downloads).
+ * saves it under its name (in a home-screen app, through the share sheet).
  * Escape, the close button, a phone's Back and a swipe down that starts on the bar or the caption
  * leave (the stage takes every stroke for panning), and the focus returns to the thumbnail that
  * opened it while it is still drawn. ChatView holds the viewer, not the chat row, so a row
@@ -19,7 +18,7 @@ import "./ImageLightbox.css";
 import { canCopyImage, copyImage } from "../lib/clipboard.ts";
 import { useT } from "../lib/i18n.ts";
 import { actualSizeFactor, arrowAction, wrapIndex, zoomPercent, type GalleryImage } from "../lib/imageViewer.ts";
-import { imageFile, saveInApp, saveRoute, shareFile } from "../lib/saveImage.ts";
+import { imageFile, saveRoute, shareFile } from "../lib/saveImage.ts";
 import { usePhoneSheetBack } from "../lib/sheetHistory.ts";
 import { useSheetSwipe } from "../lib/sheets.ts";
 import { nativeModalOver, useFocusTrap } from "../lib/useFocusTrap.ts";
@@ -47,9 +46,8 @@ export function ImageLightbox({ images, index, onClose }: { images: GalleryImage
   const count = images.length;
   const image = images[current];
   const src = useResourceUrl(image?.src ?? null);
-  // where a download link would replace the app (the iOS app, a home-screen app), Download hands
-  // the shown picture to the share sheet instead: its own bytes keep their image type, which Save
-  // Image needs. The Android app saves those same bytes to Downloads
+  // where a download link would replace the app (a home-screen app), Download hands the shown
+  // picture to the share sheet instead: its own bytes keep their image type, which Save Image needs
   const [route] = useState(saveRoute);
   const viaShare = route !== "link";
   const download = useResourceUrl(viaShare ? null : image?.src ?? null);
@@ -59,7 +57,6 @@ export function ImageLightbox({ images, index, onClose }: { images: GalleryImage
   // Download waits for it
   const [prepared, setPrepared] = useState<{ src: string; file: File | null } | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
-  const [saved, setSaved] = useState(false);
   const preparing = useRef<AbortController | null>(null);
   // a tap while a save runs is dropped, so taps never hold several copies of the picture
   const busy = useRef(false);
@@ -88,11 +85,10 @@ export function ImageLightbox({ images, index, onClose }: { images: GalleryImage
     }
     // a result for a picture the viewer has stepped away from says nothing under the next one
     busy.current = true;
-    void (route === "app" ? saveInApp(ready.file) : shareFile(ready.file)).then((result) => {
+    void shareFile(ready.file).then((result) => {
       busy.current = false;
       if (shown.current !== ready.src) return;
       setSaveFailed(result === "failed");
-      setSaved(result === "saved");
     });
   };
 
@@ -119,7 +115,6 @@ export function ImageLightbox({ images, index, onClose }: { images: GalleryImage
     setFit(1);
     setCopied(null);
     setSaveFailed(false);
-    setSaved(false);
     preparing.current?.abort();
   };
 
@@ -258,7 +253,6 @@ export function ImageLightbox({ images, index, onClose }: { images: GalleryImage
           </div>
           {copied === "failed" && <p className="image-lightbox-note" role="alert">{t("Couldn't copy the image. Download it instead.")}</p>}
           {saveFailed && <p className="image-lightbox-note" role="alert">{t("Couldn't save the image.")}</p>}
-          {saved && <p className="image-lightbox-note is-done" role="status">{t("Saved to Downloads.")}</p>}
         </div>
       </div>
     </div>,

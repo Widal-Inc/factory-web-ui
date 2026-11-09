@@ -7,7 +7,6 @@ import type { BackgroundAgentDeps } from "./background-agent.ts";
 import { claudeProjectDir } from "./claude-store.ts";
 import { backgroundAgentDetail, forgetSubagents } from "./claude-subagents.ts";
 import { forgetTranscriptState } from "./conversation.ts";
-import { DeviceStore } from "./devices.ts";
 import { herdrRpc, paneRead, sessionSnapshot, workspaceClose, workspaceCreate } from "./herdr/client.ts";
 import { createServer } from "./index.ts";
 import { handleMachineRequest, MACHINE_PROXY_PATH } from "./machine-api.ts";
@@ -23,7 +22,7 @@ const originalHome = process.env["HOME"];
 const originalConfigDir = process.env["CLAUDE_CONFIG_DIR"];
 const FIRST = "8d8f7d39-6788-49f3-b071-e3ba985c163c";
 const SECOND = "f2f55dc4-50ad-478c-a641-bf21268a1bba";
-const WATCH_TOKEN = "test-background-agent-watch";
+const LOCAL_TOKEN = "test-background-agent-watch";
 const REMOTE_TOKEN = "test-background-agent-remote";
 /** how long a frame the test waits for may take: this PC also runs CI, and a loaded one is slow to look a session up */
 const FRAME_WAIT_MS = 30_000;
@@ -34,7 +33,6 @@ let remote: { process: ReturnType<typeof Bun.spawn>; port: number } | null = nul
 let first: string;
 let second: string;
 let shell: string;
-let watch: string;
 let sequence = 0;
 let frames: Frames;
 /** a read the test holds: it is told when the read is out, and answers once released */
@@ -43,7 +41,7 @@ const json = (value: unknown): string => `${JSON.stringify(value)}\n`;
 const base = () => `http://127.0.0.1:${server.port}`;
 const detailUrl = (paneId: string, agentId: string, prefix = "/api") => `${base()}${prefix}/pane/background-agent?${new URLSearchParams({ pane_id: paneId, agent_id: agentId })}`;
 const errorCode = async (response: Response): Promise<[number, string]> => [response.status, ((await response.json()) as ApiError).error.code];
-const owner = { authorization: `Bearer ${WATCH_TOKEN}` };
+const owner = { authorization: `Bearer ${LOCAL_TOKEN}` };
 
 /**
  * A session of the store `store`: a subagent `agentId` whose words name `voice`, and, with
@@ -181,19 +179,15 @@ beforeAll(async () => {
   shell = created.root_pane.pane_id;
   process.env["HOME"] = root;
   const stateDir = join(root, "state");
-  const devices = new DeviceStore(stateDir);
-  const paired = devices.pair(devices.startPairing().code, "Watch", "watch")!;
-  devices.match(paired.token);
-  watch = `ovis_device=${paired.token}`;
   const read: BackgroundAgentDeps["read"] = async (path, id) => {
     const answer = backgroundAgentDetail(path, id);
     const held = hold;
     if (held !== null) { hold = null; held.entered(); await held.gate; }
     return answer;
   };
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: WATCH_TOKEN, stateDir, backgroundAgentRead: read });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: LOCAL_TOKEN, stateDir, backgroundAgentRead: read });
   await server.statusReady;
-  frames = await Frames.connect(server.port, WATCH_TOKEN);
+  frames = await Frames.connect(server.port, LOCAL_TOKEN);
   // each pane's session found: its tasks counted
   await frames.counted(first, 2, 0);
   await frames.counted(second, 1, 0);
@@ -297,12 +291,11 @@ it("refuses what is not a subagent of a Claude pane: spelled paths, links, comma
   expect(await errorCode(await detail(first, "nobody"))).toEqual([404, "background_agent_not_found"]);
 }, 20_000);
 
-it("lets a watching device read, and nothing more", async () => {
-  const response = await detail(first, "a1", "/api", { cookie: watch });
-  expect(response.status).toBe(200);
-  expect(((await response.json()) as PaneBackgroundAgentDetail).prompt).toBe("Local dispatch for a1");
-  expect(await errorCode(await fetch(detailUrl(first, "a1"), { method: "POST", headers: { cookie: watch, "x-herdr-machine": "1" } }))).toEqual([403, "read_only"]);
+it("answers a request without the token 401", async () => {
   expect((await fetch(detailUrl(first, "a1"))).status).toBe(401);
+  const cookie = await detail(first, "a1", "/api", { cookie: `ovis_token=${LOCAL_TOKEN}` });
+  expect(cookie.status).toBe(200);
+  expect(((await cookie.json()) as PaneBackgroundAgentDetail).prompt).toBe("Local dispatch for a1");
 }, 20_000);
 
 it("is forwarded to a PC's bridge, and a PC that is not there answers for no agent of this one", async () => {

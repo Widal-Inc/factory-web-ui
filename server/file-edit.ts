@@ -11,7 +11,7 @@ import { openAuthorized, ownedFolders, release, resolveFilePath } from "./file-v
  * Editing a text file from the file viewer (#771): a Markdown note or a JSON file an agent wrote,
  * changed from a phone with no terminal to open an editor in. Reading a file reaches whatever this
  * server's user can read (file-view.ts); writing reaches less: one existing text file under the
- * pane's folder, for a device that drives this PC (`textEditAllowed`).
+ * pane's folder, for whoever got in (`textEditAllowed`).
  *
  * A save is written to a new file in the same folder, given the file's mode and group, and renamed
  * over it, so a reader sees the old text or the new, never half of it. What is replaced must be the
@@ -39,12 +39,11 @@ export const textSaveHooks: { platform?: NodeJS.Platform; beforeRename?: () => v
 const platform = (): NodeJS.Platform => textSaveHooks.platform ?? process.platform;
 
 /**
- * Who may read a file to edit it and save it: a device that drives this PC, never a watching one, a
- * window of an open LAN install, which signed in as nobody. The connection server reaching this PC with its bridge token (an SSH PC) has checked its
+ * Who may read a file to edit it and save it: whoever got in. The connection server reaching this PC with its bridge token (an SSH PC) has checked its
  * own caller already; that token opens only this PC's own route, never a PC behind it.
  */
 export function textEditAllowed(access: Access, bridgeAuthorized: boolean, proxied: boolean): boolean {
-  if (access.level === "full") return access.role === "drive" && access.via !== "open";
+  if (access.level === "full") return true;
   return bridgeAuthorized && !proxied;
 }
 

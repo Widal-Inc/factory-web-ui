@@ -30,7 +30,6 @@ import { RUNTIME_MOVE_JA } from "./i18n/runtime-move.ja.ts";
  * in English. Placeholders in braces keep their English names.
  */
 const BASE: Record<string, string> = {
-  "View only": "表示のみ",
   "Not pasted: the file's path holds a line break, which the terminal would take as Enter.": "貼り付けていません: ファイルのパスに改行があり、ターミナルが Enter として受け取ります。",
   "Attach files": "ファイルを添付",
 
@@ -60,7 +59,6 @@ const BASE: Record<string, string> = {
   "PCs": "PC",
   "Chat": "チャット",
   "Agent default": "エージェントの既定",
-  "Devices and PCs": "デバイスと PC",
   "Access token": "アクセストークン",
 
   // ---- shortcuts (lib/shortcuts.ts labels) ----
@@ -128,7 +126,6 @@ const BASE: Record<string, string> = {
   "Work time unknown": "作業時間は不明",
   "Worked at least {duration}": "{duration} 以上作業",
   "Worked {duration}": "{duration} 作業",
-  "Share link": "リンクを共有",
   "Copy address": "アドレスをコピー",
   "Link copied": "リンクをコピーしました",
   "That agent has closed: its workspace is open": "そのエージェントは閉じられました。代わりにワークスペースを開きました",
@@ -222,11 +219,6 @@ const BASE: Record<string, string> = {
   "Recommended": "推奨",
   "Agents": "エージェント",
   "Setup guide": "セットアップガイド",
-  "Could not confirm this browser is paired. Check that cookies are enabled, then try again.": "このブラウザーがペアリング済みであることを確認できませんでした。Cookie が有効か確認して、もう一度お試しください。",
-  "New code": "新しいコード",
-  "Paired: {name}.": "ペアリングしました: {name}。",
-  "QR code that pairs a phone with code {code}": "コード {code} でスマートフォンをペアリングする QR コード",
-  "Pairing code": "ペアリングコード",
   "{agent} is ready": "{agent} の準備ができました",
 
 
@@ -255,7 +247,7 @@ const BASE: Record<string, string> = {
   "Microphone permission was denied": "マイクの使用が許可されませんでした",
   "Voice input needs HTTPS": "音声入力には HTTPS が必要です",
   // ---- errors (lib/userError.ts) ----
-  "This browser is not signed in to this PC any more. Pair it again in Settings → Devices and PCs.": "このブラウザーはもうこの PC にサインインしていません。設定 → デバイスと PCでもう一度ペアリングしてください。",
+  "This browser is not signed in to this PC any more. Sign in again with the access token.": "このブラウザーはもうこの PC にサインインしていません。アクセストークンでもう一度サインインしてください。",
   "That item no longer exists on the PC. Refresh and try again.": "その項目は PC にもうありません。更新してからもう一度お試しください。",
   "It changed on the PC while you were acting. Check it and try again.": "操作中に PC 側で変更されました。確認してからもう一度お試しください。",
   "The PC took too long to answer. Try again.": "PC の応答に時間がかかりすぎました。もう一度お試しください。",
@@ -270,7 +262,7 @@ const BASE: Record<string, string> = {
   "Can't reach the PC": "PC に接続できません",
   "PC disk is full": "PC のディスクがいっぱいです",
   "No permission on the PC": "PC で権限がありません",
-  "Pair it again in Settings → Devices and PCs.": "設定 → デバイスと PCでもう一度ペアリングしてください。",
+  "Sign in again with the access token.": "アクセストークンでもう一度サインインしてください。",
   "Refresh and try again.": "更新してからもう一度お試しください。",
   "Check it and try again.": "確認してからもう一度お試しください。",
   "Check your connection, then try again.": "接続を確認してからもう一度お試しください。",
@@ -301,7 +293,6 @@ const BASE: Record<string, string> = {
   "The PC did not take this device's push subscription. Try again.": "PCがこのデバイスのプッシュ通知の登録を受け付けませんでした。もう一度お試しください。",
   "Brave would not make a push subscription. Turn on Use Google services for push messaging in Brave's privacy settings, then try again.": "Brave がプッシュ通知の登録を作成しませんでした。Brave のプライバシー設定で「Use Google services for push messaging」をオンにしてから、もう一度お試しください。",
   "This device would not make a push subscription. Check that push messaging is allowed in its settings, then try again.": "このデバイスでプッシュ通知の登録を作成できませんでした。設定でプッシュメッセージが許可されているか確認してから、もう一度お試しください。",
-  "This device can only watch.": "この端末は閲覧のみできます。",
   "Needs input": "入力が必要",
   "Needs permission": "許可が必要",
   "Finished": "完了",
@@ -347,7 +338,6 @@ const BASE: Record<string, string> = {
   "The sidebar can't be shown.": "サイドバーを表示できません。",
   // t3code ports (a)
   // t3code ports (d)
-  "Change PC": "PCを切り替え",
   "Selected": "選択中",
   // Recover unsent text (components/UnsentText.tsx)
   "Unsent text": "未送信のテキスト",

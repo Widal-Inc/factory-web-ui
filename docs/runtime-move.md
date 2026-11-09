@@ -108,18 +108,15 @@ plan, wait and stops. This server forwards that PC's own routes under the PC:
 `GET|POST|DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/stop`,
 `.../runtime/move/stop-all` and `.../runtime/move/install`, with the same requests and answers as
 here. They go with that PC's credential (an SSH PC's bridge token) and the header the move asks for; the browser's cookies and credentials never cross. They are the
-owner's alone, from any device the owner signed in or paired to drive this PC; the plan too, which names
+owner's alone, from this PC itself or with the token; the plan too, which names
 every pane's folder and conversation:
 
 | Who | May move another PC, or every PC |
 |---|---|
 | The owner on this PC itself | Yes |
 | The owner with the app's token | Yes |
-| A device the owner paired that drives | Yes |
-| An open LAN visitor (nothing paired, no token) | No |
-| A device that only watches | No |
 
-Anyone else is answered 403. A change (anything but the plan's `GET`) also needs `x-herdr-update: 1`
+Anyone else is refused at the gate (401). A change (anything but the plan's `GET`) also needs `x-herdr-update: 1`
 from this app's own page.
 A query is refused here, since that PC would refuse it.
 
@@ -147,9 +144,9 @@ SSH PC: `{ serving, offered, reason, status }`, read from that PC's own
 (each read has that PC build its whole plan), and at once after a start, cancel or stop sent from here.
 `serving: "herdr"` with `offered` is the "not moved yet" badge (`offered` with
 `reason: "no_herdr_core"` installs herdr-core first). `status` is its move's progress, as every
-roster (a watching device's too) may carry it: the state, a running move's step and count, and for a
+roster may carry it: the state, a running move's step and count, and for a
 move that could not finish only how many agents it left. Its reasons name folders and agents' words,
-so they stay in the plan answer, which only a driving device reads. It is `null` when the PC cannot
+so they stay in the plan answer, which only the owner reads. It is `null` when the PC cannot
 tell (an Ovis without the route, one that does not take this server's credential there, or one with no
 runtime to switch), and absent while it is not connected; a read that fails for a moment (herdr away, a
 timeout) keeps the badge it had.

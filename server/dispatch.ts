@@ -6,11 +6,10 @@ import type { RequestLog } from "./request-log.ts";
 import { handlePaneRequest } from "./pane-routes.ts";
 import { handleIntegrationsRequest } from "./integrations-routes.ts";
 import type { OrderSequence } from "./order-sequence.ts";
-import type { DevicePairedEvent, DeviceRemovedEvent, HealthAuth, SecuritySummary, SessionSnapshot } from "../shared/protocol.ts";
+import type { HealthAuth, SecuritySummary, SessionSnapshot } from "../shared/protocol.ts";
 import { DEFAULT_PORT } from "../shared/protocol.ts";
-import { authClient, deviceAuthorizationValue, deviceCookieValue, bearerMatches, handleAuthRequest, isAuthenticated, isSecureRequest, parseCookies, presentedToken, presentedTokenHeld, recordPresentedTokenFailure, requiresAuth, unauthorizedJson } from "./auth.ts";
-import { bindScope, cameThroughProxy, decideAccess, forwardingHeaders, isLoopbackAddress, lanExposed, observedIngress, ownerAccess } from "./access.ts";
-import { type DeviceStore, handleDeviceRequest, newStreamKey, sameBrowser, streamCookie, streamKeys, type DeviceMatch } from "./devices.ts";
+import { authClient, bearerMatches, handleAuthRequest, isAuthenticated, presentedToken, presentedTokenHeld, recordPresentedTokenFailure, requiresAuth, unauthorizedJson } from "./auth.ts";
+import { bindScope, cameThroughProxy, decideAccess, forwardingHeaders, isLoopbackAddress, observedIngress, ownerAccess } from "./access.ts";
 import { handlePreferencesRequest, type PreferenceStore } from "./preferences.ts";
 import { handleSeenRequest, type SeenStore } from "./seen.ts";
 import { remoteAccess } from "./tailscale.ts";
@@ -77,7 +76,6 @@ export interface RequestServices {
   readonly token: string;
   readonly bridgeToken: string;
   readonly bootId: string;
-  readonly devices: DeviceStore;
   readonly preferences: PreferenceStore;
   readonly herdrSidebar: HerdrSidebarConfig;
   readonly shellAgents: ShellAgentLocator;
@@ -90,7 +88,7 @@ export interface RequestServices {
   readonly usage: UsageService;
   readonly usageAccounts: UsageAccountList;
   readonly systemSampler: SystemSampler | null;
-  /** the state folder's fonts/, served to every device that may read this PC (server/user-fonts.ts) */
+  /** the state folder's fonts/, served to every client that may read this PC (server/user-fonts.ts) */
   readonly fontsDir: string;
   readonly voice: VoiceService;
   readonly browserSnapshot: <S extends SessionSnapshot>(snapshot: S) => S;
@@ -109,26 +107,20 @@ export interface ServerContext {
   upgrade(request: Request, options: { headers?: HeadersInit; data: SocketData }): boolean;
   readonly port: number | undefined;
   readonly services: RequestServices;
-  /**
-   * The request came to the opt-in LAN HTTPS listener (server/lan-https.ts), from a private IPv4 peer:
-   * it gets in only with the token or a paired device, never as an open install, by the bridge token,
-   * and its wrong tokens share one budget with every other peer there.
-   */
-  readonly lanHttps?: boolean;
 }
 
 /** The routes that read or write files and folders on this disk (or run git and gh in them) for a pane, a workspace or a picker. */
 const OTHER_MACHINE_FILES = /^\/api\/(?:fs\/|pane\/(?:files|docs|image)$|workspace\/(?:diff\/|git\/|directories$|pr(?:$|\/)))/;
 
 export async function handleRequest(request: Request, ctx: ServerContext): Promise<Response | undefined> {
-  const { options, hostname, token, bridgeToken, bootId, devices, preferences, herdrSidebar, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog } = ctx.services;
-  const { sidecar, serialize, push, alertWebhook, logPushError, omo, claudeAgents, opencodeAgents, plans, clientSnapshot, machines, broadcastAll, collector, queueFirstMessage } = core;
+  const { options, hostname, token, bridgeToken, bootId, preferences, herdrSidebar, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog } = ctx.services;
+  const { sidecar, serialize, push, alertWebhook, omo, claudeAgents, opencodeAgents, plans, clientSnapshot, machines, broadcastAll, collector, queueFirstMessage } = core;
   return requestLog.handle(request, async (headers) => {
   // the route's answer, gzipped for a browser that takes it (server/compress.ts)
   return compressResponse(request, await (async (): Promise<Response | undefined> => {
   const url = new URL(request.url);
   let { pathname } = url;
-  const bridgeAuthorized = ctx.lanHttps !== true && isAuthenticated(request, bridgeToken);
+  const bridgeAuthorized = isAuthenticated(request, bridgeToken);
   // the connection server that reaches this one as its PC reads its update status and asks for the
   // update on offer: an Ovis run on this PC by itself is updated through its own updater, never
   // replaced (server/machines.ts ownOffer). An install still names the offered revision and the
@@ -146,30 +138,18 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   const proxyHeaders = forwardingHeaders(request.headers);
   const requestHost = request.headers.get("host");
   // the guessing budget of the address that asks (auth.ts): a token presented while it waits is not compared
-  // on the LAN listener `via lan-https` puts every peer in one shared budget too (auth.ts sharedKey)
-  const client = ctx.lanHttps === true && ip !== null ? `${ip.address} via lan-https` : authClient(ip?.address ?? null, request.headers);
+  const client = authClient(ip?.address ?? null, request.headers);
   const presented = presentedToken(request, token, client);
   // counted at once, before any await below lets a concurrent guess pass the same check. Every
-  // wrong token counts, a paired watch device's too (a right one would upgrade it to drive);
-  // the connection server's own bridge token does not
+  // wrong token counts; the connection server's own bridge token does not
   if (presented === "wrong" && !bridgeAuthorized) recordPresentedTokenFailure(client);
   const tokenMatched = presented === "match";
-  let pairedDevice: DeviceMatch | null;
-  try {
-    // a script's `Authorization: Device` header stands for the cookie a browser holds (#2744)
-    pairedDevice = devices.match(deviceAuthorizationValue(request) ?? deviceCookieValue(parseCookies(request.headers.get("cookie"))));
-  } catch (error) {
-    // First-cookie confirmation is an authorization write, not best-effort telemetry.
-    return errorResponse(error);
-  }
   const requestShape = { loopback, forwarded, funnel };
   const access = decideAccess({
     ...requestShape,
     forwardingHeaders: proxyHeaders,
     tokenMatched,
-    device: pairedDevice,
     tokenConfigured: token !== "",
-    gated: devices.gated || ctx.lanHttps === true,
   });
   const authenticated = access.level === "full" || (bridgePath && bridgeAuthorized);
 
@@ -178,12 +158,11 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     // a script's Bearer guess is told to wait; a browser's cookie gets the usual 401 and its sign-in form
     if (presented === "held" && pathname !== "/ws" && request.headers.has("authorization")) return presentedTokenHeld(client);
     // The WS client never parses a body, so the upgrade refusal stays plain text.
-    return pathname === "/ws" ? new Response("unauthorized", { status: 401 }) : unauthorizedJson(access.level === "none" ? access.reason : "token_required");
+    return pathname === "/ws" ? new Response("unauthorized", { status: 401 }) : unauthorizedJson();
   }
 
-  const readOnly = access.level === "full" && access.role === "watch";
-  // who started a followed sign-in: only that device (or that signed-in browser) reaches it again
-  const loginOwner = access.level === "full" ? (access.device ? `device:${access.device.id}` : access.via) : null;
+  // who started a followed sign-in: only that signed-in browser reaches it again
+  const loginOwner = access.level === "full" ? access.via : null;
   const mutating = !["GET", "HEAD", "OPTIONS"].includes(request.method);
   if (pathname.startsWith("/api/") && mutating && !sameOrigin(request)) {
     setRequestRoute("origin-refusal");
@@ -193,64 +172,17 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   // the checks below, while the PC proxy drops empty segments before forwarding:
   // `/api/machines/<id>//fs/file` would pass as not a file read, `<id>/sessions/history/` as no history.
   if (pathname.startsWith("/api/") && nonCanonicalPath(pathname)) return jsonResponse({ error: { code: "not_found", message: "not found" } }, 404);
-  // What a watching device must not reach, spelled out rather than inferred from the
-  // method: file contents (those files include credentials) and a directory listing
-  // (names and sizes are the shape of a repository the terminals never print), plus
-  // every mutation except the two below.
-  const fileRead = /^\/api\/(?:machines\/[^/]+\/)?fs\//.test(pathname);
-  const directoryListing = /^\/api\/(?:machines\/[^/]+\/)?workspace\/directories$/.test(pathname);
-  // Signing a device's own alerts in is a preference of that device, so `watch` keeps
-  // it. The endpoint it registers is https-only (server/push.ts), and that is the
-  // protection: a watch device's subscription is delivered every status change anyway.
-  // /api/push/test stays with a session that can drive only because it is a mutation; /api/push/status
-  // is a POST only to keep the subscription out of the address, and answers the device about its own.
-  // A watch device may report its own connection metadata, never terminal input or file data.
-  const ownPreferences = pathname === "/api/auth" || pathname === "/api/push/subscribe" || pathname === "/api/push/status" || pathname === "/api/connection-diagnostics";
-  // a repository's changes are file contents too: the patch of a credential file is that file; its
-  // history (commit messages, branch names) is read the same way
-  const repositoryDiff = /^\/api\/(?:machines\/[^/]+\/)?workspace\/(?:diff|git)\//.test(pathname);
-  // a pull request's review comments and job logs are the repository's contents as well
-  const pullRequest = /^\/api\/(?:machines\/[^/]+\/)?workspace\/pr(?:\/|$)/.test(pathname);
-  // earlier sessions carry their first prompts
-  const sessionHistory = /^\/api\/(?:machines\/[^/]+\/)?sessions\/history$/.test(pathname);
-  // an agent's commands in a folder, and a pane's, are read from that folder's command files (each row
-  // carries a file's first line and its path), as a directory listing and a file read are; the
-  // composer's menu that lists them is a drive feature (#2132)
-  const commandRows = /^\/api\/(?:machines\/[^/]+\/)?(?:agent|pane)\/commands$/.test(pathname);
-  // the paths under a pane's folder that match a query are a directory listing too; they feed the
-  // composer's @-mention picker, a drive feature (#2244); so are its Markdown files, which Files' Documents lists
-  const paneFiles = /^\/api\/(?:machines\/[^/]+\/)?pane\/(?:files|docs)$/.test(pathname);
-  // where a plugin action's run stands carries what its command printed when it failed, asked for by a
-  // log id: only the device that started the run (a POST, which a watching device cannot send) asks it
-  const pluginRun = /^\/api\/(?:machines\/[^/]+\/)?plugin\/action$/.test(pathname);
-  // a repository's checkouts are its folders' paths and branches, those not open in herdr too; the worktree
-  // dialog that lists them is a drive feature, and the sidebar names a branch only for a driving device (#2250)
-  const worktreeList = /^\/api\/(?:machines\/[^/]+\/)?worktree\/(?:list|inventory)$/.test(pathname);
-  if (readOnly && (fileRead || directoryListing || repositoryDiff || pullRequest || sessionHistory || commandRows || paneFiles || pluginRun || worktreeList || mutating && !ownPreferences)) {
-    setRequestRoute("watch-refusal");
-    return jsonResponse({ error: { code: "read_only", message: "this device can only watch" } }, 403);
-  }
-  // a text file is edited (read for it and saved) only by a device that drives this PC, here or through it on another PC (file-edit.ts)
+  // a text file is edited (read for it and saved) only by whoever got in, here or through this PC on another PC (file-edit.ts)
   const textEdit = /^\/api\/(?:machines\/[^/]+\/)?fs\/text$/.test(pathname);
   if (textEdit && !textEditAllowed(access, bridgeAuthorized, pathname.startsWith("/api/machines/"))) {
     setRequestRoute("drive-refusal");
-    return jsonResponse({ error: { code: "drive_only", message: "Only a device that drives this PC can edit its files" } }, 403);
+    return jsonResponse({ error: { code: "forbidden", message: "Only the owner can edit this PC's files" } }, 403);
   }
-  // The SSH tab's list (hosts of this PC's ssh config with their user@hostname, and the PCs of its Tailscale) goes
-  // only to clients that may drive this PC with full access: this PC itself, its access token, and a device paired
-  // with it directly to drive. Each of those can already open a terminal here and read ~/.ssh/config, so the list
-  // tells them nothing new. An open LAN window is refused here; a watching device is
-  // refused in machine-api.ts (read_only).
-  if (pathname === "/api/machines/ssh-candidates" && access.level === "full" && access.via === "open") {
-    setRequestRoute("owner-refusal");
-    return jsonResponse({ error: { code: "owner_only", message: "See the PCs this PC knows on this PC itself, or from a device paired with it directly." } }, 403);
-  }
-
   // API reads can chain several bounded 10 s Herdr RPCs. Give the handler time to return
   // its JSON result or timeout instead of Bun closing the socket at its default 10 s idle
   // cutoff. Static files keep their default; streaming and long-operation routes override
   // this finite budget below, after access and origin checks have passed. Only a signed-in
-  // request gets it: the routes open without sign-in (health, auth, pairing) keep the default,
+  // request gets it: the routes open without sign-in (health, auth) keep the default,
   // so an unauthenticated client cannot hold idle sockets for a minute.
   if (pathname.startsWith("/api/") && authenticated) ctx.timeout(request, 60);
 
@@ -279,46 +211,24 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
       // a move's install there is waited for 200 s (machine-api.ts): this connection is held a little longer still
       const machinePathAsked = pathname.split("/").slice(4).join("/");
       ctx.timeout(request, pathname === "/api/machines/events" ? 0 : machinePathAsked === "runtime/move/install" ? 210 : slowMachinePath(machinePathAsked) ? 180 : 80);
-      const deviceId = access.level === "full" ? access.device?.id : undefined;
-      // a device's enrollment is news to every stream but the new device's own: one the stream's
-      // device cookie names, or one this browser asked for itself (its stream key, server/devices.ts),
-      // which a stream opened before that device existed cannot know by its cookie. A browser
-      // without a key gets one with this stream; a key is a cookie of its own name, so tabs that
-      // open at once each add theirs and the pairing later carries all of them
-      const presentedKeys = streamKeys(request);
-      const issuedKey = presentedKeys.length === 0 && pathname === "/api/machines/events" ? newStreamKey() : null;
-      const keys = issuedKey === null ? presentedKeys : [issuedKey];
-      // a stream that came in through the open LAN is told nothing: every enrollment follows the write
-      // that closed the gate, so whoever holds it has no access left by the time there is news
-      const openAccess = access.level === "full" && access.via === "open";
-      const pairings = { subscribe: (listener: (event: DevicePairedEvent | DeviceRemovedEvent) => void) => {
-        const stopPaired = devices.onPaired((event, origin) => { if (!openAccess && event.device_id !== deviceId && !sameBrowser(origin, keys)) listener(event); });
-        // removals go to streams that may drive, as the client lane's device list needs
-        const stopRemoved = !openAccess && access.level === "full" && access.role === "drive" ? devices.onRemoved(listener) : undefined;
-        return () => { stopPaired(); stopRemoved?.(); };
-      } };
-      const response = await handleMachineRequest(request, machines, deviceId ? (close) => devices.onRevoke(deviceId, close) : undefined, preferences, readOnly, herdrSidebar, seen, pairings, ownerAccess(access));
+      const response = await handleMachineRequest(request, machines, preferences, herdrSidebar, seen);
       response.headers.set("cache-control", "no-store");
-      if (issuedKey !== null && response.ok) response.headers.append("set-cookie", streamCookie(issuedKey, isSecureRequest(request)));
       return response;
     }
   }
   if (pathname === "/ws") {
     setRequestRoute(pathname);
     if (!sameOrigin(request)) return new Response("invalid origin", { status: 403 });
-    const deviceId = access.level === "full" ? access.device?.id : undefined;
     const machineId = url.searchParams.get("machine_id");
     if (machineId && machineId !== "local") {
-      if (access.level === "none") return unauthorizedJson(access.reason);
+      if (access.level === "none") return unauthorizedJson();
       if (!machines?.endpoint(machineId)) return jsonResponse({ error: { code: "machine_offline", message: "This PC is disconnected" } }, 503);
-      // whose receipts these are: the paired device's
-      const principal = deviceId !== undefined ? JSON.stringify(["device", deviceId]) : undefined;
       let relay: MachineRelay | undefined;
       try {
-        relay = new MachineRelay(machines, machineId, readOnly, browserSnapshot,
-          (browser) => ctx.services.relayReceiptIds.scope(machineId, principal, browser));
+        relay = new MachineRelay(machines, machineId, browserSnapshot,
+          (browser) => ctx.services.relayReceiptIds.scope(machineId, browser));
         await relay.ready;
-        const upgraded = ctx.upgrade(request, { headers, data: connectionData({ relay, deviceId, readOnly }) });
+        const upgraded = ctx.upgrade(request, { headers, data: connectionData({ relay }) });
         if (upgraded) return undefined;
         relay.close();
       } catch { relay?.close(); return new Response("remote websocket unavailable", { status: 502 }); }
@@ -332,56 +242,23 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     // Reuse the terminal socket for the same authorized event document as /api/machines/events.
     // A server-side switch keeps the old SSE path available for immediate transport rollback.
     const useMachineEvents = machines && !bridgeAuthorized && process.env["OVIS_MACHINE_EVENTS_WS"] !== "0";
-    const presentedKeys = streamKeys(request);
-    const issuedKey = useMachineEvents && presentedKeys.length === 0 ? newStreamKey() : null;
-    const keys = issuedKey === null ? presentedKeys : [issuedKey];
-    if (issuedKey !== null) headers.append("set-cookie", streamCookie(issuedKey, isSecureRequest(request)));
-    const openAccess = access.level === "full" && access.via === "open";
-    const machineEvents = useMachineEvents ? {
-      manager: machines, preferences, herdrSidebar, seen,
-      pairings: { subscribe: (listener: (event: DevicePairedEvent | DeviceRemovedEvent) => void) => {
-        const stopPaired = devices.onPaired((event, origin) => {
-          if (!openAccess && event.device_id !== deviceId && !sameBrowser(origin, keys)) listener(event);
-        });
-        const stopRemoved = !openAccess && access.level === "full" && access.role === "drive" ? devices.onRemoved(listener) : undefined;
-        return () => { stopPaired(); stopRemoved?.(); };
-      } },
-    } : undefined;
-    const upgraded = ctx.upgrade(request, { headers, data: connectionData({ machineEvents, deviceId, readOnly, bridge: bridgeAuthorized, ...(surface ? { surface } : {}), ...(surface === false ? {} : { ingress }) }) });
+    const machineEvents = useMachineEvents ? { manager: machines, preferences, herdrSidebar, seen } : undefined;
+    const upgraded = ctx.upgrade(request, { headers, data: connectionData({ machineEvents, bridge: bridgeAuthorized, ...(surface ? { surface } : {}), ...(surface === false ? {} : { ingress }) }) });
     if (upgraded) return undefined;
     return new Response("websocket upgrade required", { status: 426 });
   }
 
   if (pathname === "/api/auth") {
     setRequestRoute(pathname);
-    // signing out also ends the page media this browser was given (by its device, else by its address)
-    // a browser can hold the token and a device cookie at once, and its renders are then the
-    // client's: signing out ends both kinds
-    if (request.method === "DELETE" && authenticated) {
-      if (pairedDevice !== null) forgetPageMedia({ device: pairedDevice.id });
-      forgetPageMedia({ client });
-    }
+    // signing out also ends the page media this browser was given (by its address)
+    if (request.method === "DELETE" && authenticated) forgetPageMedia({ client });
     return handleAuthRequest(request, token, client);
   }
-  if (pathname === "/api/devices" || pathname.startsWith("/api/devices/")) {
-    try {
-      // one device, or all of them: the registry names what was revoked, and the cleanup follows its ids
-      return await handleDeviceRequest(request, pathname, devices, access, (revoked) => {
-        for (const id of revoked) {
-          // The device registry is the delivery authority even if cleaning the push file fails.
-          try { push.revokeDevice(id); } catch (error) { logPushError(error); }
-          // and every page media address its renders were given
-          forgetPageMedia({ device: id });
-        }
-      }, ctx.lanHttps === true);
-    } catch (error) { return errorResponse(error); }
-  }
-
-  // installing an update on this PC (Ovis or herdr; a check installs too where OVIS_AUTO_UPDATE=1) is the owner's, as changing its PCs is (machine-api.ts): from any device
-  // he signed in or paired himself. The connection server's bridge token asks its own install by revision (bridgeUpdatePath)
+  // installing an update on this PC (Ovis or herdr; a check installs too where OVIS_AUTO_UPDATE=1) is the owner's, as changing its PCs is (machine-api.ts).
+  // The connection server's bridge token asks its own install by revision (bridgeUpdatePath)
   if (request.method === "POST" && (pathname === "/api/updates/install" || pathname === "/api/updates/cancel" || pathname === "/api/updates/check" || pathname === "/api/herdr/update") && !ownerAccess(access) && !(bridgeAuthorized && bridgeUpdatePath)) {
     setRequestRoute(pathname);
-    return jsonResponse({ error: { code: "forbidden", message: "Only the owner's own signed-in or paired devices can update this PC, from this app's own page." } }, 403);
+    return jsonResponse({ error: { code: "forbidden", message: "Only the owner can update this PC, from this app's own page." } }, 403);
   }
   if (pathname === "/api/updates" || pathname.startsWith("/api/updates/")) {
     // the bridge token cannot read /api/access: where this server answers comes with its update status (#2191)
@@ -396,9 +273,9 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === "/api/herdr/update") { setRequestRoute(pathname); return handleHerdrUpdateRequest(request, options.herdrUpdate); }
   if (pathname === "/api/connection-diagnostics") { setRequestRoute(pathname); return clientConnectionLog.handle(request, client ?? "unknown"); }
   if (pathname === "/api/telemetry") { setRequestRoute(pathname); return handleTelemetryRequest(request, options.telemetry); }
-  // what every browser of this server shares; a watching device reads it and cannot change it (above)
+  // what every browser of this server shares
   if (pathname === "/api/preferences") { setRequestRoute(pathname); return handlePreferencesRequest(request, preferences); }
-  // the finishes read in some browser of this server; a watching device reads them and cannot add to them (above)
+  // the finishes read in some browser of this server
   if (pathname === "/api/seen") { setRequestRoute(pathname); return handleSeenRequest(request, seen); }
 
   if (pathname === "/api/system") { setRequestRoute(pathname); return handleSystemRequest(request, ctx.services.systemSampler); }
@@ -408,30 +285,19 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   // on or off only: the server decides what is installed and where (server/statusline-install.ts)
   if (pathname === "/api/usage/statusline") { setRequestRoute(pathname); return handleStatuslineRequest(request, usage); }
   if (pathname === "/api/usage/login") { setRequestRoute(pathname); ctx.timeout(request, 30); return usageLogin.handle(request, collector.trackPane, loginOwner); }
-  // the browser's sign-in dialog: a followed login's prompt, the code its page showed, and stopping it (a watching device: none)
-  if (pathname === "/api/usage/login/prompt" || pathname === "/api/usage/login/code" || pathname === "/api/usage/login/cancel") { setRequestRoute(pathname); return usageLogin.handlePrompt(request, readOnly, loginOwner); }
+  // the browser's sign-in dialog: a followed login's prompt, the code its page showed, and stopping it
+  if (pathname === "/api/usage/login/prompt" || pathname === "/api/usage/login/code" || pathname === "/api/usage/login/cancel") { setRequestRoute(pathname); return usageLogin.handlePrompt(request, loginOwner); }
   if (pathname === "/api/cliproxy" || pathname.startsWith("/api/cliproxy/")) { ctx.timeout(request, 60); return cliProxyRoutes.handle(request); }
   // a long clip can keep the provider silent past Bun's 10 s idle limit before the first line
   if (pathname === "/api/voice" || pathname.startsWith("/api/voice/")) { ctx.timeout(request, 120); return handleVoiceRequest(request, pathname, voice); }
 
-  // Settings → Alerts → Also send to: one destination this PC also posts its alerts to (a watching device: none, above)
+  // Settings → Alerts → Also send to: one destination this PC also posts its alerts to
   if (pathname === "/api/alerts/webhook" || pathname === "/api/alerts/webhook/test") {
-    // its owner as a push subscription's: a paired device, null for a local/token sign-in, undefined for the open LAN
-    const owner = access.level !== "full" ? null : access.device?.id ?? (access.via === "open" ? undefined : null);
-    try { return (await handleAlertWebhookRequest(request, pathname, alertWebhook, owner))!; } catch (error) { return errorResponse(error); }
+    try { return (await handleAlertWebhookRequest(request, pathname, alertWebhook))!; } catch (error) { return errorResponse(error); }
   }
   if (pathname === "/api/push" || pathname.startsWith("/api/push/")) {
     try {
-      // a paired device owns its alerts; the open LAN (before any pairing) owns them only while
-      // it stays open, like a subscription from before owners (undefined); a local/token
-      // sign-in is the owner (null)
-      const owner = access.level !== "full" ? null : access.device?.id ?? (access.via === "open" ? undefined : null);
-      // the subscription remembers its browser's stream keys, so that browser's own pairing is not
-      // pushed to it whoever owns the subscription; a browser without one gets one here
-      const presentedKeys = streamKeys(request);
-      const issuedKey = presentedKeys.length === 0 && request.method === "POST" && pathname === "/api/push/subscribe" ? newStreamKey() : null;
-      const answered = await handlePushRequest(request, pathname, push, owner, issuedKey === null ? presentedKeys : [issuedKey]);
-      if (answered && issuedKey !== null && answered.ok) answered.headers.append("set-cookie", streamCookie(issuedKey, isSecureRequest(request)));
+      const answered = await handlePushRequest(request, pathname, push);
       if (answered) return answered;
     } catch (error) {
       return errorResponse(error);
@@ -441,29 +307,21 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === "/api/health") {
     setRequestRoute(pathname);
     const auth: HealthAuth = access.level === "full"
-      ? { required: false, authenticated: true, via: access.via, role: access.role, ...(access.via === "token" && bearerMatches(request, token) ? { bearer: true as const } : {}) }
+      ? { required: false, authenticated: true, via: access.via, ...(access.via === "token" && bearerMatches(request, token) ? { bearer: true as const } : {}) }
       : { required: true, authenticated, ...(authenticated ? {} : { reason: access.reason }) };
-    // this server is open to the network with no token and nothing paired, told to a client
-    // that got in and to nobody else: naming it to an anonymous caller would be
-    // reconnaissance, not help. Nothing here changes who is let in (server/access.ts).
-    const lan_exposure = access.level !== "full" ? undefined
-      : lanExposed({ hostname, tokenConfigured: token !== "", gated: devices.gated }) ? { host: hostname } : undefined;
-    const exposure = lan_exposure ? { lan_exposure } : {};
-    // what protects this server, for a client that got in (a watching one too) and nobody else;
+    // what protects this server, for a client that got in and nobody else;
     // per request, so never stored. The ingress is this request's, proven or `unknown`.
     const ingress = observedIngress({ ...requestShape, peerKnown: ip !== null, forwardingHeaders: proxyHeaders });
     const security: SecuritySummary | undefined = access.level === "full" ? {
       token_configured: token !== "",
-      pairing_gate: devices.error !== null ? "unavailable" : devices.gated ? "closed" : "open",
       bind_scope: bindScope(hostname),
       observed_ingress: ingress,
       public_exposure: ingress === "funnel" ? "observed" : "unknown",
     } : undefined;
     const securityHeaders: Record<string, string> = security ? { "cache-control": "no-store" } : {};
     // what this PC has of the Herdr app's runtime, for Settings: never waited for, no path in it.
-    // Only a driving owner is told: a session name can name a project, which a watching device or a
-    // stranger on an open install has no need to read
-    const owner = access.level === "full" && access.role === "drive" && access.via !== "open";
+    // Only the owner is told: a session name can name a project, which a stranger has no need to read
+    const owner = ownerAccess(access);
     // the connection server that reaches this PC with its bridge token shows its move badge from them
     const herdr_runtime = owner || bridgeAuthorized ? options.runtimeService?.facts() : undefined;
     // the boot id lets the launcher know its own new bridge without waiting on herdr (server/supervisor.ts);
@@ -474,14 +332,10 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
       const info = await ping();
       // a forced answer (tests) and a runtime without the PTY sidecar are told the way a Windows herdr's own would be
       const herdr = attachableIdentity(info, sidecar);
-      return jsonResponse({ ok: true, herdr, auth, ...exposure, ...(security ? { security } : {}), ...(herdr_core ? { herdr_core } : {}), ...(herdr_runtime ? { herdr_runtime } : {}),
+      return jsonResponse({ ok: true, herdr, auth, ...(security ? { security } : {}), ...(herdr_core ? { herdr_core } : {}), ...(herdr_runtime ? { herdr_runtime } : {}),
         web_ui: { boot_id: bootId, revision: process.env["OVIS_REVISION"] ?? null } }, 200, securityHeaders);
     } catch (error) {
-      const failed = errorResponse(error);
-      if (!lan_exposure) return failed;
-      // herdr away says nothing of this PC's network listeners: they are told all the same
-      const body: unknown = await failed.json();
-      return jsonResponse({ ...(body !== null && typeof body === "object" ? body : {}), ...exposure }, failed.status, { "cache-control": "no-store" });
+      return errorResponse(error);
     }
   }
 
@@ -489,8 +343,8 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     setRequestRoute(pathname);
     if (request.method !== "POST") return badRequest("method_not_allowed", "use POST");
     if (!updateRequestAllowed(request)) return jsonResponse({ error: { code: "forbidden", message: "a runtime switch must come from this app's own page" } }, 403);
-    // the same boundary as the facts: only a driving owner, never a watching device or a stranger on an open install
-    if (!(access.level === "full" && access.role === "drive" && access.via !== "open")) return jsonResponse({ error: { code: "forbidden", message: "only a device that drives this PC can switch its runtime" } }, 403);
+    // the same boundary as the facts: only the owner
+    if (!ownerAccess(access)) return jsonResponse({ error: { code: "forbidden", message: "only the owner can switch this PC's runtime" } }, 403);
     if (!options.runtimeService) return jsonResponse({ error: { code: "runtime_locked", message: "this server cannot switch its runtime" } }, 409);
     let body: unknown;
     try { body = await request.json(); } catch { return badRequest("invalid_json", "send { \"runtime\": \"herdr\" | \"herdr-core\" }"); }
@@ -501,14 +355,14 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     return answer.ok ? jsonResponse({ accepted: true }, 202) : jsonResponse({ error: { code: answer.code, message: answer.message } }, answer.status);
   }
 
-  // who may move this PC's runtime: a driving owner, or the connection server holding the bridge token,
+  // who may move this PC's runtime: the owner, or the connection server holding the bridge token,
   // which already drives every pane here.
-  const moveDriver = bridgeAuthorized || access.level === "full" && access.role === "drive" && access.via !== "open";
+  const moveDriver = bridgeAuthorized || ownerAccess(access);
 
   if (pathname === `${RUNTIME_MOVE_PATH}/install`) {
     setRequestRoute(pathname);
     // downloads and runs a program on this PC: the runtime switch's own boundary, and only from this app's page
-    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only a device that drives this PC can install herdr-core" } }, 403);
+    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only the owner can install herdr-core" } }, 403);
     if (request.method !== "POST") return badRequest("method_not_allowed", "use POST");
     // its download alone may take 120 s (herdr-core/install.ts): the answer outlasts the usual minute, as
     // another PC's proxy waits for it (machine-api.ts slowMachinePath)
@@ -528,7 +382,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === `${RUNTIME_MOVE_PATH}/stop`) {
     setRequestRoute(pathname);
     // ends a command in a pane of this PC: the move's own boundary, and only from this app's page
-    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only a device that drives this PC can end a pane's command" } }, 403);
+    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only the owner can end a pane's command" } }, 403);
     if (request.method !== "POST") return badRequest("method_not_allowed", "use POST");
     if (!updateRequestAllowed(request)) return jsonResponse({ error: { code: "forbidden", message: "a stop must come from this app's own page" } }, 403);
     const move = ctx.services.runtimeMove;
@@ -553,7 +407,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === `${RUNTIME_MOVE_PATH}/stop-all`) {
     setRequestRoute(pathname);
     // ends commands in panes of this PC: the move's own boundary, and only from this app's page
-    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only a device that drives this PC can end a pane's command" } }, 403);
+    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only the owner can end a pane's command" } }, 403);
     if (request.method !== "POST") return badRequest("method_not_allowed", "use POST");
     if (!updateRequestAllowed(request)) return jsonResponse({ error: { code: "forbidden", message: "a stop must come from this app's own page" } }, 403);
     const move = ctx.services.runtimeMove;
@@ -578,7 +432,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === RUNTIME_MOVE_PATH) {
     setRequestRoute(pathname);
     // folders and conversation ids of every pane, and agents ended and started: the runtime switch's own boundary
-    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only a device that drives this PC can move its runtime" } }, 403);
+    if (!moveDriver) return jsonResponse({ error: { code: "forbidden", message: "only the owner can move this PC's runtime" } }, 403);
     const move = ctx.services.runtimeMove;
     if (!move) return jsonResponse({ error: { code: "runtime_locked", message: "this server cannot switch its runtime" } }, 409);
     if (request.method === "GET") {
@@ -636,7 +490,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   const integrationsResponse = await handleIntegrationsRequest(request, pathname);
   if (integrationsResponse) return integrationsResponse;
 
-  const filesResponse = await handleFileRequest(request, url, pathname, { bridgeAuthorized, requestHost, forwarded, client, access });
+  const filesResponse = await handleFileRequest(request, url, pathname, { bridgeAuthorized, requestHost, forwarded, client });
   if (filesResponse) return filesResponse;
 
   const workspaceResponse = await handleWorkspaceRequest(request, url, pathname, ctx, broadcastAll, queueFirstMessage, () => {
@@ -656,8 +510,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   const tasksResponse = await handleTasksRequest(request, url, pathname, { omo, claudeAgents, opencodeAgents });
   if (tasksResponse) return tasksResponse;
 
-  // a GET a watching device may make on purpose: a subagent's prose and tool-call arguments (which can carry file
-  // contents) are what the live conversation already shows it of the agents of this pane
+  // a subagent's prose and tool-call arguments (which can carry file contents) are what the live conversation already shows of the agents of this pane
   if (pathname === BACKGROUND_AGENT_PATH) {
     return handleBackgroundAgentRequest(request, url, { paneGet, omoPane: (paneId) => omo.sessionOf(paneId) !== null, claudeAgents, opencodeAgents, read: options.backgroundAgentRead });
   }
@@ -679,18 +532,18 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
 
   if (pathname === SESSION_HISTORY_PATH) {
     setRequestRoute(SESSION_HISTORY_PATH);
-    return handleSessionHistoryRequest(request, url, { readOnly, stores: { codexHome: options.codexHome, opencodeDb: options.opencodeDb, hermesHome: options.hermesHome, piReader } });
+    return handleSessionHistoryRequest(request, url, { stores: { codexHome: options.codexHome, opencodeDb: options.opencodeDb, hermesHome: options.hermesHome, piReader } });
   }
 
   if (pathname === SESSION_RESUME_PATH) {
     setRequestRoute(SESSION_RESUME_PATH);
     // agent.start can legitimately take a minute; Bun's default idle timeout is shorter
-    return handleSessionResumeRequest(request, { readOnly, stores: { codexHome: options.codexHome, opencodeDb: options.opencodeDb, hermesHome: options.hermesHome }, holdOpen: (seconds) => ctx.timeout(request, seconds) });
+    return handleSessionResumeRequest(request, { stores: { codexHome: options.codexHome, opencodeDb: options.opencodeDb, hermesHome: options.hermesHome }, holdOpen: (seconds) => ctx.timeout(request, seconds) });
   }
 
   if (pathname.startsWith("/api/pane/prompt")) {
     try {
-      const response = await handlePromptRequest(request, url, { serialize, codexHome: options.codexHome, claudeTranscript: (paneId) => claudeAgents.sessionOf(paneId)?.path ?? null, readOnly, openCodeStateDir: options.openCodeStateDir, openCodeState, onAnswered: () => options.telemetry?.tally("prompt_answers") });
+      const response = await handlePromptRequest(request, url, { serialize, codexHome: options.codexHome, claudeTranscript: (paneId) => claudeAgents.sessionOf(paneId)?.path ?? null, openCodeStateDir: options.openCodeStateDir, openCodeState, onAnswered: () => options.telemetry?.tally("prompt_answers") });
       if (response) return response;
     } catch (error) {
       return errorResponse(error);

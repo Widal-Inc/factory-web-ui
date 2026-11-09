@@ -1,9 +1,7 @@
 /** How a request got in, when it did. */
-export type AccessVia = "local" | "device" | "token" | "open";
+export type AccessVia = "local" | "token";
 /** Why a request did not. */
-export type AccessRefusal = "pairing_required" | "token_required";
-/** What a paired device may do: drive (type, answer, manage) or only watch. */
-export type DeviceRole = "drive" | "watch";
+export type AccessRefusal = "token_required";
 
 /** GET /api/health `auth`: `authenticated` is whether this request got in; `required` is the opposite, kept for older clients. */
 export interface HealthAuth {
@@ -12,22 +10,7 @@ export interface HealthAuth {
   readonly via?: AccessVia;
   /** with `via: "token"`: the token came in an `Authorization` header (a proxy sends it), so signing out of this browser would change nothing */
   readonly bearer?: true;
-  readonly role?: DeviceRole;
   readonly reason?: AccessRefusal;
-}
-
-/**
- * GET /api/health, authenticated requests only: this server answers on an address beyond this
- * PC while no access token is set and no device has ever been paired, so anything that can
- * reach that address is let in (`open` in `server/access.ts`). It is a warning, never a gate:
- * nothing about who is let in changes because this field exists.
- *
- * Never sent to a request that did not get in. "This host runs Ovis with no token"
- * is reconnaissance for whoever is asking, not help.
- */
-export interface LanExposure {
-  /** the address the server is bound to, so the warning can name where it is reachable */
-  readonly host: string;
 }
 
 /** The configured bind address, read from its literal (`bindScope` in server/access.ts): never a DNS lookup or the request's Host. */
@@ -36,37 +19,19 @@ export type BindScope = "loopback" | "tailnet" | "other";
 export type ObservedIngress = "direct" | "proxy" | "funnel" | "unknown";
 
 /**
- * GET /api/health (both scopes), authenticated requests only, a watching device's included:
+ * GET /api/health (both scopes), authenticated requests only:
  * what protects this server, each fact on its own and none of them a verdict. It carries no
  * token, hash, header, login or address, and is sent `no-store`. Anonymous answers omit it, and
  * an older server sends none: the client then says the facts are unavailable rather than
- * reading them from `auth` or from the absence of `lan_exposure`.
+ * reading them from `auth`.
  */
 export interface SecuritySummary {
   /** an access token is configured on the server, whether or not this request used it */
   readonly token_configured: boolean;
-  /** the durable pairing gate (`DeviceStore.gated`); `unavailable` when devices.json cannot be read, which keeps it closed */
-  readonly pairing_gate: "open" | "closed" | "unavailable";
   readonly bind_scope: BindScope;
   readonly observed_ingress: ObservedIngress;
   /** `observed` only with trusted public-ingress evidence on this request (Funnel); otherwise unknown, never "none" */
   readonly public_exposure: "observed" | "unknown";
-}
-
-export interface PairedDevice {
-  readonly id: string;
-  readonly label: string;
-  readonly role: DeviceRole;
-  readonly created_at: string;
-  readonly last_seen_at: string | null;
-  /** the device this request came from */
-  readonly current: boolean;
-}
-
-/** POST /api/devices/pair/start */
-export interface PairingCode {
-  readonly code: string;
-  readonly expires_at: string;
 }
 
 /** GET /api/access: how a phone can reach this server, as far as the server can tell (Settings → Phone). */

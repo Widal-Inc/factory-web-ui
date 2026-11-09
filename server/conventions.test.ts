@@ -112,7 +112,7 @@ describe("error bodies", () => {
     expect(malformed("return jsonResponse({ error: \"nope\" }, 400);", 7)).toBe(true);
     expect(malformed("return reply({ error: { code: \"x\" } }, 400);", 7)).toBe(true);
     expect(malformed("return jsonResponse({ error: { code, message: a ? b : \"c\" } }, 503);", 7)).toBe(false);
-    expect(malformed("return jsonResponse({ error: { message: \"invalid pairing code\" } }, 400);", 7)).toBe(true);
+    expect(malformed("return jsonResponse({ error: { message: \"invalid token\" } }, 400);", 7)).toBe(true);
     expect(malformed("return jsonResponse({ ok: false, error: \"nope\" }, 400);", 7)).toBe(true);
     expect(malformed("return jsonResponse({ ok: true, data: { error: \"kept\" } });", 7)).toBe(false);
     expect(ANSWER.test("this.patch({ phase: \"error\", error: \"failed\" });")).toBe(false);

@@ -9,7 +9,6 @@ enum Ovis {
     /// Where the installer may come from: ovis.sh redirects to its copy on herdrweb.dev.
     static let installerHosts: Set<String> = ["ovis.sh", "herdrweb.dev"]
     static let support = URL(string: "https://ovis.sh/support/")!
-    static let tailscaleDownload = URL(string: "https://tailscale.com/download/mac")!
 
     static func isInstallerSource(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && installerHosts.contains(url.host?.lowercased() ?? "")

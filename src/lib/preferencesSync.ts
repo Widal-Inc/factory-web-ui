@@ -123,8 +123,7 @@ export interface Taken {
  * one changed here since `base` and not yet sent (it goes out next and wins), and one this browser
  * cannot read (a newer release's value stays the others'). `inFlight` is the change the document
  * answers: a value the server took is no longer this browser's own, so the document's stands (a
- * document from before the change landed is held until the answer, lib/preferencesSync.ts). With
- * `force` (a watching device, which sends nothing) every value is taken. `refused` is the last change
+ * document from before the change landed is held until the answer, lib/preferencesSync.ts). `refused` is the last change
  * the server refused (it has taken none since): a value of it this browser still holds as sent gives
  * way where the document's differs from `base`, since another browser saved that setting after the
  * change was made, and the change, sent late, would overwrite the newer value. A value changed here
@@ -136,7 +135,7 @@ export interface Taken {
  * (an older one, or one rolled back to it), whatever came before: the mutes stand down here, and
  * none is sent to it.
  */
-export function takePreferences(base: Baseline, local: Local, remote: SharedPreferences, inFlight: PreferencesChange | null, force = false, refused: PreferencesChange | null = null): Taken {
+export function takePreferences(base: Baseline, local: Local, remote: SharedPreferences, inFlight: PreferencesChange | null, refused: PreferencesChange | null = null): Taken {
   const settings: Shared = { ...base.settings };
   const patch: Record<string, unknown> = {};
   const incoming = { ...remote.settings };
@@ -159,19 +158,19 @@ export function takePreferences(base: Baseline, local: Local, remote: SharedPref
     const edited = !same(local.settings[key], flown ? inFlight.settings[key] : base.settings[key]) && !sent;
     const overtaken = refused !== null && key in refused.settings && same(local.settings[key], refused.settings[key]) && !same(value, base.settings[key]);
     settings[key] = value;
-    if (force || !edited || overtaken) patch[key] = value;
+    if (!edited || overtaken) patch[key] = value;
   }
   // Palette is a derived mirror, not an independent local edit. A legacy document with no
   // sides must not overwrite a device's migrated System pair or provoke a correcting PUT.
   settings.palette = mirrorPalette(settings.theme, settings.darkTheme ?? DEFAULT_THEME, settings.lightTheme ?? DEFAULT_THEME);
   let pins: string[] | null = null;
   if (remote.pins !== undefined) {
-    if (base.pins === null && !force) pins = [...remote.pins, ...local.pins.filter((pin) => !remote.pins!.includes(pin))];
+    if (base.pins === null) pins = [...remote.pins, ...local.pins.filter((pin) => !remote.pins!.includes(pin))];
     else {
       const sent = inFlight?.pins !== undefined && same(inFlight.pins, local.pins);
       const edited = !same(local.pins, inFlight?.pins ?? base.pins) && !sent;
       const overtaken = refused?.pins !== undefined && same(local.pins, refused.pins) && !same(remote.pins, base.pins);
-      if (force || !edited || overtaken) pins = [...remote.pins];
+      if (!edited || overtaken) pins = [...remote.pins];
     }
   }
   let muted: string[] | null | undefined = null;
@@ -183,7 +182,7 @@ export function takePreferences(base: Baseline, local: Local, remote: SharedPref
     const reference = flown ?? base.muted;
     const edited = local.muted !== null && reference !== null && !same(local.muted, reference) && !sent;
     const overtaken = refused?.muted_panes !== undefined && same(local.muted, refused.muted_panes) && !same(remote.muted_panes, base.muted);
-    if (force || !edited || overtaken) muted = [...remote.muted_panes];
+    if (!edited || overtaken) muted = [...remote.muted_panes];
     else {
       // a change made here and not yet sent is laid over the list pane by pane: a pane another browser
       // muted or unmuted meanwhile keeps its new state, and only the panes changed here go out
@@ -196,14 +195,14 @@ export function takePreferences(base: Baseline, local: Local, remote: SharedPref
   // The tab labels go key by key: the server's map, with a label learned here and not yet held laid
   // over it and one dropped here and still held left out, both to go out next (the server merges each,
   // so a change on its way, or refused, is sent again as it stands). A document without them holds
-  // none; a server that keeps none (base null) is left alone; a watching device takes the server's.
+  // none; a server that keeps none (base null) is left alone.
   let tabLabels: Record<string, string> | null = null;
   const remoteLabels = remote.tab_labels ?? {};
   if (base.tabLabels !== null) {
     const now = local.tabLabels ?? {};
     const reference = base.tabLabels ?? {};
     // the setting off (the server then holds none) leaves nothing unsent to lay over its map
-    if (force || remote.settings.autoTabNames === false) tabLabels = { ...remoteLabels };
+    if (remote.settings.autoTabNames === false) tabLabels = { ...remoteLabels };
     else {
       const merged: Record<string, string> = {};
       // a label learned here again over an attachment's (#2637) stays, to replace it as preferencesChange does (#2682)
@@ -228,7 +227,7 @@ export interface PreferencesSync {
   /**
    * the last change the server refused to save, as a sentence for Settings (lib/userError.ts); null
    * once a save lands and nothing changed here since is still unsent. The change is sent again
-   * meanwhile, until `paused`. A watching device and a server without the route are not refusals.
+   * meanwhile, until `paused`. A server without the route is not a refusal.
    */
   saveError: UserError | null;
   /** three saves failed in a row: nothing is sent until `retry`, `resubscribed` or a longer wait ends */
@@ -261,8 +260,6 @@ export function usePreferencesSync(enabled: boolean): PreferencesSync {
   const [loaded, setLoaded] = useState(false);
   // a server without the route: sync stands down, settings stay this browser's
   const off = useRef(false);
-  // a watching device: it takes what the others share and sends nothing; a change of its own lasts until the next shared one
-  const readOnly = useRef(false);
   const inFlight = useRef<PreferencesChange | null>(null);
   // the newest document that arrived while a change was on its way: whether it is older or newer
   // than that change shows once the answer, with its revision, is here
@@ -321,7 +318,7 @@ export function usePreferencesSync(enabled: boolean): PreferencesSync {
     const kept = stored.current;
     const startedOver = kept !== null && (remote.revision < kept.revision || (kept.stateId !== undefined && remote.state_id !== undefined && remote.state_id !== kept.stateId));
     if (!loadedRef.current && startedOver) base.current = { ...base.current, pins: null };
-    const taken = takePreferences(base.current, latest.current, remote, inFlight.current, readOnly.current, refused.current);
+    const taken = takePreferences(base.current, latest.current, remote, inFlight.current, refused.current);
     // the page's first document without pins comes from a server that holds none (a fresh state
     // folder): the pins this browser kept knowing are not its, and its own go with its next change
     base.current = !loadedRef.current && remote.pins === undefined ? { ...taken.base, pins: null } : taken.base;
@@ -364,7 +361,7 @@ export function usePreferencesSync(enabled: boolean): PreferencesSync {
     return () => { cancelled = true; window.clearTimeout(retry); };
   }, [enabled, loaded, loadAttempt, receive]);
 
-  /** sending stopped for good (a watching device, a server without the route): nothing is unconfirmed */
+  /** sending stopped for good (a server without the route): nothing is unconfirmed */
   const standDown = useCallback(() => {
     failures.current = 0;
     refused.current = null;
@@ -377,14 +374,14 @@ export function usePreferencesSync(enabled: boolean): PreferencesSync {
 
   /** a new round of sends, for the user's Retry or a reopened event stream; one chain still, never a second */
   const resume = useCallback(() => {
-    if (off.current || readOnly.current) return;
+    if (off.current) return;
     failures.current = 0;
     window.clearTimeout(pauseTimer.current);
     setPaused(false);
     setAttempt((count) => count + 1);
   }, []);
   const retry = useCallback(() => {
-    if (off.current || readOnly.current) return;
+    if (off.current) return;
     // nothing unsent and nothing on its way: nothing is left to confirm, so nothing to wait for
     if (inFlight.current === null && preferencesChange(base.current, latest.current) === null) { standDown(); return; }
     userRetry.current = true;
@@ -431,7 +428,7 @@ export function usePreferencesSync(enabled: boolean): PreferencesSync {
     return () => { live.current = false; window.clearTimeout(retryTimer.current); window.clearTimeout(pauseTimer.current); };
   }, [enabled]);
   useEffect(() => {
-    if (!enabled || !loaded || off.current || readOnly.current || paused || pending === null) return;
+    if (!enabled || !loaded || off.current || paused || pending === null) return;
     // a reload or a closed tab ends the send wait below with the page (#2374), and a phone may kill a hidden
     // one: what is unsent goes now, in a request that outlives the page. While a change is on its way (its
     // request may not outlive the page), what is unsent, that change's values included, goes beside it,
@@ -492,10 +489,7 @@ export function usePreferencesSync(enabled: boolean): PreferencesSync {
         // a document held while this was on its way is read before this refusal counts: an edit made
         // meanwhile is the newest here, and the refused value itself stays unless it was refused before
         settled();
-        if (error instanceof ApiError && error.status === 403) {
-          readOnly.current = true;
-          standDown();
-        } else if (error instanceof ApiError && error.status === 404) {
+        if (error instanceof ApiError && error.status === 404) {
           off.current = true;
           standDown();
         } else if (preferencesChange(base.current, latest.current) === null) {

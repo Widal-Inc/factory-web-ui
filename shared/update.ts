@@ -85,7 +85,7 @@ export const REVISION = /^[0-9a-f]{40,64}$/;
 export type UpdateRequest = { command: "check" } | { command: "install"; expected_revision: string; install_id?: string } | { command: "cancel"; install_id: string };
 /**
  * An install's own id, given in its 202 (POST /api/updates/install) to whoever asked for it: a cancel names it, so only the one
- * that asked for an install can stop it, never another device's or the PC's own Settings'.
+ * that asked for an install can stop it, never another client's or the PC's own Settings'.
  */
 export const INSTALL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 

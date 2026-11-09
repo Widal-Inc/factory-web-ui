@@ -45,7 +45,7 @@ suppressed) keeps its `episode_id` and start into the next visible failure, so t
 `since_first_failure_ms` can span a healthy gap. Abnormal browser WebSocket closes are
 coalesced separately for local and relayed connections; normal closes and server shutdown are quiet.
 `websocket.failed` means any close other than 1000 or 1001, so it also covers closes the server starts
-itself (device revoke 1008, output stall 4008, a remote PC disconnecting 1012); `close_code` tells them apart.
+itself (output stall 4008, a remote PC disconnecting 1012); `close_code` tells them apart.
 The close reason, input, credentials, peer names, socket paths and raw exception messages are never
 included. A remote machine's opaque UUID may appear, not its name or SSH address. These records are
 separate from the request-completion log and do not add timestamps to older console messages.
@@ -110,8 +110,8 @@ preserving each route's CSP, framing, MIME, caching and compression headers.
 
 New browser clients subscribe to `machine-events` on the existing local `/ws` connection when
 its `features` frame advertises that capability. The `machine-event` frames carry the same
-machine roster, redacted sidebar values, shared preferences, seen finishes and filtered device
-pairings as `/api/machines/events`. The local connection is kept even while a remote PC is
+machine roster, redacted sidebar values, shared preferences and seen finishes
+as `/api/machines/events`. The local connection is kept even while a remote PC is
 selected; remote terminal sockets do not subscribe to this document.
 
 Older servers still use SSE. Set `OVIS_MACHINE_EVENTS_WS=0` in the server environment and restart
@@ -253,7 +253,7 @@ bun scripts/sticky-modifiers-regression.ts # mobile held keys through real legac
 bun scripts/key-bar-customization-demo-regression.ts # mobile key layout, handle drag/edge scrolling, cancellation, saved combinations and migration on demo fixtures
 bun scripts/key-bar-hold-repeat-regression.ts # phone touch key-bar taps, holds (arrows and editing keys), swipes and sticky Ctrl on demo fixtures
 bun scripts/settings-pages-demo-regression.ts # every Settings page on a 390px and a 320px phone, and Back stepping out of the dialog
-bun scripts/agent-entry-points-demo-regression.ts # Add another agent… in New workspace and New worktree, Settings' agent list (installed, the tiles to install) and Open setup guide, and none of it on a watching device, at 1280 and 390
+bun scripts/agent-entry-points-demo-regression.ts # Add another agent… in New workspace and New worktree, Settings' agent list (installed, the tiles to install) and Open setup guide, at 1280 and 390
 bun scripts/terminal-served-font-regression.ts # a Terminal or Chat font only the PC has, served from the state folder's fonts/, at 1280 and 390, light and dark: the terminal is measured from it and attached once; no font named asks nothing
 bun scripts/interface-font-demo-regression.ts # Interface font at 390 and 1440: System and a typed list lead --font-ui, a reload keeps it, Default restores it; the message box takes the Chat font
 bun scripts/file-text-size-demo-regression.ts # Settings → File text size at 390 and 1280, light and dark: a Markdown preview follows the chat and a source the interface until a size is chosen, then both take it while the chat and the viewer's header stay; Reset drops it
@@ -265,9 +265,8 @@ bun scripts/theme-first-paint-demo-regression.ts # the saved theme in every pain
 bun scripts/boot-loading-demo-regression.ts # index.html's loading spinner while the app's script is held, as on a slow link: centred, stepped, still under reduced motion, gone with the app's first frame (#2329)
 bun scripts/old-safari-demo-regression.ts # a chat pane and a terminal pane draw with the built-ins iOS 16 lacks (Promise.withResolvers, AbortSignal.any, and crypto.randomUUID on plain http) taken away before the app's script runs, under the app's CSP (#2513), and again with each lookbehind handed to RegExp as text refused, as Safari before 16.4 refuses it; the build turns every regular expression with one into such a call (#2534)
 bun scripts/alert-webhook-demo-regression.ts # Settings → Alerts → Also send to on demo fixtures: a Discord webhook saved and shown only masked, a test sent, Telegram's chat id, Off removing it, at 390 and 1280, light and dark
-bun scripts/push-health-demo-regression.ts # the alerts health notice with a stand-in PushManager: a retired subscription told once over the pane and in Settings, repaired once; a refusal, a key mismatch, denied, unsupported, offline, loading and a watching device's refused test, at 390 and 1440, light and dark, Korean at 390
+bun scripts/push-health-demo-regression.ts # the alerts health notice with a stand-in PushManager: a retired subscription told once over the pane and in Settings, repaired once; a refusal, a key mismatch, denied, unsupported, offline and loading, at 390 and 1440, light and dark, Korean at 390
 bun scripts/install-hint-demo-regression.ts # the add-to-home-screen line on a phone's browser tab: iPhone steps with the share glyph, Android's menu item then one-tap Install, dismissal and install remembered, none in the home-screen app or on desktop, light and dark, Korean
-bun scripts/device-security-demo-regression.ts # Phone & devices on demo fixtures: revoking every device (the caller's warning, the confirmation, a refused write, a watching device) and the line every window gets when a device pairs
 bun scripts/chat-browser-qa.ts  # chat lens end to end
 bun scripts/conversation-search-browser-qa.ts # Search conversation at 1280 and 390: matches newest first, a pick four pages back read and put at the top, no match, a match no longer there
 bun scripts/conversation-search-demo-regression.ts # Search conversation in the app on demo fixtures at 1280 and 390: the pane's menu and the palette open it, a pick opens the chat there, and a bridge without `conversation-search` offers none
@@ -338,7 +337,7 @@ bun scripts/sidebar-context-ring-demo-regression.ts # Settings → Context left 
 bun scripts/sidebar-background-workspaces-demo-regression.ts # Settings → Background workspaces apart (#770): off keeps herdr's order; on, workspaces tagged role=background stand after the others under a folded heading with their count, a tagged worktree stays with its repository, the open one and a question stay in sight, the fold kept per PC; 390 and 1280, light and dark
 bun scripts/agent-helpers-fold-demo-regression.ts # Settings → Fold helpers under their agent (#772): off by default; on, an agent's helpers fold under a counted line that keeps a blocked helper in sight, opens and stays open on this device, and gives way to the filter; 390 and 1280, light and dark
 bun scripts/sidebar-selection-contrast-demo-regression.ts # the selected workspace and agent rows in every theme entry, selected, hovered and focused: the fill alone with no leading stroke (its contrast recorded), every text at 4.5:1, a Highlight bar at 3:1 in forced colors; the table and the Codex shots at 1280 and 390 in UI_EVIDENCE_DIR
-bun scripts/pane-mute-demo-regression.ts    # Mute alerts from an agent's row menu: one shared list for push, droplet, chime and tab notification, two tabs of one server, a second PC's same-named pane, an older server and a watching device
+bun scripts/pane-mute-demo-regression.ts    # Mute alerts from an agent's row menu: one shared list for push, droplet, chime and tab notification, two tabs of one server, a second PC's same-named pane and an older server
 bun scripts/prompt-dock-demo-regression.ts    # the prompt card docked over the input card: its place, its height on a short phone, the grip, a typed pick
 bun scripts/plugin-actions-demo-regression.ts # a plugin action that ends after the server stopped waiting: the late failure said, a traceback's height on a phone with its keyboard up
 bun scripts/background-agent-detail-demo-regression.ts # a running Claude subagent's detail sheet from the background-task list on demo fixtures: open, Refresh, Escape, a phone's Back, focus return, late answers dropped, and the unsupported and older-bridge notes
@@ -347,7 +346,6 @@ bun scripts/narrow-pane-demo-regression.ts    # a split pane under 80 columns: t
 bun scripts/agent-skill-menu-demo-regression.ts [agent …] # each agent's `/` (and `$`) skill menu, its origin groups and its skill chips at 1280 and 390px, one case file per agent in scripts/skill-menu-cases/, screenshots in evidence/agent-skill-menu/<agent>/
 bun scripts/install-state-demo-regression.ts  # Install app against a real CDP install on a throwaway profile and HOME: never in the sidebar; Settings > Install shows the help or the prompt before, Installed in the app window and a tab of its origin, the help again after uninstall
 bun scripts/terminal-paste-insert-demo-regression.ts # a phone's Paste key into the terminal's input line and Insert without Enter on the demo shell: the caret, a held or refused clipboard read, the acknowledged clear, an older bridge; with UI_EVIDENCE_DIR, every state at 390 and 1440, light and dark, and Korean
-bun scripts/link-menu-demo-regression.ts       # a long press on a chat link in the Android app: Copy link, Open link and, where the WebView shares, Share link; a tap, other words, a mouse's menu, a swipe and a browser keep their own; with UI_EVIDENCE_DIR, the sheet at 390 in English and Korean
 bun scripts/external-link-tab-regression.ts  # the app's link opener in Chromium on loopback pages: with Reuse tab for external links on, a second link replaces the first one's tab; off, each gets its own tab with no opener; no referrer either way
 ```
 
@@ -534,7 +532,7 @@ bounded metadata for a later connection event, but a full app/page restart can l
 The HTTP attempt is bounded to five seconds and uses same-origin credentials, no redirects and
 keepalive for pagehide. Explicit disposal stops new reports; no user input is retained or retried.
 
-The authenticated, same-origin endpoint accepts watch-device reports, but no terminal input.
+The authenticated, same-origin endpoint accepts connection reports, but no terminal input.
 It revalidates and normalizes every field, accepts at most 16 events and 8192 bytes, and limits one
 peer to four reports/minute and the whole server to 16/minute with 128 peer buckets. A valid report
 writes one `client.connection_trace` JSON line to stderr. Old/locked endpoints disable reporting;
@@ -912,7 +910,7 @@ delete its remote branch after merging only when dependent work is preserved. Th
 
 These rules bind the next PR that changes the structure of a store this app owns: a browser record
 (an `ovis:` key in `localStorage`, such as `ovis:settings` or `ovis:themes`) or a bridge document in the
-state directory (`preferences.json`, `devices.json` and the others beside them). Renaming, moving,
+state directory (`preferences.json` and the others beside it). Renaming, moving,
 splitting or re-encoding a field, or changing what a stored value means, is structural. So is adding a field to a record an older
 writer rewrites whole: an old tab's next unrelated save writes the record back without the field
 it does not know, and erases it. Only an addition an older writer cannot erase, such as a value
@@ -942,10 +940,6 @@ or that none does. Then the change keeps these rules:
 - **Never write over data too new to read.** A reader that finds a structural version it does not
   know keeps the bytes as they are and refuses to write that store. It does not treat the unknown
   version as absent, and does not sanitize the document to defaults and save them over it.
-- **Devices fail closed.** A `devices.json` that is damaged or too new keeps the gate closed and
-  the registry unwritable. It is never a first installation or an empty registry, and nothing
-  reopens pairing. [`server/devices.ts`](../server/devices.ts) already does this for a damaged
-  file (`error`, `gated`, `assertWritable`); a too-new version must take the same path.
 - **Rollback restores code, not data.** The update supervisor restores the previous release when
   a candidate bridge fails its startup health check
   ([`server/supervisor.ts`](../server/supervisor.ts), [app updates](app-updates.md#boundaries)).
@@ -958,7 +952,7 @@ The PR's tests, on `mkdtempSync` state directories or a stand-in `localStorage` 
 cover: an old-shape fixture loading into the new shape; an old tab's unrelated save after the new
 code wrote; old and new readers and writers side by side, each keeping the other's values with no
 corrective write; a too-new document read without being written (its bytes unchanged after a
-write is refused, and for devices the gate still closed); and a failed activation, where the
+write is refused); and a failed activation, where the
 previous release serves again and reads, or refuses, what the candidate left on disk.
 
 ### Coordinated work
@@ -1178,7 +1172,7 @@ do; measure setup, test execution and retries separately when comparing speed. S
 [scripts/self-hosted-runner/README.md](../scripts/self-hosted-runner/README.md).
 
 `scripts/ci-tests.ts` discovers all `.test.ts` and `.test.tsx` files under
-src/shared/server/scripts/telemetry/push-relay/integrations.
+src/shared/server/scripts/telemetry/integrations.
 Files named `*.contract.test.ts`, tests under `server/herdr/` and `server/pty/`, and
 `server/updater.test.ts` (which includes real bridge restart/rollback cases) belong
 to integration; everything else belongs to unit. Name new live-server tests

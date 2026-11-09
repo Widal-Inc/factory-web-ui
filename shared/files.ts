@@ -31,8 +31,7 @@ export interface MarkdownDocument {
  * bounded walk that counts only Markdown files. Read only: each opens through /api/fs/file as
  * `root` + `/` + `path`. Every file found is looked at and the newest `MAX_MARKDOWN_DOCUMENTS`
  * (server/files.ts) listed; `truncated` says some were left out, by that cap, the walk's caps or the
- * listing's time limit on a slow disk. 400 missing_pane_id; 403 read_only for a watching device,
- * as /api/pane/files.
+ * listing's time limit on a slow disk. 400 missing_pane_id.
  */
 export interface PaneDocuments {
   /** the pane's folder, absolute */
@@ -45,8 +44,7 @@ export interface PaneDocuments {
 export const MAX_EDITABLE_TEXT_BYTES = 1024 * 1024;
 
 /**
- * GET /api/fs/text?pane_id=&path=: a text file to edit, for a device that drives this PC (not a
- * watching one or an open LAN window; an SSH PC's own bridge token too). Only a
+ * GET /api/fs/text?pane_id=&path=: a text file to edit (an SSH PC's own bridge token too). Only a
  * file under the pane's folder (its real path, links followed, never in `.git`) that this server's
  * user owns, with one link, at most MAX_EDITABLE_TEXT_BYTES, UTF-8 with no NUL and one kind of line
  * ending. 400 missing_pane / missing_path, 403 outside_pane / drive_only, 404 not_found, 413
@@ -92,7 +90,7 @@ export interface TextSaved {
  * through every place a project keeps one (`FAVICON_CANDIDATES` in server/project-favicon.ts),
  * best first, each read as /api/fs/stat reads `<root>/<place>`, and answers once: a folder with
  * no icon is `{ icon: null }`, never a 404. 400 missing_root; the access rules of /api/fs/stat
- * (no watching device, no other site's page).
+ * (no other site's page).
  */
 export interface ProjectFavicon {
   /** the image found; `path` opens it through /api/fs/file */

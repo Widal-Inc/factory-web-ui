@@ -251,26 +251,23 @@ describe.skipIf(process.platform !== "linux")("editing a text file (#771)", () =
     expect(readFileSync(note, "utf8")).toBe("win\n");
   });
 
-  it("is not for an open LAN window", async () => {
+  it("is not for a request from the LAN that is not signed in", async () => {
     const note = file("lan.md", "lan\n");
-    // an open LAN install's window signed in as nobody
+    // a request that is neither this PC's own browser nor presents the token
     const lan: ServerContext = { ...server.context, requestIP: () => ({ address: "192.168.1.20" }), timeout: () => {}, upgrade: () => false };
     const fromLan = new Request(`http://192.168.1.10:${server.port}/api/fs/text?pane_id=w1:p1&path=${q(note)}`, { headers: { host: `192.168.1.10:${server.port}` } });
-    expect(await error((await handleRequest(fromLan, lan))!)).toEqual([403, "drive_only"]);
+    expect(await error((await handleRequest(fromLan, lan))!)).toEqual([401, "unauthorized"]);
     expect(readFileSync(note, "utf8")).toBe("lan\n");
   });
 });
 
 describe("who may edit a file", () => {
-  const full = (via: string, role: "drive" | "watch") => ({ level: "full", via, role }) as Access;
+  const full = (via: "token" | "local") => ({ level: "full", via }) as Access;
   const none = { level: "none", reason: "token_required" } as Access;
   it.each([
-    ["a paired driving device", full("device", "drive"), false, false, true],
-    ["the access token", full("token", "drive"), false, false, true],
-    ["this PC's own browser", full("local", "drive"), false, false, true],
-    ["a driving device, for another PC", full("device", "drive"), false, true, true],
-    ["a watching device", full("device", "watch"), false, false, false],
-    ["an open LAN window", full("open", "drive"), false, false, false],
+    ["the access token", full("token"), false, false, true],
+    ["this PC's own browser", full("local"), false, false, true],
+    ["the access token, for another PC", full("token"), false, true, true],
     ["the connection server's bridge token", none, true, false, true],
     ["the bridge token, for a PC behind this one", none, true, true, false],
     ["nobody", none, false, false, false],
