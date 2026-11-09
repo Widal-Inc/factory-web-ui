@@ -46,7 +46,7 @@ export const MAX_EDITABLE_TEXT_BYTES = 1024 * 1024;
 
 /**
  * GET /api/fs/text?pane_id=&path=: a text file to edit, for a device that drives this PC (not a
- * watching one, a Portal visitor or an open LAN window; an SSH PC's own bridge token too). Only a
+ * watching one or an open LAN window; an SSH PC's own bridge token too). Only a
  * file under the pane's folder (its real path, links followed, never in `.git`) that this server's
  * user owns, with one link, at most MAX_EDITABLE_TEXT_BYTES, UTF-8 with no NUL and one kind of line
  * ending. 400 missing_pane / missing_path, 403 outside_pane / drive_only, 404 not_found, 413

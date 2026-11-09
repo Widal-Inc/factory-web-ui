@@ -90,7 +90,6 @@
 <p>The app shows the Ovis server, a separate open-source program that runs on your computer, under your control:</p>
 <ul>
 <li>The Ovis server sends anonymous usage counts to its maintainer: when it is installed, when it is updated, and once a day it is opened. They hold a random ID made on your PC, the version, the operating system and CPU type, how it was installed, the app settings people choose, and the kinds of coding agents running (such as <code>claude</code> or <code>codex</code>). The receiver keeps the country the message came from (two letters) and never stores your IP address. Never included: pane names, paths, terminal content, code or messages. You can see exactly what is sent, and turn it off, under <strong>Settings → About → Anonymous usage counts</strong> on the PC. <a href="https://github.com/devswha/ovis/blob/main/docs/guide.md#anonymous-usage-counts">Details</a>.</li>
-<li><strong>PCs on your Tailscale</strong>, in <strong>Settings → Devices and PCs → Connect a device</strong>, reads <code>tailscale status</code> on the PC and asks only the other PCs of your own Tailscale login, over Tailscale, whether Ovis runs there; finding them sends nothing to us. <strong>Add PC</strong> then pairs with the PC you pick through the Ovis relay, as a typed code does.</li>
 <li>Features you turn on there, such as voice input or subscription usage meters, contact the providers you set up, under those providers' terms.</li>
 </ul>
 <h2>Coding agents</h2>

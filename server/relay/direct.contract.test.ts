@@ -480,7 +480,6 @@ describe("signed-in sessions over every way in", () => {
     const connections = { list: () => sessions.connections(), check: (ms: number) => sessions.check(ms) };
     const read = async (access: Access) => ((await (await handleDeviceRequest(new Request("http://127.0.0.1/api/devices?check=1"), "/api/devices", store, access, null, undefined, false, connections)).json()) as { devices: PairedDevice[] }).devices[0]?.connection;
     expect(await read({ level: "full", via: "relay", role: "watch" })).toBeUndefined();
-    expect(await read({ level: "full", via: "portal", role: "drive" })).toBeUndefined();
     expect(measured).toBe(0);
     expect(await read({ level: "full", via: "local", role: "drive" })).toEqual({ route: "tailscale", rtt_ms: 33, since: new Date(0).toISOString() });
     expect(measured).toBe(1);
@@ -511,7 +510,7 @@ describe("direct connections setting, read back", () => {
   it("refuses a switch without on: true or false", async () => {
     const stateDir = relayFixture();
     stateDir.close();
-    const fixture = relayFixture(false, { relay: new RelayService({ stateDir: stateDir.stateDir, direct: { addresses: () => [] } }) });
+    const fixture = relayFixture({ relay: new RelayService({ stateDir: stateDir.stateDir, direct: { addresses: () => [] } }) });
     cleanup.push(() => fixture.close());
     const base = `http://127.0.0.1:${fixture.app.port}`;
     const response = await fetch(`${base}/api/relay/direct`, { method: "POST", headers: { origin: base, "x-herdr-update": "1", "content-type": "application/json" }, body: JSON.stringify({ on: "yes" }) });
@@ -537,7 +536,7 @@ describe("direct connections with the relay", () => {
       },
       direct: { addresses: () => ["127.0.0.1"], peerAllowed: () => true, preferredPort: 0, advertise },
     });
-    const fixture = relayFixture(false, { stateDir: holder.stateDir, relay: service });
+    const fixture = relayFixture({ stateDir: holder.stateDir, relay: service });
     cleanup.push(() => relay.stop(), () => fixture.close(), () => service.shutdown());
     service.start();
     await bounded(synced.promise);

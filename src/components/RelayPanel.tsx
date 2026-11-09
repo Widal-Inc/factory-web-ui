@@ -20,7 +20,6 @@ import { SettingsRow, Toggle } from "./SettingsControls.tsx";
 export const failureText = (error: unknown): string => error instanceof ApiError ? error.detail : error instanceof Error ? error.message : String(error);
 
 export function statusText(t: ReturnType<typeof useT>, status: RelayStatus): string {
-  if (status.blocked === "serve_only") return t("Blocked: OVIS_TAILSCALE_SERVE_ONLY says tailscale serve is the only way in. Unset it on this PC and restart the app.");
   if (status.blocked === "identity_unreadable") return t("Blocked: this PC's relay identity cannot be read. Reset it under More settings in Devices and PCs to use the relay again.");
   const pass = status.pass;
   // Ovis's relay asks for an account (docs/relay.md, "Relay pass"): refused, or soon

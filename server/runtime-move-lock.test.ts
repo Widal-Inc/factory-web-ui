@@ -18,7 +18,7 @@ const facts: HerdrRuntimeFacts = { serving: "herdr", source: "detected", tui: { 
 const root = mkdtempSync(join(tmpdir(), "ovis-runtime-move-lock-"));
 const lockPath = moveLockPath(join(root, "herdr.sock"));
 const services: MoveService[] = [];
-const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: join(root, "app"), token: "fictional-token", tailscaleOwner: null, machines: false, sidecar: false });
+const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: join(root, "app"), token: "fictional-token", machines: false, sidecar: false });
 afterEach(() => { for (const service of services.splice(0)) { service.cancel(); service.stop(); } rmSync(lockPath, { force: true }); });
 afterAll(() => { app.stop(); rmSync(root, { recursive: true, force: true }); });
 

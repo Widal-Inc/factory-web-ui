@@ -13,8 +13,8 @@ Include what you can of:
 
 - the version (Settings, under Updates, opens with `Running vX.Y.Z (commit)`) and, for a remote PC, its OS;
 - how the server was reached (localhost, SSH tunnel, `tailscale serve`, LAN, reverse proxy, the Ovis
-  relay) and how the client signed in (this PC, Tailscale login, paired device, a device key through
-  the relay, token, Portal's own sign-in);
+  relay) and how the client signed in (this PC, paired device, a device key through
+  the relay, token);
 - the steps to reproduce, and what an attacker needs beforehand;
 - the impact, with evidence from your own setup. Leave out real tokens, pairing codes and cookies.
 
@@ -34,16 +34,10 @@ the next release.
 
 In scope, for example:
 
-- getting in without a matching token, a paired device, the PC's own Tailscale login, a local
-  connection or a visitor Portal's own sign-in vouches for with its proof (`server/access.ts`,
-  `server/auth.ts`, `server/portal.ts`), including through a proxy or forged headers; and a visitor
-  Portal let in using the app's own controls to leave access behind, such as pairing a device,
-  subscribing to push alerts, controlling the relay or issuing a link. Relay mutations answer
-  403 `read_only` for default watch visitors, then 403 `owner_only` for Portal visitors with
-  a saved drive role: the watch guard precedes the owner guard
-  ([`server/dispatch.ts:223-243`](server/dispatch.ts#L223-L243)).
-  A watch-only Portal visitor that can type, send
-  keys, resize, read files or perform a write action is also in scope;
+- getting in without a matching token, a paired device or a local connection
+  (`server/access.ts`, `server/auth.ts`), including through a proxy, Tailscale Funnel or forged
+  headers: a request that carries a forwarding header is refused without the token or a paired
+  device, and a `Tailscale-User-Login` header is never read;
 - pairing codes, device cookies and revocation (`server/devices.ts`); a revoked or observe-only
   device that can still type, send keys or resize;
 - reading files, transcripts or screens outside what the app shows a signed-in client;
@@ -69,8 +63,8 @@ In scope, for example:
 Out of scope, as documented in [Access and safety](docs/guide.md#access-and-safety):
 
 - getting into a server that is still ungated by design: bound off loopback or behind a proxy, with
-  no token set and no device ever paired, and not behind a proxy on a PC whose Tailscale login is
-  known. It is open to anyone who reaches it, and the server warns about it on startup. Getting past
+  no token set and no device ever paired, and not through a proxy that forwards headers. It is
+  open to anyone who reaches it directly, and the server warns about it on startup. Getting past
   the gate once a token is set or a device is paired is in scope;
 - anything reached through `tailscale funnel`, which is unsupported;
 - what the Ovis relay sees by design: which PC (`server_id`) a phone connects to, the PC's public
@@ -78,8 +72,7 @@ Out of scope, as documented in [Access and safety](docs/guide.md#access-and-safe
   every encrypted message, keystroke timing included
   ([the relay's trust model](docs/relay.md#trust-model)), and the relay or its host dropping,
   delaying or refusing connections;
-- people you gave drive access to (a driving paired device, the token, your tailnet login, or an
-  explicitly elevated Portal invitation) using it, including through a terminal: reading the
+- people you gave drive access to (a driving paired device or the token) using it, including through a terminal: reading the
   server's environment or state files, or keeping a way in after their access ends;
 - vulnerabilities in herdr, the agents, Tailscale or the browser themselves: report those upstream.
 

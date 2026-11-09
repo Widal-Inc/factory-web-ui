@@ -5,7 +5,6 @@ import { Check, Pencil, Trash2, X } from "lucide-react";
 import "./DevicesPanel.css";
 
 import { ApiError, fetchDevices, renameDevice, revokeAllDevices, revokeDevice } from "../lib/api.ts";
-import { methodName } from "../lib/portalAuth.ts";
 import { DEVICES_CHANGED_EVENT, PAIRING_CODE_EVENT } from "../lib/useRelay.ts";
 import type { HealthAuth, PairedDevice, PairingCode } from "../../shared/protocol.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
@@ -51,11 +50,9 @@ export interface DevicesPanelProps {
 
 export const VIA: Record<NonNullable<HealthAuth["via"]>, string> = {
   local: "You are on the PC itself.",
-  tailscale: "You are in as this PC's Tailscale login.",
   device: "This is a paired device.",
   relay: "This is a paired device, reaching the PC through the Ovis relay.",
   token: "You are in with the access token.",
-  portal: "You are in through Portal's sign-in.",
   open: "This browser is in only because nothing is paired yet: from anywhere that can reach this address, so would anyone.",
 };
 
@@ -265,25 +262,21 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
   };
   /** a watching device reads this page and changes nothing on it */
   const watching = auth?.role === "watch";
-  /** so does a visitor Portal's own sign-in let in: the server refuses it every change here */
-  const guest = auth?.via === "portal";
 
   // what is not the list itself: how this browser got in, what pairing means, and revoking every device (More settings)
   const elsewhere = (
     <div className="devices-more">
       {auth?.via !== undefined && auth.via !== "open" && <p className="settings-description">{t(VIA[auth.via])}</p>}
-      {auth?.portal !== undefined && <p className="settings-description devices-portal">{t("Signed in as {name} with {method}.", { name: auth.portal.user, method: methodName(auth.portal.method) })}</p>}
-      {guest && <p className="settings-hint">{t("A sign-in through Portal can read this list. Pairing and revoking devices are for the access token or a paired device.")}</p>}
       <details className="settings-details">
         <summary>{t("A paired device gets in on its own until you revoke it here.")}<span className="settings-details-toggle">{t("Details")}</span></summary>
         <p className="settings-hint">{t("It gets in from anywhere it can reach this server. A code comes from this screen on the PC or on a device already paired, or from the pair command in the PC's terminal.")}</p>
       </details>
-      {revokedAll && <p className="settings-hint" role="status">{t("Every paired device was revoked. The access token, this PC and its Tailscale login get in as before.")}</p>}
-      {devices !== null && devices.length > 0 && !guest && (
+      {revokedAll && <p className="settings-hint" role="status">{t("Every paired device was revoked. The access token and this PC get in as before.")}</p>}
+      {devices !== null && devices.length > 0 && (
         <div className="devices-revoke-all">
           <SettingsRow label={t("Revoke every device")} description={t(watching
             ? "Every paired device, this one included, would lose its pairing access at once. A device that only watches cannot do it: use the PC or a device that can drive."
-            : "Every paired device, this one included, loses its pairing access at once. The access token, this PC and its Tailscale login are not affected.")}>
+            : "Every paired device, this one included, loses its pairing access at once. The access token and this PC are not affected.")}>
             {/* a watching device reads why and has no button: a dead control would only be a fainter one */}
             {!watching && <button type="button" className="btn" onClick={() => setConfirmingAll(true)}>{t("Revoke all")}</button>}
           </SettingsRow>
@@ -297,14 +290,14 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
         <p className="settings-hint">{t("No devices paired yet.")}</p>
       ) : (
         <>
-        {devices.some((d) => d.via_relay) && !watching && !guest && (
+        {devices.some((d) => d.via_relay) && !watching && (
           <div className="devices-check">
             <button type="button" className="btn" onClick={() => void checkNow()} disabled={checking}>{checking ? t("Checking…") : t("Check now")}</button>
           </div>
         )}
         <ul className="devices-list">
           {[...devices].sort((a, b) => Number(b.current) - Number(a.current)).map((d) => (
-            <li key={d.id} className={!d.connection && d.via_relay && !watching && !guest && !seenLately(d.last_seen_at) ? "devices-row is-away" : "devices-row"}>
+            <li key={d.id} className={!d.connection && d.via_relay && !watching && !seenLately(d.last_seen_at) ? "devices-row is-away" : "devices-row"}>
               {renaming?.id === d.id ? (
                 <form className="devices-rename" onSubmit={(e) => { e.preventDefault(); void rename(); }}>
                   <input className="input" value={renaming.label} maxLength={48} autoFocus aria-label={t("Device name")} onChange={(e) => setRenaming({ id: d.id, label: e.target.value })} />
@@ -318,14 +311,14 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
                     {d.connection
                       ? <ConnectionLine state={{ kind: "connected", route: d.connection.route, ...(d.connection.relay === undefined ? {} : { relay: d.connection.relay }), rttMs: d.connection.rtt_ms }} />
                       // a device with a relay key connects through an encrypted session, which the PC sees come and go; a browser's cookie does not
-                      // a device that watches, or a Portal visitor, is not told how the others are connected: for them no row says offline
+                      // a device that watches is not told how the others are connected: for them no row says offline
                       // nor one seen in the last minutes, which may be reaching this PC another way (its browser cookie)
-                      : d.via_relay && !watching && !guest && !seenLately(d.last_seen_at)
+                      : d.via_relay && !watching && !seenLately(d.last_seen_at)
                         ? <ConnectionLine state={{ kind: "offline", text: t("Offline · last seen {when}", { when: lastSeen(d.last_seen_at) }) }} reason={t("The app is closed, or its network is off.")} />
                         : <span className="settings-description">{t("Last seen {when}", { when: lastSeen(d.last_seen_at) })}</span>}
                   </div>
                   {d.current && currentAction}
-                  {!guest && (
+                  {(
                     <div className="devices-actions">
                       <button type="button" className="icon-button" aria-label={t("Rename {name}", { name: d.label })} onClick={() => setRenaming({ id: d.id, label: d.label })}><Pencil /></button>
                       {signedIn !== null && offersAccountRemove(devices, d, signedIn, accountKey) && (
@@ -362,7 +355,7 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
       {more !== null ? createPortal(elsewhere, more) : elsewhere}
       {confirmingAll && (
         <ConfirmDialog title={t("Revoke every paired device?")}
-          body={t("Every paired device loses its pairing access, this one included, and needs a new code to get back in. The access token, this PC and its Tailscale login still get in.")}
+          body={t("Every paired device loses its pairing access, this one included, and needs a new code to get back in. The access token and this PC still get in.")}
           confirmLabel={t("Revoke all")} onClose={() => setConfirmingAll(false)} onConfirm={revokeAll} />
       )}
       {error !== null && <p className="settings-hint" role="alert">{error}</p>}

@@ -1048,15 +1048,12 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   and closes the group, as herdr's `--group` does.
 - Revoking every paired device (Settings → Phone & devices, **Revoke every device**) is one Settings
   row under the pairing controls, parted from them by a hairline: the label, one sentence that says
-  the caller's own pairing goes too and what does not (the access token, this PC, its Tailscale
-  login), and a neutral `.btn` **Revoke all** at the line's end. It opens the confirm above, whose
+  the caller's own pairing goes too and what does not (the access token, this PC), and a neutral `.btn` **Revoke all** at the line's end. It opens the confirm above, whose
   body says the same in two sentences (each device needs a new code to get back in) and whose danger
   action is **Revoke all**; a refused write stays in it as a sentence that says nothing was revoked
   and to try again, naming the server's log reference (never a file name). A device that only
   watches reads a sentence that says who can do it, with no button (a disabled one would only be a
-  fainter dead control); an empty list has no row. A browser Portal's own sign-in let in reads the
-  list under a dim line, **Signed in as {name} with {method}.**, and a hint that pairing and
-  revoking are for the token or a paired device; it has no Pair, Rename, Revoke or Revoke all. After a yes the
+  fainter dead control); an empty list has no row. After a yes the
   list and the row are gone and one `role="status"` line says every device went and what still
   gets in. No keep-this-device choice: the one action the owner needs when a credential is lost
   is the one that ends them all. The design follows this app's own paired-device model (the
@@ -2415,8 +2412,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   output, which retries nothing, gets no line: the chip says disconnected. The return sends nothing: a draft stays a draft.
 - In More's header, one quiet mark says how this device reaches Ovis (`.conn-route`,
   `components/ConnectionRouteMark.tsx`, `lib/connectionRoute.ts`): a 14px glyph and one short
-  `--text-dim` word, **relay** (the hosted shell, or a request Portal vouched for, whatever signed it in), **Tailscale** (a tailnet address, or a
-  request the server saw come through serve; a MagicDNS name alone says "Via Tailscale, or Funnel
+  `--text-dim` word, **relay** (the hosted shell), **Tailscale** (a tailnet address; a MagicDNS name alone says "Via Tailscale, or Funnel
   from the internet", since the name serves both), **LAN** (a private address or a local-only name), **direct** (any other
   address, a bare machine name and a request the server saw come through Funnel included) or
   **local** (loopback: this PC, or a tunnel to another, which nothing can tell apart). The route,
@@ -3683,7 +3679,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   opens every way in, as Tailscale's admin **Add device** does. Devices and other PCs are one list
   because to the person they are one thing: something connected to this PC. Rows are as short as
   the page allows; what pairing means is one folded sentence, and what few people change is in
-  More settings. Old links to the Phone, Remote PCs and Portal groups land on My devices.
+  More settings. Old links to the Phone and Remote PCs groups land on My devices.
 - My devices (`MyPcRows` in SettingsDialog.tsx, then `components/DevicesPanel.tsx`): this PC
   first (its name, a **This PC** pill in the accent and its relay ID in `--font-mono` under it: the
   ID a device that typed this PC's code compares, so it is shown here and not in the dialog), then
@@ -3699,21 +3695,19 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   herdr's own **Add a machine** sheet: one tab per way across the top (the `.segmented` primitive,
   as FilesDialog's tabs), and under each the things that way found, each with one action, then a
   field to type one. **SSH** (only for the PC's owner on its own page) lists the PCs saved in herdr
-  (**Connect**), the server's ssh config hosts and its Tailscale login's PCs, one row each: the name,
+  (**Connect**), the server's ssh config hosts and the PCs of its Tailscale, one row each: the name,
   the address dim and ellipsized (under the name on a phone), a neutral pill for where it was found
   (herdr, ssh config, Tailscale), then **Add** or a quiet **Added** in the done green; **Add** and the
   typed address close Settings and open the PC setup dialog with the address filled in. **Phones and
   devices** stacks, under a hairline each, the Tailscale address and QR code, the six-digit pairing
-  code (`components/CompactPair.tsx`, started when the tab first opens) and Portal where the server
-  offers it. **Ovis relay** is the account's: signed out one sentence and **Sign in to Ovis** (which
+  code (`components/CompactPair.tsx`, started when the tab first opens). **Ovis relay** is the account's: signed out one sentence and **Sign in to Ovis** (which
   opens the account's sign-in in More settings), signed in how a new device joins, or the relay's
   switch and **Open the account** while this PC cannot admit one yet. Relay pairing without the
-  account, a code from another PC and Tailscale PCs added through the relay are gone from it. A phone
+  account and a code from another PC are gone from it. A phone
   opens on Phones and devices, a PC's window on SSH; a tab once opened stays mounted, so its code
   is not minted again. The dialog closes by itself once My devices sees the device a code let in.
 - The Ovis relay's own group in More settings: its state as the row's sentence with the switch,
-  then **Reset relay identity** (confirmed in the shared `ConfirmDialog`; none for a serve-only
-  install, which refuses it). Not shown in the hosted shell or to a read-only device.
+  then **Reset relay identity** (confirmed in the shared `ConfirmDialog`). Not shown in the hosted shell or to a read-only device.
 - Install (a row of More settings' This device, shown only when the browser can install) offers it;
   About links the repository.
 - In the hosted relay shell (app.ovis.sh, `<meta name="ovis-shell">`, lib/shellMode.ts) the page
@@ -3722,40 +3716,6 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   and **Forget this PC** (a neutral button that asks once in a `ConfirmDialog`, **Forget**, then
   deletes this phone's key for the PC and leaves for the front page). Neither is destructive on the
   PC, which keeps listing the phone until it is revoked there, so neither is a `.btn-danger`.
-- Portal, in Add a connection's Phones and devices tab where the server offers it: while it runs,
-  the address and QR code as the Tailscale way draws them over a Relay row with Stop; otherwise one
-  hint for what blocks it (no token, serve-only, no `portal` or an old one, with a link to get it)
-  or a wide Relay row whose text field and Start stack on a phone. Starting and stopping are one
-  dim status line, at body size (`--fs-md`, `--fs-lg` under a finger) since it is what Portal is
-  doing now; a failure is the server's sentence over Portal's own lines, folded.
-- Who may open the address is the first row of the stopped Portal group: four radios, each a
-  label with one dim sentence (token or paired device only, chosen at first; private link;
-  Ethereum wallet; Google or company login). A choice the `portal` on this PC does not list is
-  disabled, dim, and says why in `.settings-condition`. Under the chosen one: its allow-list as
-  chips (`--bg-input`, `--radius-pill`, mono) with a text field and Add that check each entry as
-  Portal does and say what is wrong in `.portal-warning` (`--status-blocked` border,
-  `--danger-tint`); a chip's remove button keeps its `--chip-h` look and reaches 24px under a
-  mouse through an invisible expander, and under a finger the chip itself is `--touch-target`
-  tall (chips one line apart would overlap their expanders). For Google or company login also a
-  Google/Other choice, the client ID and where the secret is read from, with a warning while it is
-  not set, and a line saying the redirect address shows once Portal has started. While Portal
-  runs the same choice is a read-only summary, since changing it means stopping Portal; for Google
-  or company login it carries the redirect address to register with the provider (copyable, in
-  `.phone-command`), which only exists once Portal is up. A private-link Portal adds **Invite
-  someone** (name or a `SettingsSelect` of the listed names, 1, 7, 30 or 90 days, Create link),
-  which shows the link once in a bearer-secret warning with Copy and Done; its selectable link
-  keeps the global focus ring and `.input`'s size on a phone. A browser Portal let in has no
-  Start, Stop or Invite (the server refuses them), as a watching device has none. No coding-agent app offers a public address with a sign-in, so the
-  design follows an operational one: Cloudflare Access's allow rules (emails and email domains)
-  and login methods. It differs on purpose: one method at a time, chosen where Portal starts.
-- A Portal that was serving and ends on its own is started again once by the server, on the same
-  relay, port and identity: the address goes, the same dim status line says **Recovering…**
-  with Stop still offered (disabled on a watch-only device), and a second exit or a restart
-  that may not go ahead is the usual failure. The precedent is operational, not a coding-agent
-  app's: Cloudflare Tunnel's service unit restarts on failure
-  ([`Restart=on-failure`](https://github.com/cloudflare/cloudflared/blob/733bfb93/cmd/cloudflared/linux_service.go)),
-  without limit. This differs on purpose: one restart, in the existing status row with no new
-  control or setting, so a tunnel that keeps failing says so instead of looping.
 - The Ovis relay's state and pairing offer (`components/RelayPanel.tsx`: `statusText`,
   `RelayPairing`; `lib/useRelay.ts`), shown where the server answers `/api/relay`: the state in
   words is one step above a row's sentence (`--fs-sm`) and never above its label. While the relay
@@ -3766,9 +3726,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   code (`PAIRING_CODE_EVENT`, lib/useRelay.ts: both then show the same code), when its countdown
   runs out, and on **New code**, which starts a new code first and tells the pairing code route;
   never on a timer or a render. An offer that arrives already expired (the PC's clock and this one
-  apart) says so and waits for **New code** rather than asking again and again. Portal watch
-  visitors get `403 read_only` first; even a saved drive invitation gets `403 owner_only` (the
-  watch guard precedes the owner guard in `server/dispatch.ts:223-243`). The hosted shell (a page
+  apart) says so and waits for **New code** rather than asking again and again. The hosted shell (a page
   carrying `<meta name="ovis-shell" content="relay">`) offers no relay at all, since every relay
   mutation requires a direct connection (`403 local_required` over the relay).
   In Devices, a device paired through the relay wears
@@ -3782,7 +3740,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   control (`.settings-fact`: `--fs-md`, `--fw-medium`, `--text-strong`, end-aligned, at most 45%
   of the line). Access token Set or Not set; Pairing gate Not yet closed, Closed or Unavailable;
   Listens on Loopback, Tailscale address or Other address; This connection No proxy seen (with a line saying a proxy that adds nothing looks the same), Through a proxy,
-  Through Tailscale, Through Tailscale Funnel or Unknown; Public internet Reachable (only seen on a
+  Through Tailscale Funnel, Through the Ovis relay or Unknown; Public internet Reachable (only seen on a
   Funnel request) or Unknown. No colour, icon or summary line carries a meaning, and nothing reads
   "safe", "secure" or "local only": a proxy or router in front can expose any bind, and only this
   request's own path is known. Before the server answers the group is one Loading line; a server
@@ -4311,8 +4269,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   cannot lead it stays closed instead of sending the page to Settings → Phone untapped. The relay stays
   off until "Turn on the Ovis relay", as Paseo keeps its relay off until Enable relay; unlike Paseo,
   which leaves pairing in Settings, the first run shows it.
-  Where the Ovis relay can lead (offered here, nothing blocks it, not a watching device or a Portal
-  visitor), the box leads with it (off until the user turns it on, then a QR code): one line on what it does, the device-gate note when turning
+  Where the Ovis relay can lead (offered here, nothing blocks it, not a watching device), the box leads with it (off until the user turns it on, then a QR code): one line on what it does, the device-gate note when turning
   it on closes the gate, and "Turn on the Ovis relay" as the primary button (the tap is the consent).
   A browser in only because nothing is paired yet pairs itself first, as the relay closes the gate.
   Then the relay's state while it connects, a failed start with Try again, and once online the same

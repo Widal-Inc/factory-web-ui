@@ -1,12 +1,11 @@
 import { expect, it, spyOn } from "bun:test";
 import { createConnection } from "node:net";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "./index.ts";
 import { DeviceStore } from "./devices.ts";
 import { MachineManager } from "./machines.ts";
-import { PortalService } from "./portal.ts";
 import { fileInfo, fileResponse } from "./file-view.ts";
 import { serveStatic } from "./static.ts";
 import { compressResponse } from "./compress.ts";
@@ -19,7 +18,7 @@ function records(root: string): Record<string, unknown>[] {
 it("attributes reserved setup job lookups to the dispatch branch rather than a machine proxy", async () => {
   // Given: job ids collide with valid proxy endpoint names.
   const root = mkdtempSync(join(tmpdir(), "herdr-request-route-dispatch-"));
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", tailscaleOwner: null, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", sidecar: false });
   try {
     for (const jobId of ["session", "agents", "settings", "events"]) {
       // When: the reserved setup branch answers the missing job.
@@ -102,7 +101,7 @@ it("records exactly one completion for HTTP responses, early refusals, streams a
   });
   const endpoint = spyOn(MachineManager.prototype, "endpoint").mockImplementation((id) =>
     id === "fictional-remote" ? { url: `http://127.0.0.1:${upstream.port}`, token: "fictional-remote" } : undefined);
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "fictional-owner", tailscaleOwner: null, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "fictional-owner", sidecar: false });
   const base = `http://127.0.0.1:${app.port}`;
   const auth = { authorization: "Bearer fictional-owner" };
   const upstreamPort = upstream.port;
@@ -189,34 +188,5 @@ it("records exactly one completion for HTTP responses, early refusals, streams a
     rmSync(root, { recursive: true, force: true });
     expect(existsSync(root)).toBe(false);
     console.log(`CLEANUP pid=${process.pid} ports=${app.port},${upstreamPort} removed=${root} sockets=closed readers=closed`);
-  }
-});
-
-for (const writable of [true, false]) it(`correlates portal startup failure with writable log ${writable}`, async () => {
-  // Given: a failed startup before dispatch, and a non-file log path.
-  const root = mkdtempSync(join(tmpdir(), "herdr-request-startup-"));
-  if (!writable) mkdirSync(join(root, "http-requests.jsonl"));
-  const portal = new PortalService({ stateDir: root });
-  const resume = spyOn(portal, "resume").mockRejectedValue(new Error("fictional-private-startup"));
-  const log = spyOn(console, "error").mockImplementation(() => {});
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", tailscaleOwner: null, machines: false, sidecar: false, portal });
-  try {
-    // When
-    const response = await fetch(`http://127.0.0.1:${app.port}/api/preferences`);
-    // Then
-    expect(response.status).toBe(500);
-    const id = response.headers.get("x-request-id");
-    expect(id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(await response.json()).toMatchObject({ error: { message: `internal error (${id})` } });
-    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-    if (writable) {
-      expect(records(root)).toHaveLength(1);
-      expect(records(root)[0]).toMatchObject({ request_id: id, status: 500, route: "startup" });
-    }
-  } finally {
-    app.stop(); resume.mockRestore(); log.mockRestore();
-    rmSync(root, { recursive: true, force: true });
-    console.log(`CLEANUP pid=${process.pid} ports=${app.port} removed=${root} sockets=closed readers=closed`);
   }
 });

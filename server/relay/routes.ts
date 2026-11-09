@@ -2,7 +2,7 @@ import { errorResponse, jsonResponse, readJsonObject, setRequestRoute } from "..
 import type { ServerContext } from "../dispatch.ts";
 import { updateRequestAllowed } from "../update-api.ts";
 
-/** Drive authority and the outer origin gate are shared with Portal in dispatch.ts. */
+/** Drive authority and the outer origin gate are decided in dispatch.ts. */
 export async function handleRelayRequest(request: Request, pathname: string, context: ServerContext): Promise<Response> {
   const service = context.services.relay;
   const reply = (body: unknown, status = 200) => jsonResponse(body, status, { "cache-control": "no-store" });
@@ -39,7 +39,7 @@ export async function handleRelayRequest(request: Request, pathname: string, con
     return reply(body.decision === "approve" ? { ok: true, device_id: outcome.device_id } : { ok: true });
   }
   if (!updateRequestAllowed(request)) return fail("invalid_relay_request", "Use the relay controls from this app.", 403);
-  // A relayed session would hold the relay it runs on; Portal visitors are refused in dispatch.ts (owner_only).
+  // A relayed session would hold the relay it runs on.
   if (context.peer.kind === "relay") return fail("local_required", "Control the relay from a direct connection to this PC.", 403);
   try {
     switch (pathname) {

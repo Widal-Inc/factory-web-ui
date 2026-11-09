@@ -280,12 +280,12 @@ describe("phoneBoxOpensFirst and phoneBoxStays", () => {
 describe("phoneBoxMode", () => {
   const auth = (via: HealthAuth["via"]): HealthAuth => ({ required: false, authenticated: true, via, role: "drive" });
   it("waits until it knows the address and how this browser got in", () => {
-    expect(phoneBoxMode(undefined, auth("tailscale"))).toBe("wait");
+    expect(phoneBoxMode(undefined, auth("local"))).toBe("wait");
     expect(phoneBoxMode("http://100.1.2.3:7317", null)).toBe("wait");
   });
 
   it("shows the QR where this browser is in on its own", () => {
-    expect(phoneBoxMode("http://100.1.2.3:7317", auth("tailscale"))).toBe("qr");
+    expect(phoneBoxMode("http://100.1.2.3:7317", auth("local"))).toBe("qr");
     expect(phoneBoxMode("http://100.1.2.3:7317", auth("device"))).toBe("qr");
   });
 
@@ -294,7 +294,7 @@ describe("phoneBoxMode", () => {
   });
 
   it("leaves it to Settings with no address a phone can open, or an access the server does not name", () => {
-    expect(phoneBoxMode(null, auth("tailscale"))).toBe("settings");
+    expect(phoneBoxMode(null, auth("local"))).toBe("settings");
     expect(phoneBoxMode("http://100.1.2.3:7317", auth(undefined))).toBe("settings");
   });
 });
@@ -319,10 +319,8 @@ describe("phoneWay", () => {
   it("keeps the other ways where the relay cannot lead: an older server, the hosted shell, a block, a read-only browser", () => {
     expect(phoneWay(relay("unsupported"), false, auth("local"))).toBe("other");
     expect(phoneWay(relay(null), true, auth("relay"))).toBe("other");
-    expect(phoneWay(relay("serve_only"), false, auth("local"))).toBe("other");
     expect(phoneWay(relay("identity_unreadable"), false, auth("local"))).toBe("other");
     expect(phoneWay(relay(null), false, auth("device", "watch"))).toBe("other");
-    expect(phoneWay(relay(null), false, auth("portal"))).toBe("other");
   });
 });
 

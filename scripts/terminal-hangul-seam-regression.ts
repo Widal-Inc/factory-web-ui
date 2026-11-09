@@ -107,7 +107,7 @@ setInterval(() => {}, 1 << 30);
   await ready;
 
   server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(state, "server"),
-    tailscaleOwner: null, usage: new UsageService(undefined, []) });
+    usage: new UsageService(undefined, []) });
   browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
   const failures: string[] = [];
   for (const theme of ["light", "dark"] as const) {

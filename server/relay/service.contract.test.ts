@@ -26,7 +26,7 @@ import { relayClock } from "./session.ts";
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
-async function fixture(serveOnly?: boolean, options: Partial<RelayServiceOptions> = {}) {
+async function fixture(options: Partial<RelayServiceOptions> = {}) {
   let attempts = 0;
   const hostOptions = { port: 0, pairGuestGapMs: 0, limiters: {
     perAddress: { async limit() { attempts++; return { success: true }; } },
@@ -75,8 +75,8 @@ async function fixture(serveOnly?: boolean, options: Partial<RelayServiceOptions
     }, ...options,
   };
   let service = new RelayService(relayOptions);
-  let app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null,
-    sidecar: false, tailscaleServeOnly: serveOnly, relay: service });
+  let app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "",
+    sidecar: false, relay: service });
   cleanup.push(async () => { await service.shutdown(); app.stop(); });
   return {
     stateDir,
@@ -112,7 +112,7 @@ async function fixture(serveOnly?: boolean, options: Partial<RelayServiceOptions
       app.stop();
       synced = deferred<void>();
       service = new RelayService(relayOptions);
-      app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, sidecar: false, relay: service });
+      app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", sidecar: false, relay: service });
     },
     async interruptRelay(clock: TestClock) {
       synced = deferred<void>();
@@ -418,20 +418,6 @@ it("resumes enabled state after restart", async () => {
   expect(await (await after.http("/api/relay")).json()).toMatchObject({ phase: "online" });
 });
 
-it("refuses relay on a serve-only installation", async () => {
-  const previous = process.env["OVIS_TAILSCALE_SERVE_ONLY"];
-  process.env["OVIS_TAILSCALE_SERVE_ONLY"] = "1";
-  try {
-    const f = await fixture();
-    expect((await f.request("/start", "POST")).status).toBe(409);
-    expect(f.service.status()).toMatchObject({ phase: "off", blocked: "serve_only" });
-    expect(f.attempts).toBe(0);
-  } finally {
-    if (previous === undefined) delete process.env["OVIS_TAILSCALE_SERVE_ONLY"];
-    else process.env["OVIS_TAILSCALE_SERVE_ONLY"] = previous;
-  }
-});
-
 it("rejects CSRF before connecting or closing the device gate", async () => {
   const f = await fixture();
   expect((await f.request("/start", "POST", false)).status).toBe(403);
@@ -502,7 +488,7 @@ it("reads a start that failed before any link existed as off, with the reason, a
 
 it("cancels a connecting link before restart can resume it", async () => {
   const clock = new TestClock();
-  const f = await fixture(false, { clock });
+  const f = await fixture({ clock });
   expect((await f.request("/start", "POST")).status).toBe(200);
   expect((await f.request("/stop", "POST")).status).toBe(200);
   const attempts = f.attempts;
@@ -514,7 +500,7 @@ it("cancels a connecting link before restart can resume it", async () => {
 
 it("answers a repeated start with 200 while the link retries", async () => {
   const clock = new TestClock();
-  const f = await fixture(false, { clock });
+  const f = await fixture({ clock });
   await f.start();
   const lost = f.controlLost;
   await f.localRelay.stop();
@@ -553,7 +539,7 @@ it("keeps disabled offers unavailable and a disabled identity reset offline", as
 
 it("reconnects after repeated real relay restarts without replaying client requests", async () => {
   const clock = new TestClock();
-  const f = await fixture(false, { clock, random: () => 0.5 });
+  const f = await fixture({ clock, random: () => 0.5 });
   await f.start();
   const offer = await f.offer();
   const peer = await client(f, offer);
@@ -567,7 +553,7 @@ it("reconnects after repeated real relay restarts without replaying client reque
 
 it("bounds a client's incomplete protected handshake to fifteen seconds", async () => {
   const clock = new TestClock();
-  const f = await fixture(false, { clock, random: () => 0.5 });
+  const f = await fixture({ clock, random: () => 0.5 });
   await f.start();
   const identity = loadRelayIdentity(f.stateDir);
   const raw = new WebSocket(`ws://127.0.0.1:${f.localRelay.port}/v1/ws?server_id=${identity.server_id}&role=client&v=1`);
@@ -593,7 +579,7 @@ it.each(["http://app.example", "https://name:secret@app.example", "https://app.e
 
 it("closes relay clients that never sign in, so they cannot hold the PC's slots", async () => {
   const clock = new TestClock();
-  const f = await fixture(false, { clock, random: () => 0.5 });
+  const f = await fixture({ clock, random: () => 0.5 });
   await f.start();
   const offer = await f.offer();
   const squatters = [];
@@ -630,7 +616,7 @@ it("keeps at most four relay sessions per device, closing its oldest", async () 
 
 it("refuses an offer while the relay is in error", async () => {
   const clock = new TestClock();
-  const f = await fixture(false, { clock, random: () => 0.5 });
+  const f = await fixture({ clock, random: () => 0.5 });
   await f.start();
   const lost = f.controlLost;
   await f.localRelay.stop();
@@ -643,7 +629,7 @@ it("refuses an offer while the relay is in error", async () => {
 
 it("keeps a signed-in client past the sign-in deadline", async () => {
   const clock = new TestClock();
-  const f = await fixture(false, { clock, random: () => 0.5 });
+  const f = await fixture({ clock, random: () => 0.5 });
   await f.start();
   const peer = await client(f, await f.offer());
   clock.advance(60_000);
@@ -653,7 +639,7 @@ it("keeps a signed-in client past the sign-in deadline", async () => {
 
 it("lets a new client in when every place holds a client that never signed in, evicting the oldest of them", async () => {
   // a frozen clock: no sign-in deadline fires, only the eviction can make room
-  const f = await fixture(false, { clock: new TestClock() });
+  const f = await fixture({ clock: new TestClock() });
   await f.start();
   const offer = await f.offer();
   const squatters = [];
@@ -667,7 +653,7 @@ it("lets a new client in when every place holds a client that never signed in, e
 });
 
 it("never evicts a signed-in session to make room", async () => {
-  const f = await fixture(false, { clock: new TestClock() });
+  const f = await fixture({ clock: new TestClock() });
   await f.start();
   const first = await client(f, await f.offer());
   // each used before the next: used, a session counts as the device's for good; one never used could give way to a later racing carrier
@@ -720,7 +706,7 @@ async function regionalFixture({ rtt = { global: 130, regional: 13 } as { global
       return socket;
     },
   });
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: dir, token: "", tailscaleOwner: null, sidecar: false, relay: service });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: dir, token: "", sidecar: false, relay: service });
   cleanup.push(async () => { await service.shutdown(); app.stop(); });
   const base = `http://127.0.0.1:${app.port}`;
   const post = (path: string) => fetch(`${base}/api/relay${path}`, { method: "POST", headers: { origin: base, "x-herdr-update": "1" } });
@@ -873,7 +859,7 @@ async function mintCode(f: Awaited<ReturnType<typeof fixture>>) {
 const wrong = (code: string) => { const canonical = normalizePairCode(code)!; return canonical.slice(0, -1) + (canonical.endsWith("Z") ? "Y" : "Z"); };
 
 it("a device that types the code gets the QR code's offer, pairs with its six-digit code, and the code is spent", async () => {
-  const f = await fixture(false, { pairCodeRelay: "wss://pair.test" });
+  const f = await fixture({ pairCodeRelay: "wss://pair.test" });
   await f.start();
   const minted = await mintCode(f);
   const devices = f.app.context.services.devices;
@@ -888,7 +874,7 @@ it("a device that types the code gets the QR code's offer, pairs with its six-di
 });
 
 it("three wrong codes end it, deliver nothing, and never pause pairing with the QR code", async () => {
-  const f = await fixture(false, { pairCodeRelay: "wss://pair.test" });
+  const f = await fixture({ pairCodeRelay: "wss://pair.test" });
   await f.start();
   const minted = await mintCode(f);
   for (let index = 0; index < 3; index++) {
@@ -902,7 +888,7 @@ it("three wrong codes end it, deliver nothing, and never pause pairing with the 
 });
 
 it("a code whose six-digit code a phone spent with the QR code tells a device that knew it, and hands over no offer", async () => {
-  const f = await fixture(false, { pairCodeRelay: "wss://pair.test" });
+  const f = await fixture({ pairCodeRelay: "wss://pair.test" });
   await f.start();
   const minted = await mintCode(f);
   await client(f, await f.offer());
@@ -911,7 +897,7 @@ it("a code whose six-digit code a phone spent with the QR code tells a device th
 });
 
 it("a new six-digit code takes the typed code off the relay", async () => {
-  const f = await fixture(false, { pairCodeRelay: "wss://pair.test" });
+  const f = await fixture({ pairCodeRelay: "wss://pair.test" });
   await f.start();
   const minted = await mintCode(f);
   f.app.context.services.devices.startPairing();
@@ -927,7 +913,7 @@ it("a relay that is not Ovis's own has no codes to type", async () => {
 });
 
 it("end to end: the hosted app's code screen finds the PC through the relay and the phone pairs with what it gets", async () => {
-  const f = await fixture(false, { pairCodeRelay: "wss://relay.ovis.sh" });
+  const f = await fixture({ pairCodeRelay: "wss://relay.ovis.sh" });
   await f.start();
   const minted = await mintCode(f);
   const offer = await offerFromCode(minted.code, { connect: (url) => new WebSocket(url.replace("wss://relay.ovis.sh", `ws://127.0.0.1:${f.localRelay.port}`)) });

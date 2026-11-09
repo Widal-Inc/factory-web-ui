@@ -6,9 +6,7 @@
  * relay tab is the Ovis sign-in, which closes the sheet for the account in More settings; signed in, it carries
  * the relay's switch (with the gate note while off). Phones and devices starts a six-digit code at once and
  * keeps it while another tab is open; a phone pairing with it closes the sheet. Reset relay identity asks first
- * (Escape closes only the confirmation) and gives the PC a new ID. A Portal visitor gets no SSH tab, no switch,
- * no sign-in, no reset, no code and no relay group; a serve-only install shows Blocked with no switch and no
- * reset; a failed start says why; on a tailnet the relay's tab keeps its switch and Phones and devices shows
+ * (Escape closes only the confirmation) and gives the PC a new ID. A failed start says why; on a tailnet the relay's tab keeps its switch and Phones and devices shows
  * the Tailscale address; a device paired through the relay wears the via relay pill. GET /api/access is pinned
  * per context, and the account service is a route of the context with the sign-in an IndexedDB fixture, so
  * neither what Tailscale does on the PC running this nor account.ovis.sh changes the outcome.
@@ -37,7 +35,7 @@ export interface RelayFixture {
 }
 
 /** An Ovis server whose relay link reaches a local Bun relay: the advertised wss origin is dialled as the relay's plain ws port. */
-export function startRelayFixture(options: { serveOnly?: boolean } = {}): RelayFixture {
+export function startRelayFixture(): RelayFixture {
   const relay = startBunRelay({ port: 0 });
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-relay-panel-"));
   const service = new RelayService({
@@ -51,10 +49,10 @@ export function startRelayFixture(options: { serveOnly?: boolean } = {}): RelayF
     },
   });
   const server = createServer({
-    port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, sidecar: false,
-    tailscaleServeOnly: options.serveOnly ?? false, relay: service, usage: new UsageService(undefined, []), registerBridge: false,
+    port: 0, hostname: "127.0.0.1", stateDir, token: "", sidecar: false,
+    relay: service, usage: new UsageService(undefined, []), registerBridge: false,
     // the SSH tab reads a fixture, never the runner's own ssh config or Tailscale
-    tailnetPcs: { readStatus: async () => null }, sshCandidates: { sshDir: join(stateDir, "no-ssh"), readStatus: async () => null },
+    sshCandidates: { sshDir: join(stateDir, "no-ssh"), readStatus: async () => null },
   });
   return {
     origin: `http://127.0.0.1:${server.port}`,
@@ -298,38 +296,6 @@ export async function checkRelayPanel(browser: Browser): Promise<void> {
     await sheet.waitFor({ state: "detached" });
     await dialog.locator('[data-section="devices"]').getByText("Paired: Wi-Fi phone.", { exact: true }).waitFor();
 
-    // Even a Portal visitor with a saved drive role cannot control the relay (owner_only).
-    const visitorContext = await englishContext(browser);
-    contexts.push(visitorContext);
-    const visitor = await visitorContext.newPage();
-    await visitor.route("**/api/health*", async (route) => {
-      const response = await route.fetch();
-      const body = await response.json() as { auth: Record<string, unknown> };
-      await route.fulfill({ response, json: { ...body, auth: { ...body.auth, via: "portal", role: "drive" } } });
-    });
-    const visitorMutations: string[] = [];
-    await visitor.route("**/api/relay/**", (route) => {
-      if (route.request().method() !== "POST") return route.continue();
-      visitorMutations.push(new URL(route.request().url()).pathname);
-      return route.fulfill({ status: 403, json: { error: { code: "owner_only", message: "Use the access token or a paired device." } } });
-    });
-    await openPhoneSettings(visitor, fixture.origin);
-    const seen = relayUi(visitor);
-    // the visitor's sheet holds only what it can use: Phones and devices, with no pairing code, no SSH and no relay
-    // tab; More settings has no relay group for it
-    await seen.connect.click();
-    await seen.devicesTab.getByText("Open Ovis on the PC itself to add a connection.", { exact: true }).waitFor();
-    assert.equal(await seen.sheet.locator(".connect-tabs").count(), 0, "a Portal visitor gets one way, so no tabs");
-    assert.equal(await seen.relayTab.count(), 0, "nor the relay's tab");
-    assert.equal(await seen.sheet.locator(".connect-phone-code").count(), 0, "a Portal visitor is offered no pairing code");
-    assert.equal(await seen.sheet.locator(".compact-pair").count(), 0, "nor a code to type");
-    assert.equal(await seen.sheet.getByRole("switch").count(), 0, "a Portal visitor gets no relay switch");
-    assert.equal(await seen.sheet.getByRole("button", { name: "Sign in to Ovis", exact: true }).count(), 0, "nor the sign-in");
-    assert.equal(await seen.sheet.getByRole("img").count(), 0, "a Portal visitor is shown no pairing offer");
-    assert.equal(await seen.relayGroup.count(), 0, "a Portal visitor's More settings has no relay group");
-    assert.deepEqual(visitorMutations, [], "a Portal visitor never requests an owner-only relay mutation");
-    await visitorContext.close();
-
     // off from More settings: the server's link goes, and the sheet's switch says so
     await ui.openMore();
     await moreSwitch.click();
@@ -405,31 +371,6 @@ export async function checkRelayPanel(browser: Browser): Promise<void> {
     assert.equal(await dialog.locator('[data-section="account"]').evaluateAll((groups) => groups.every((group) => group.closest('.settings-fold[data-fold="more"]') !== null)), true, "the account is in More settings");
     await page.unroute("**/api/devices");
 
-    // serve-only: no switch anywhere, the reason in More settings, and no reset
-    const serveOnly = startRelayFixture({ serveOnly: true });
-    fixtures.push(serveOnly);
-    const blockedContext = await englishContext(browser, NO_TAILSCALE, { account: true });
-    contexts.push(blockedContext);
-    const blockedPage = await blockedContext.newPage();
-    blockedPage.setDefaultTimeout(15_000);
-    blockedPage.on("pageerror", (error) => pageErrors.push(error.message));
-    await openPhoneSettings(blockedPage, serveOnly.origin);
-    await signIn(blockedPage);
-    await openPhoneSettings(blockedPage, serveOnly.origin);
-    const blocked = relayUi(blockedPage);
-    await blocked.openMore();
-    await blocked.moreState.filter({ hasText: "Blocked: OVIS_TAILSCALE_SERVE_ONLY" }).waitFor();
-    assert.equal(await blocked.moreSwitch.count(), 0, "a serve-only install shows no relay switch in More settings");
-    assert.equal(await blocked.relayGroup.getByText("Reset relay identity", { exact: true }).count(), 0, "a serve-only install is offered no reset, which it would refuse");
-    await blocked.connect.click();
-    await blocked.openTab("relay");
-    await blocked.relayTab.getByTestId("connect-signin").waitFor();
-    assert.equal(await blocked.relayTab.getByText("Turn on the relay, then add this PC to your account.", { exact: true }).count(), 0, "a relay that cannot be turned on is not asked to be (More settings says why)");
-    assert.equal(await blocked.sheet.getByRole("switch").count(), 0, "nor in the sheet");
-    assert.equal(await blocked.relayTab.getByRole("img").count(), 0, "no offer on a blocked install");
-    assert.equal(await blocked.sheet.getByRole("button", { name: /^Reset/ }).count(), 0, "nor a reset in the sheet");
-    assert.equal(await blocked.gateNote.count(), 0, "a relay that cannot be turned on carries no note about turning it on");
-
     // a start that fails before the link exists (the saved choice cannot be written): the switch stays off,
     // the reason shows, and the switch starts it once the cause is gone
     const unwritable = startRelayFixture();
@@ -456,7 +397,7 @@ export async function checkRelayPanel(browser: Browser): Promise<void> {
     assert.equal((await (await fetch(`${unwritable.origin}/api/relay`)).json() as RelayStatus).phase, "online", "the switch turned the relay on once the cause was gone");
     assert.equal(await failed.relayTab.getByRole("alert").count(), 0, "no failure once it runs");
     assert.deepEqual(pageErrors, [], "the relay panel raises no page error");
-    console.log("PASS Add a connection's tabs: SSH, Phones and devices (a kept pairing code that closes the sheet once used) and Ovis relay (the sign-in, then the switch); the relay turns off from More settings and resets the identity; a Portal visitor and a serve-only install get no switch; a relay-paired device says how it reaches the PC now, or that it is offline");
+    console.log("PASS Add a connection's tabs: SSH, Phones and devices (a kept pairing code that closes the sheet once used) and Ovis relay (the sign-in, then the switch); the relay turns off from More settings and resets the identity; a relay-paired device says how it reaches the PC now, or that it is offline");
   } finally {
     for (const context of contexts) await context.close();
     for (const fixture of fixtures) await fixture.stop();

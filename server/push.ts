@@ -139,7 +139,7 @@ export type PushDelivery = { ok: true } | { ok: false; status: number | null; go
 interface DeliveryRecord {
   /** sha256 of the endpoint, base64url: the endpoint itself is not written */
   hash: string;
-  /** the device it was recorded for, or null for a local/token/Tailscale sign-in; never a legacy owner */
+  /** the device it was recorded for, or null for a local/token sign-in; never a legacy owner */
   owner: string | null;
   /** sha256 of the subscription's keys: what a reader has to hold */
   keys: string;
@@ -153,7 +153,7 @@ interface DeliveryRecord {
 /** An endpoint a push service retired (push-retired.json), keyed by its hash. */
 interface RetiredMark {
   at: number;
-  /** the device it was registered for, null for a local/token/Tailscale sign-in; absent for a legacy owner or an older file */
+  /** the device it was registered for, null for a local/token sign-in; absent for a legacy owner or an older file */
   owner?: string | null;
 }
 
@@ -190,7 +190,7 @@ export interface PushService {
    * once, visibly, whether or not a window of the app is in use somewhere (that window could be
    * the new device's). The new device's own subscriptions hear nothing, and neither does any
    * subscription of the browser that paired (`origin`, its stream keys), whoever owns it: a
-   * token, local or Tailscale sign-in pairing itself, or a device pairing again. Resolves once delivered.
+   * token, local sign-in pairing itself, or a device pairing again. Resolves once delivered.
    */
   devicePaired(event: DevicePairedEvent, origin?: readonly string[]): Promise<void>;
   /** The collector's view of every pane: status baselines and the titles notifications use. */

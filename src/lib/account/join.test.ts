@@ -27,8 +27,8 @@ const fixtures: Fixture[] = [];
 afterEach(() => { for (const fixture of fixtures.splice(0)) fixture.close(); });
 
 /** A PC with a relay identity of its own, as the relay would route to it. */
-function pc(options: Parameters<typeof relayFixture>[1] = {}): { f: Fixture; identity: RelayIdentity } {
-  const f = relayFixture(false, options);
+function pc(options: Parameters<typeof relayFixture>[0] = {}): { f: Fixture; identity: RelayIdentity } {
+  const f = relayFixture(options);
   fixtures.push(f);
   return { f, identity: rotateRelayIdentity(f.stateDir) };
 }

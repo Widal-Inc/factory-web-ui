@@ -162,7 +162,7 @@ export async function relayMediaQa(tree: RelayServerTree): Promise<void> {
       socket.addEventListener("message", (event) => { if (typeof event.data === "string" && event.data.includes('"sync"')) synced.resolve(); });
       return socket;
     } });
-    const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, sidecar: false, relay: service, opencodeDb: dbPath });
+    const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", sidecar: false, relay: service, opencodeDb: dbPath });
     const logger = app.context.services.requestLog;
     const handle = logger.handle.bind(logger);
     // Observe the real dispatcher, without changing any response or endpoint behavior.

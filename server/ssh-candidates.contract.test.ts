@@ -31,14 +31,14 @@ const status = (peers: string[]): string => JSON.stringify({
 it("answers the owner's window with the list, and refuses an open LAN window and a watching device", async () => {
   const dir = sshDir({ config: "Host nuc12\n  HostName 100.127.218.1\n  User rise\nHost *\n" });
   const state = sshDir({});
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "", tailscaleOwner: null, sidecar: false, registerBridge: false,
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "", sidecar: false, registerBridge: false,
     sshCandidates: { sshDir: dir, readStatus: async () => status(["winvm"]) } });
   cleanup.push(() => { void server.stop(); });
   const base = `http://127.0.0.1:${server.port}`;
   const owner = await fetch(`${base}/api/machines/ssh-candidates`, { headers: { origin: base } });
   expect(owner.status).toBe(200);
   expect((await owner.json() as { pcs: { destination: string }[] }).pcs.map((pc) => pc.destination)).toEqual(["nuc12", "winvm.tail.ts.net"]);
-  const fromLan = await fetch(`${base}/api/machines/ssh-candidates`, { headers: { origin: base, "x-forwarded-for": "192.168.1.5" } });
+  const fromLan = await fetch(`${base}/api/machines/ssh-candidates`, { headers: { origin: base, host: "192.168.1.5" } });
   expect(fromLan.status).toBe(403);
   expect((await fromLan.json() as { error: { code: string } }).error.code).toBe("owner_only");
 

@@ -9,7 +9,7 @@ import type { HerdrMachineProfile } from "./herdr-profiles.ts";
 it("publishes inherited rows on the existing authenticated roster and refuses competing edits", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "herdr-profile-api-"));
   const profile: HerdrMachineProfile = { id: "catalog-test", label: "Saved PC", enabled: true, target: { destination: "fixture-host", session: "named-session" } };
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", tailscaleOwner: null, herdrProfiles: async () => [profile] });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", herdrProfiles: async () => [profile] });
   const base = `http://127.0.0.1:${server.port}`;
   const headers = { authorization: "Bearer test-token", "x-herdr-machine": "1", "x-herdr-update": "1", "content-type": "application/json" };
   try {
@@ -37,7 +37,7 @@ it("publishes inherited rows on the existing authenticated roster and refuses co
 it("remote bridges do not discover another catalog", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "herdr-profile-bridge-"));
   let calls = 0;
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, machines: false, herdrProfiles: async () => { calls++; return []; } });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", machines: false, herdrProfiles: async () => { calls++; return []; } });
   try {
     expect((await fetch(`http://127.0.0.1:${server.port}/api/machines`)).status).toBe(404);
     expect(calls).toBe(0);

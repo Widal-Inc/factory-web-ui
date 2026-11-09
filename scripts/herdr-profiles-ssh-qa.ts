@@ -53,7 +53,7 @@ async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> 
   return response.json() as Promise<T>;
 }
 const machines = async () => (await api<{ machines: Machine[] }>("/api/machines")).machines;
-const start = (stateDir = state) => createServer({ port: 0, hostname: "127.0.0.1", token: "", tailscaleOwner: null, stateDir, herdrProfiles: async () => rows });
+const start = (stateDir = state) => createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir, herdrProfiles: async () => rows });
 async function connect(machine: Machine, expectApproval = true) {
   let job = await api<SetupJob>("/api/machines/setup", "POST", { ...machine.target, machine_id: machine.id });
   let approved = false;

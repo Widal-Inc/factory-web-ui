@@ -77,9 +77,9 @@ class DuplexTransport implements Transport {
   }
 }
 
-export function relayFixture(serveOnly = false, options: NonNullable<Parameters<typeof createServer>[0]> = {}) {
+export function relayFixture(options: NonNullable<Parameters<typeof createServer>[0]> = {}) {
   const stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), "ovis-relay-session-"));
-  const app = createServer({ port: 0, hostname: "127.0.0.1", token: "", tailscaleOwner: null, sidecar: false, tailscaleServeOnly: serveOnly, ...options, stateDir });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", token: "", sidecar: false, ...options, stateDir });
   const closes: (() => void)[] = [];
   return {
     stateDir, app, closes,
@@ -102,7 +102,7 @@ export async function relayAccountFixture(role: "drive" | "watch" = "drive", acc
   const member = { id: randomBytes(8).toString("hex"), label: "Account phone", role, token_hash: randomBytes(32).toString("hex"),
     relay_public_key: publicKey, account, created_at: new Date().toISOString(), last_seen_at: null };
   writeFileSync(join(stateDir, "devices.json"), JSON.stringify({ gate_closed_at: member.created_at, devices: [member] }), { mode: 0o600 });
-  const fixture = relayFixture(false, { ...options, stateDir });
+  const fixture = relayFixture({ ...options, stateDir });
   return { fixture, member: { keys, publicKey, id: member.id } };
 }
 

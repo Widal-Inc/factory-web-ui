@@ -35,7 +35,7 @@ describe("GET /api/agent-catalog", () => {
     const home = join(root, "home");
     mkdirSync(home);
     const agentDetector = new AgentDetector({ locate: catalogLocator({ probe: null }), home, env: {} });
-    server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: BROWSER_TOKEN, bridgeToken: BRIDGE_TOKEN, machines: false, sidecar: false, tailscaleOwner: null, agentDetector });
+    server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: BROWSER_TOKEN, bridgeToken: BRIDGE_TOKEN, machines: false, sidecar: false, agentDetector });
   });
   afterEach(() => { process.env["PATH"] = savedPath; });
   afterAll(() => {
@@ -136,7 +136,7 @@ it("serves the first agent catalog GET from the startup warm cache without anoth
       return { stdout: "2.1.311", stderr: "", exitCode: 0, timedOut: false };
     },
   });
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, tailscaleOwner: null, agentDetector });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, agentDetector });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error("startup catalog signal did not arrive")), 2_000);
@@ -201,7 +201,7 @@ it("a GET during the warm-up joins its version reads: no agent's --version runs 
       return { stdout: "1.0.0", stderr: "", exitCode: 0, timedOut: false };
     },
   });
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, tailscaleOwner: null, agentDetector });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, agentDetector });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("the catalog did not answer")), 3_000); });
   try {
@@ -228,7 +228,7 @@ it("does not warm the agent catalog until explicitly requested", () => {
   const root = mkdtempSync(join(tmpdir(), "ovis-catalog-no-warm-"));
   const agentDetector = new AgentDetector({ locate: async () => null, home: root, env: {} });
   const state = spyOn(agentDetector, "state");
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, tailscaleOwner: null, agentDetector });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, agentDetector });
   try {
     expect(state).not.toHaveBeenCalled();
   } finally {
@@ -245,7 +245,7 @@ it("logs a failed startup catalog warm-up and keeps serving requests", async () 
     if (typeof message === "string" && message.includes("agent catalog warm-up failed: fixture lookup failed")) logged.resolve();
   });
   const agentDetector = new AgentDetector({ locate: async () => { throw new Error("fixture lookup failed"); }, home: root, env: {} });
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, tailscaleOwner: null, agentDetector });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, agentDetector });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error("warm-up failure was not logged")), 2_000);
@@ -298,7 +298,7 @@ it.skipIf(process.platform === "win32")("kills held warm-up processes on stop wi
     locate: async (binary) => binaries.has(binary) ? join(root, binary) : null, home: root, env: {},
     run: (...args) => { versionRuns++; return runVersion(...args); },
   });
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, tailscaleOwner: null, agentDetector });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", machines: false, sidecar: false, agentDetector });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error("warm-up processes did not start or stop")), 5_000);

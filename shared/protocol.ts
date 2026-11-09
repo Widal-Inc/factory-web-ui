@@ -148,22 +148,6 @@ export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairing
  *         [keys] prefix bindings, for local and remote panes alike), no-store
  *  GET    /api/access                    -> RemoteAccess (how a phone can reach this server: what
  *         Tailscale on this PC already serves, or the command to run), no-store
- *  GET    /api/portal                    -> PortalStatus (an optional public HTTPS address through
- *         Portal, server/portal.ts), no-store
- *  POST   /api/portal/start              -> 202 { accepted: true }; body { relay, auth? } (PortalAuth: who may
- *         open the address; unset, only the app's own token or a paired device); 400 invalid_relay /
- *         invalid_portal_auth, 409 token_required / serve_only / portal_busy / portal_state_in_use /
- *         portal_unsupported
- *  POST   /api/portal/stop               -> 202 { accepted: true }; 409 portal_unsupported
- *  POST   /api/portal/invite             -> PortalInvite, no-store; body { name, days }: a private link for `name`
- *         that lasts 1, 7, 30 or 90 days, issued while Portal runs with the private-link sign-in. 400
- *         invalid_invite / invite_name_not_listed, 409 portal_not_credential, 502 portal_invite_failed
- *         Portal POSTs require X-Herdr-Update: 1 and same-origin, like the update POSTs:
- *         403 invalid_portal_request (or invalid_origin from the outer origin gate), and 403 owner_only to a
- *         visitor Portal's own sign-in let in (see Access).
- *         Unsupported methods/actions get 405 method_not_allowed; a watch-only device gets
- *         403 read_only. Startup holds HTTP/WS requests until leftover Portal cleanup completes;
- *         unreadable saved state or unverifiable cleanup fails closed with 500 internal_error.
  *  GET    /api/relay                     -> RelayStatus, no-store; also included in authenticated
  *         /api/health and /api/access answers.
  *  POST   /api/relay/start               -> RelayStatus; closes an ungated tokenless device gate first
@@ -179,7 +163,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairing
  *         networks while the relay is on (on unless turned off; off ends every direct session); 400 invalid_relay_direct, 409 direct_unavailable on a server without them
  *  POST   /api/relay/reset-identity      -> RelayStatus; revokes relay devices and reconnects if enabled
  *         Relay mutations require drive role, same origin and X-Herdr-Update: 1, and a direct connection
- *         (403 local_required over the relay); a Portal visitor gets 403 owner_only (see Access).
+ *         (403 local_required over the relay).
  *         Serve-only installs refuse relay start.
  *  GET    /api/updates                   -> UpdateStatus (shared/update.ts), no-store; to the bridge
  *         token (which cannot read /api/access) also `port` and `serving_url`, where it answers
@@ -498,20 +482,13 @@ export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairing
  *  Errors: non-2xx with { error: { code, message } }
  *
  *  Access: every route above except /api/health, /api/auth and /api/devices/pair, plus the
- *  /ws upgrade, needs the request to be one of: from this PC itself (no proxy in front);
- *  the PC's own Tailscale login, as `tailscale serve` states it — or, where
- *  OVIS_TAILSCALE_SERVE_ONLY=1 declares serve the only ingress on a tailnet one login
- *  owns with no tagged node, a serve request that states no login; a paired device's cookie;
- *  the shared token (OVIS_TOKEN) as cookie or `Authorization: Bearer <token>`; or, where Portal runs
- *  with a sign-in of its own, a visitor it vouches for: X-Portal-User and X-Portal-Auth, believed only
- *  beside the X-Portal-Proof of the Portal this server started, so with no token asked. With a
- *  token configured, this PC and its Tailscale login stop counting: only the token, a paired device
- *  and that visitor do. That visitor drives like a paired device but leaves no standing access behind: the
- *  changes under /api/devices/ (a code redeemed at /api/devices/pair apart), POST /api/push/subscribe,
- *  POST /api/portal/* and POST /api/relay/* answer it 403 owner_only. Without a token, and while no
- *  device is paired, anything that reaches the server is let in as before (the startup
- *  warning says so). Refusals answer 401 `unauthorized` (403 `other_user` for another Tailscale
- *  login, when no token is configured); the upgrade is refused. Static files are always public.
+ *  /ws upgrade, needs the request to be one of: from this PC itself (no proxy in front); a paired
+ *  device's cookie; or the shared token (OVIS_TOKEN) as cookie or `Authorization: Bearer <token>`.
+ *  With a token configured, this PC stops counting: only the token and a paired device do. A
+ *  request that came through a proxy or Tailscale Funnel (a forwarding header) is let in only with
+ *  one of those. Without a token, and while no device is paired, a direct connection is let in as
+ *  before (the startup warning says so). Refusals answer 401 `unauthorized`; the upgrade is
+ *  refused. Static files are always public.
  */
 export interface ApiError {
   error: { code: string; message: string };
@@ -523,7 +500,7 @@ export type { UsageProviderId, UsageWindow, UsageResets, UsageCredits, UsageProb
 
 export type { CLIProxyStatus, CLIProxyProvider, CLIProxyLogin, CLIProxyLoginStatus } from "./cliproxy.ts";
 
-export type { AccessVia, AccessRefusal, DeviceRole, HealthAuth, LanExposure, DirectExposure, BindScope, ObservedIngress, SecuritySummary, PairedDevice, DeviceConnection, DeviceRoute, PairingCode, PortalLogin, TailscaleAccess } from "./access.ts";
+export type { AccessVia, AccessRefusal, DeviceRole, HealthAuth, LanExposure, DirectExposure, BindScope, ObservedIngress, SecuritySummary, PairedDevice, DeviceConnection, DeviceRoute, PairingCode, TailscaleAccess } from "./access.ts";
 /** Older servers and the Tailscale-only builder omit relay state. */
 export type RemoteAccess = import("./access.ts").RemoteAccess & { readonly relay?: RelayStatus };
 
@@ -549,11 +526,9 @@ export type RemoteAccess = import("./access.ts").RemoteAccess & { readonly relay
  *   origin (kept with a first-pair credential until its first return). The `device-paired` event
  *   then skips every machines event stream opened with one of those keys, and the push notice
  *   skips every subscription registered with one, whatever access it came through (token, this
- *   PC, Tailscale or a paired device).
+ *   PC or a paired device).
  */
 export const STREAM_COOKIE_PREFIX = "ovis_stream_";
-
-export type { PortalAuth, PortalAuthMethod, PortalInvite, PortalSignIn, PortalStatus } from "./portal.ts";
 
 /**
  * Why the relay is not online, as a fixed code a client puts in its own words (RelayStatus.error_code;
@@ -580,7 +555,7 @@ export interface RelayStatus {
   readonly relay: string;
   readonly app: string;
   readonly sessions: number;
-  readonly blocked: null | "serve_only" | "identity_unreadable";
+  readonly blocked: null | "identity_unreadable";
   readonly error: string | null;
   /** why, as a fixed code, whenever `error` says something (null otherwise); absent from an older server */
   readonly error_code?: RelayErrorCode | null;
@@ -611,7 +586,7 @@ export interface DevicePairToken {
 /**
  * POST /api/devices/revoke-all: every paired device lost its pairing access in one durable write,
  * the caller's own included (its device cookie is cleared by the answer). Only pairing ends: the
- * access token, this PC itself and the PC's Tailscale login get in as before, and the gate stays
+ * access token and this PC itself get in as before, and the gate stays
  * closed to strangers.
  */
 export interface DevicesRevokedAll {

@@ -31,7 +31,7 @@ it("answers a paired device, a token sign-in and a watching device about their o
   store.match(watch.token);
   // the push service's clock: advanced by the test, so two deliveries never share a millisecond by chance
   let clock = Date.now();
-  const server = createServer({ port: 0, stateDir: root, token: "test-push-health", tailscaleOwner: null, machines: false, pushLoopbackHttp: true, statusNow: () => clock });
+  const server = createServer({ port: 0, stateDir: root, token: "test-push-health", machines: false, pushLoopbackHttp: true, statusNow: () => clock });
   const base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-push-health" };
   const phone = await startFakePushService();
@@ -107,7 +107,7 @@ it("answers a paired device, a token sign-in and a watching device about their o
 
 it("tells a stranger, the open LAN and a revoked device nothing", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-push-health-gate-"));
-  const server = createServer({ port: 0, stateDir: root, token: "test-push-health-gate", tailscaleOwner: null, machines: false, pushLoopbackHttp: true });
+  const server = createServer({ port: 0, stateDir: root, token: "test-push-health-gate", machines: false, pushLoopbackHttp: true });
   const base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-push-health-gate" };
   const fake = await startFakePushService();
@@ -135,11 +135,11 @@ it("tells a stranger, the open LAN and a revoked device nothing", async () => {
 
   // the open LAN (no token, nobody paired): a subscription it makes has no owner, so no record is read
   const openRoot = mkdtempSync(join(tmpdir(), "herdr-push-health-open-"));
-  const open = createServer({ port: 0, stateDir: openRoot, token: "", tailscaleOwner: null, machines: false, pushLoopbackHttp: true });
+  const open = createServer({ port: 0, stateDir: openRoot, token: "", machines: false, pushLoopbackHttp: true });
   const openBase = `http://127.0.0.1:${open.port}`;
   const lan = await startFakePushService();
   try {
-    const forwarded = { "x-forwarded-for": "198.51.100.24" };
+    const forwarded = { host: "198.51.100.24" };
     expect((await fetch(`${openBase}/api/push/subscribe`, { method: "POST", headers: { ...guard, ...forwarded }, body: JSON.stringify({ subscription: lan.subscription }) })).status).toBe(204);
     expect((await fetch(`${openBase}/api/push/test`, { method: "POST", headers: { ...guard, ...forwarded }, body: JSON.stringify({ endpoint: lan.subscription.endpoint }) })).status).toBe(204);
     await lan.waitFor((push) => push.payload.tag === "herdr-test", "confirmation push", 5000);
@@ -157,7 +157,7 @@ it("never lets a watching device clear another owner's retired endpoint and regi
   const store = new DeviceStore(root);
   const watch = store.pair(store.startPairing().code, "Watch", "watch")!;
   store.match(watch.token);
-  const server = createServer({ port: 0, stateDir: root, token: "test-push-health-takeover", tailscaleOwner: null, machines: false, pushLoopbackHttp: true });
+  const server = createServer({ port: 0, stateDir: root, token: "test-push-health-takeover", machines: false, pushLoopbackHttp: true });
   const base = `http://127.0.0.1:${server.port}`;
   const owner = { ...guard, authorization: "Bearer test-push-health-takeover" };
   const watching = { ...guard, cookie: `${DEVICE_COOKIE}=${watch.token}` };

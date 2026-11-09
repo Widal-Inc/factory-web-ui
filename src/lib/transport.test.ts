@@ -55,7 +55,7 @@ it("a transport that refuses makes the API call reject with its error", async ()
 it("relay controls use the selected transport even for a refusal carrying relay status", async () => {
   // Given
   const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
-  const status: RelayStatus = { phase: "off", relay: "wss://relay.test", app: "https://app.test", sessions: 0, blocked: "serve_only", error: null };
+  const status: RelayStatus = { phase: "off", relay: "wss://relay.test", app: "https://app.test", sessions: 0, blocked: "identity_unreadable", error: null };
   setTransport(testTransport(async (input, init) => {
     calls.push({ input, init });
     return Response.json(status, { status: 409 });

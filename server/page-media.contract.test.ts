@@ -10,7 +10,7 @@ const fromPage = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors", 
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "herdr-page-media-"));
-  const server = createServer({ port: 0, stateDir: join(root, "state"), token: "test-page-media", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: join(root, "state"), token: "test-page-media" });
   const base = `http://127.0.0.1:${server.port}`;
   const bytes = 9 * 1024 * 1024;
   writeFileSync(join(root, "clip.mp4"), "");

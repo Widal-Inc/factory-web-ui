@@ -3,16 +3,13 @@ import { describe, expect, it } from "bun:test";
 import type { ObservedIngress } from "../../shared/protocol.ts";
 import { connectionRoute } from "./connectionRoute.ts";
 
-const route = (hostname: string, page: { relay?: boolean; portal?: boolean; ingress?: ObservedIngress | null; protocol?: string } = {}) =>
-  connectionRoute({ relay: false, portal: false, ingress: null, protocol: "https:", hostname, ...page });
+const route = (hostname: string, page: { relay?: boolean; ingress?: ObservedIngress | null; protocol?: string } = {}) =>
+  connectionRoute({ relay: false, ingress: null, protocol: "https:", hostname, ...page });
 
 describe("how this device reaches Ovis", () => {
-  it("is the relay on the hosted shell, and Portal for a Portal sign-in, whatever the address", () => {
+  it("is the relay on the hosted shell, whatever the address", () => {
     expect(route("app.ovis.sh", { relay: true })).toBe("relay");
     expect(route("localhost", { relay: true })).toBe("relay");
-    expect(route("herdr-test.relay.example", { portal: true })).toBe("portal");
-    // the token or a paired device signed it in, but the server saw Portal vouch for the request
-    expect(route("herdr-test.relay.example", { ingress: "portal" })).toBe("portal");
   });
 
   it("says nothing in the phone app's bundled demo, which reaches no PC", () => {
@@ -26,11 +23,6 @@ describe("how this device reaches Ovis", () => {
   it("is a MagicDNS name, Tailscale or Funnel, while the server has not said which way the request came", () => {
     expect(route("pc.tail1e211e.ts.net")).toBe("tailscale-name");
     expect(route("pc.tail1e211e.ts.net", { ingress: "unknown" })).toBe("tailscale-name");
-    expect(route("pc.tail1e211e.ts.net", { ingress: "tailscale" })).toBe("tailscale");
-  });
-
-  it("is Tailscale when the server saw the request come through Tailscale serve, whatever name the page used", () => {
-    expect(route("ovis.example.com", { ingress: "tailscale" })).toBe("tailscale");
   });
 
   it("reads a name with its trailing root dot as the same name", () => {

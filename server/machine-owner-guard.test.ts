@@ -12,18 +12,15 @@ import { SshConnection } from "./ssh.ts";
 
 // Every change to this PC's PCs goes through one rule: the owner, from any device he signed in or paired himself, from
 // this app's own page. One table: each management route against each kind of access. Isolated state, port 0, no PC.
-const base: AccessInput = { loopback: true, forwarded: false, funnel: false, tailscaleLogin: null, forwardedFor: null, host: null, tokenMatched: false, device: null, owner: null, tagged: false,
-  soleLogin: null, dnsName: null, tailnetIp: null, serveOnly: false, tokenConfigured: false, gated: false };
+const base: AccessInput = { loopback: true, forwarded: false, forwardingHeaders: false, funnel: false, tokenMatched: false, device: null, tokenConfigured: false, gated: false };
 const drive = { id: "d1", label: "Phone", role: "drive" as const };
 const watch = { ...drive, role: "watch" as const };
 const KINDS: [string, Partial<AccessInput>, boolean][] = [
   ["a sign-in on this PC", {}, true],
   ["this PC's token", { loopback: false, tokenMatched: true, tokenConfigured: true }, true],
-  ["this PC's Tailscale login", { tailscaleLogin: "me@x.com", owner: "me@x.com", forwardedFor: "100.64.0.9" }, true],
   ["a driving device paired here", { loopback: false, device: drive, gated: true }, true],
   ["a driving device paired over the relay", { relayPeer: drive as AccessInput["relayPeer"] }, true],
   ["an open-LAN visitor with nothing paired", { loopback: false }, false],
-  ["a Portal visitor that drives", { portal: { proven: true, user: "guest", auth: "credential", role: "drive" } }, false],
   ["a watching device paired here", { loopback: false, device: watch, gated: true }, false],
   ["a watching device over the relay", { relayPeer: watch as AccessInput["relayPeer"] }, false],
 ];
@@ -79,12 +76,12 @@ describe("every change to this PC's PCs", () => {
 describe("this PC's own update routes", () => {
   it("take the same rule: an open-LAN visitor is refused, a sign-in on this PC is let through (install, check, herdr)", async () => {
     const state = mkdtempSync(join(tmpdir(), "ovis-owner-guard-server-"));
-    const open = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "", tailscaleOwner: null, sidecar: false, registerBridge: false });
+    const open = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "", sidecar: false, registerBridge: false });
     cleanups.push(() => { open.stop(); rmSync(state, { recursive: true, force: true }); });
     // a check installs too where OVIS_AUTO_UPDATE=1, so it takes the same rule
     for (const [path, body] of [["/api/updates/install", { expected_revision: "a".repeat(40) }], ["/api/herdr/update", undefined], ["/api/updates/check", undefined]] as const) {
       const post = (headers: Record<string, string>) => fetch(`http://127.0.0.1:${open.port}${path}`, { method: "POST", headers: { "x-herdr-update": "1", "content-type": "application/json", ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) });
-      const visitor = await post({ "x-forwarded-for": "192.168.0.20" });
+      const visitor = await post({ host: "192.168.0.20" });
       expect([path, visitor.status]).toEqual([path, 403]);
       expect([path, (await post({})).status === 403]).toEqual([path, false]);
     }

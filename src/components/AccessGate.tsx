@@ -97,9 +97,6 @@ export function AccessGate({ reason, initialCode, consumePairCode, pairingUnconf
         <h1 id="access-gate-title" className="access-gate-title">
           Ovis
         </h1>
-        {reason === "other_user" && (
-          <p className="access-gate-refused" role="status">{t("Tailscale says this device belongs to someone other than this PC's owner. The owner can still let it in with a pairing code.")}</p>
-        )}
         <p className="access-gate-copy">
           {t(reason === "token_required" ? "This server requires an access token or a pairing code." : "Pair this device with a code from the PC: Settings → Devices there, or the pair command in its terminal.")}
         </p>

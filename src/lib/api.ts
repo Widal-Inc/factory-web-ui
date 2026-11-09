@@ -63,10 +63,7 @@ import type {
   ProjectFavicon,
   PromptAnswer,
   PushKey,
-  PortalAuth,
-  PortalInvite,
   PushSubscriptionStatus,
-  PortalStatus,
   RelayStatus,
   RemoteAccess,
   RemoveWorktreeRequest,
@@ -277,25 +274,6 @@ export async function requestHerdrUpdate(): Promise<void> {
   const url = "/api/herdr/update";
   const response = await apiFetch(url, { method: "POST", headers: { "x-herdr-update": "1" } });
   if (!response.ok) throw await errorFrom(url, response);
-}
-
-/** Settings → Phone & devices: Portal's public address for the server's PC. */
-export function fetchPortal(): Promise<PortalStatus> {
-  return getJson<PortalStatus>("/api/portal");
-}
-
-export async function requestPortal(action: "start" | "stop", relay?: string, auth?: PortalAuth): Promise<void> {
-  const url = `/api/portal/${action}`;
-  const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify(relay === undefined ? {} : { relay, auth }) });
-  if (!response.ok) throw await errorFrom(url, response);
-}
-
-/** A private link for `name`, good for `days`: a bearer secret the server keeps nowhere, so this is the one time it is read. */
-export async function issuePortalInvite(name: string, days: number): Promise<PortalInvite> {
-  const url = "/api/portal/invite";
-  const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify({ name, days }) });
-  if (!response.ok) throw await errorFrom(url, response);
-  return (await response.json()) as PortalInvite;
 }
 
 /** Settings → Phone & devices: the Ovis relay, through which paired phones reach this PC from anywhere. */
@@ -957,7 +935,7 @@ export async function revokeDevice(id: string): Promise<void> {
 /**
  * POST /api/devices/revoke-all: every paired device loses its pairing access in one durable step,
  * this browser's own included (the answer clears its device cookie). The access token, the PC
- * itself and its Tailscale login get in as before.
+ * itself gets in as before.
  */
 export async function revokeAllDevices(): Promise<DevicesRevokedAll> {
   return (await sendJson("/api/devices/revoke-all", "POST", {})).json();
@@ -967,13 +945,6 @@ export async function revokeAllDevices(): Promise<DevicesRevokedAll> {
 export async function signOut(): Promise<void> {
   const response = await apiFetch("/api/auth", { method: "DELETE" });
   if (!response.ok) throw await errorFrom("/api/auth", response);
-}
-
-/** Portal's own sign-out, answered by its gateway and never by this server: a same-origin POST that clears Portal's session cookie for this address. */
-export async function signOutOfPortal(): Promise<void> {
-  const url = "/_portal/auth/logout";
-  const response = await apiFetch(url, { method: "POST" });
-  if (!response.ok) throw await errorFrom(url, response);
 }
 
 /** Chunked btoa: the naive one-liner blows the stack on multi-MB screenshots. */
@@ -1597,10 +1568,6 @@ export interface SshCandidate {
 }
 /** GET /api/machines/ssh-candidates: Add a connection → SSH's list, each added through the Add PC dialog. */
 export const findSshCandidates = () => machineRequest<{ pcs: SshCandidate[] }>("/ssh-candidates");
-/** A PC of this PC's Tailscale login whose Ovis lets this PC in as its owner (server/tailnet-pcs.ts); `outdated`: older than 0.5. */
-export interface TailnetPc { readonly name: string; readonly url: string; readonly relay: string | null; readonly outdated: boolean }
-/** GET /api/machines/tailnet: those PCs, each asked over Tailscale which Ovis it runs. */
-export const findTailnetPcs = () => machineRequest<{ pcs: TailnetPc[] }>("/tailnet");
 export const startMachineSetup = (request: SetupRequest) => machineRequest<SetupJob>("/setup", "POST", request);
 export const fetchMachineSetup = (id: string) => machineRequest<SetupJob>(`/setup/${encodeURIComponent(id)}`);
 export const answerMachineSetup = (id: string, action: SetupAction) => machineRequest<SetupJob>(`/setup/${encodeURIComponent(id)}`, "POST", action);

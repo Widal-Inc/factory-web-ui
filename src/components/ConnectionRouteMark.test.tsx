@@ -36,7 +36,7 @@ afterEach(async () => {
 });
 
 const routeShown = () => renderer!.root.findByProps({ className: "conn-route" }).props["data-route"] as string;
-const draw = (ingress: ObservedIngress | null) => createElement(SettingsProvider, null, createElement(ConnectionRouteMark, { portal: false, ingress }));
+const draw = (ingress: ObservedIngress | null) => createElement(SettingsProvider, null, createElement(ConnectionRouteMark, { ingress }));
 
 it("keeps the server's word on the route through a failed health read, which clears it", async () => {
   // Given a page the server saw come through Funnel.

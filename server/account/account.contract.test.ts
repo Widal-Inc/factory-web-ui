@@ -28,8 +28,8 @@ const guard = [["content-type", "application/json"], ["x-herdr-machine", "1"]] a
 const fixtures: Fixture[] = [];
 afterEach(() => { for (const fixture of fixtures.splice(0)) fixture.close(); });
 
-function fixture(options: Parameters<typeof relayFixture>[1] = {}): Fixture {
-  const made = relayFixture(false, options);
+function fixture(options: Parameters<typeof relayFixture>[0] = {}): Fixture {
+  const made = relayFixture(options);
   fixtures.push(made);
   return made;
 }
@@ -1205,7 +1205,7 @@ test("a key paired again in one of two state dirs stays paired, without its tomb
   // a second after the removal, as a person pairing again would be
   const later = Date.now() + 1_000;
   expect(store.pairRelay(store.startPairing(later).code, "Mac app", gone.spki, later)).not.toBeNull();
-  const other = createServer({ port: 0, hostname: "127.0.0.1", stateDir: sibling, siblingStateDir: f.stateDir, token: "t", tailscaleOwner: null, machines: false, sidecar: false });
+  const other = createServer({ port: 0, hostname: "127.0.0.1", stateDir: sibling, siblingStateDir: f.stateDir, token: "t", machines: false, sidecar: false });
   try {
     // the merge brings the other dir's tombstone back, and the start-up repair drops it: the row is newer
     for (const devices of [other.context.services.devices, new DeviceStore(f.stateDir)]) {
@@ -1259,7 +1259,7 @@ test("a key revoked on this PC stays out when a sibling dir that missed the revo
     // made a second after the revoke, as the sibling knew nothing of it
     for (const row of registry.devices) if (row.relay_public_key === gone.spki) row.created_at = new Date(Date.now() + 1_000).toISOString();
     writeFileSync(join(sibling, "devices.json"), JSON.stringify(registry), { mode: 0o600 });
-    const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: f.stateDir, siblingStateDir: sibling, token: "t", tailscaleOwner: null, machines: false, sidecar: false });
+    const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: f.stateDir, siblingStateDir: sibling, token: "t", machines: false, sidecar: false });
     try {
       expect(app.context.services.devices.hasKey(gone.spki)).toBe(false);
     } finally { app.stop(); }

@@ -123,7 +123,7 @@ export async function relayShellQa(tree: RelayServerTree): Promise<void> {
     socketsChanged.addEventListener("change", check);
     check();
   }), what);
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, sidecar: false, relay: service, pushLoopbackHttp: true, herdrConfigPath });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", sidecar: false, relay: service, pushLoopbackHttp: true, herdrConfigPath });
   const base = `http://127.0.0.1:${app.port}`;
   const devices = app.context.services.devices;
   const relayApi = (path: string) => fetch(`${base}/api/relay${path}`, { method: "POST", headers: { origin: base, "x-herdr-update": "1" } });
@@ -291,7 +291,7 @@ export async function relayShellQa(tree: RelayServerTree): Promise<void> {
     });
     return socket;
   } });
-  const app2 = createServer({ port: 0, hostname: "127.0.0.1", stateDir: stateDir2, token: "", tailscaleOwner: null, sidecar: false, relay: service2, pushLoopbackHttp: true });
+  const app2 = createServer({ port: 0, hostname: "127.0.0.1", stateDir: stateDir2, token: "", sidecar: false, relay: service2, pushLoopbackHttp: true });
   const base2 = `http://127.0.0.1:${app2.port}`;
   const fakes: FakePushService[] = [];
 
@@ -1100,7 +1100,7 @@ export async function relayShellQa(tree: RelayServerTree): Promise<void> {
           socket.addEventListener("message", (event) => { if (typeof event.data === "string" && event.data.includes('"sync"')) ready.resolve(); });
           return socket;
         } });
-        const pc = createServer({ port: 0, hostname: "127.0.0.1", stateDir: dir, token: "", tailscaleOwner: null, sidecar: false, relay: pcRelay, ...(updates ? { updates } : {}) });
+        const pc = createServer({ port: 0, hostname: "127.0.0.1", stateDir: dir, token: "", sidecar: false, relay: pcRelay, ...(updates ? { updates } : {}) });
         const at = `http://127.0.0.1:${pc.port}`;
         const post = (path: string) => fetch(`${at}/api/relay${path}`, { method: "POST", headers: { origin: at, "x-herdr-update": "1" } });
         assert.equal((await post("/start")).status, 200);

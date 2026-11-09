@@ -145,7 +145,7 @@ async function startRemote(): Promise<{ process: ReturnType<typeof Bun.spawn>; p
   const script = join(remoteHome, "remote-bridge.ts");
   writeFileSync(script, [
     `import { createServer } from ${JSON.stringify(join(import.meta.dir, "index.ts"))};`,
-    `const server = createServer({ port: 0, hostname: "127.0.0.1", token: ${JSON.stringify(REMOTE_TOKEN)}, stateDir: ${JSON.stringify(join(remoteHome, "state"))}, machines: false, tailscaleOwner: null });`,
+    `const server = createServer({ port: 0, hostname: "127.0.0.1", token: ${JSON.stringify(REMOTE_TOKEN)}, stateDir: ${JSON.stringify(join(remoteHome, "state"))}, machines: false });`,
     // it listens from here; what it knows of the panes comes in its frames, which the test waits for
     "console.log(JSON.stringify({ port: server.port }));",
     "process.on(\"SIGTERM\", () => { server.stop(); process.exit(0); });",
@@ -191,7 +191,7 @@ beforeAll(async () => {
     if (held !== null) { hold = null; held.entered(); await held.gate; }
     return answer;
   };
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: WATCH_TOKEN, stateDir, tailscaleOwner: null, backgroundAgentRead: read });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: WATCH_TOKEN, stateDir, backgroundAgentRead: read });
   await server.statusReady;
   frames = await Frames.connect(server.port, WATCH_TOKEN);
   // each pane's session found: its tasks counted

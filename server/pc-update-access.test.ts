@@ -10,25 +10,22 @@ import { MachineManager } from "./machines.ts";
 import type { PushService } from "./push.ts";
 
 // Changing what runs on this PC's PCs is the owner's, from any device he paired (relay included): never an open-LAN
-// visitor's, a Portal visitor's or a watching device's. Isolated state, port 0, no PC is reached.
-const base: AccessInput = { loopback: true, forwarded: false, funnel: false, tailscaleLogin: null, forwardedFor: null, host: null, tokenMatched: false, device: null, owner: null, tagged: false,
-  soleLogin: null, dnsName: null, tailnetIp: null, serveOnly: false, tokenConfigured: false, gated: false };
+// visitor's or a watching device's. Isolated state, port 0, no PC is reached.
+const base: AccessInput = { loopback: true, forwarded: false, forwardingHeaders: false, funnel: false, tokenMatched: false, device: null, tokenConfigured: false, gated: false };
 const drive = { id: "d1", label: "Phone", role: "drive" as const };
 
 describe("who may update every PC", () => {
   const owner = (input: Partial<AccessInput>) => ownerAccess(decideAccess({ ...base, ...input }));
-  it("is the owner from any device he paired: on this PC, its token, its Tailscale login, a device paired here or over the relay, that drives", () => {
+  it("is the owner from any device he paired: on this PC, its token, a device paired here or over the relay, that drives", () => {
     expect(owner({})).toBe(true);
     expect(owner({ loopback: false, tokenMatched: true, tokenConfigured: true })).toBe(true);
     expect(owner({ loopback: false, device: drive, gated: true })).toBe(true);
-    expect(owner({ loopback: true, tailscaleLogin: "me@x.com", owner: "me@x.com", forwardedFor: "100.64.0.9" })).toBe(true);
     // his phone over the relay, or another PC of his reaching this one through it
     expect(owner({ relayPeer: { ...drive } as AccessInput["relayPeer"] })).toBe(true);
   });
-  it("is never an open-LAN visitor (nothing paired), a Portal visitor, or a device that only watches", () => {
+  it("is never an open-LAN visitor (nothing paired), or a device that only watches", () => {
     expect(owner({ loopback: false })).toBe(false);
     expect(owner({ loopback: false, device: { ...drive, role: "watch" }, gated: true })).toBe(false);
-    expect(owner({ portal: { proven: true, user: "guest", auth: "credential", role: "drive" } })).toBe(false);
     expect(owner({ relayPeer: { ...drive, role: "watch" } as AccessInput["relayPeer"] })).toBe(false);
   });
 });
@@ -62,14 +59,14 @@ describe("the update routes", () => {
   // every other management route takes the same rule: server/machine-owner-guard.test.ts holds the whole table
   it("refuses an open-LAN visitor through the server, and lets this PC's owner in", async () => {
     const state = mkdtempSync(join(tmpdir(), "ovis-update-open-"));
-    // on loopback only: a visitor of an open install is told by the forwarded address it comes from (access.ts)
-    const open = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "", tailscaleOwner: null, sidecar: false, registerBridge: false });
+    // on loopback only: a visitor of an open install is told by a Host that is not this PC's (access.ts)
+    const open = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "", sidecar: false, registerBridge: false });
     cleanups.push(() => { open.stop(); rmSync(state, { recursive: true, force: true }); });
     const post = (headers: Record<string, string>) => fetch(`http://127.0.0.1:${open.port}/api/machines/update-all`, { method: "POST", headers: { "x-herdr-machine": "1", "x-herdr-update": "1", ...headers } });
-    expect((await post({ "x-forwarded-for": "192.168.0.20" })).status).toBe(403);
+    expect((await post({ host: "192.168.0.20" })).status).toBe(403);
     expect((await post({})).status).toBe(202);
     // the same visitor may not turn a PC on or approve a setup's changes either
-    const as = (path: string, method: string, body: unknown) => fetch(`http://127.0.0.1:${open.port}/api/machines/${path}`, { method, headers: { "x-herdr-machine": "1", "x-herdr-update": "1", "content-type": "application/json", "x-forwarded-for": "192.168.0.20" }, body: JSON.stringify(body) });
+    const as = (path: string, method: string, body: unknown) => fetch(`http://127.0.0.1:${open.port}/api/machines/${path}`, { method, headers: { "x-herdr-machine": "1", "x-herdr-update": "1", "content-type": "application/json", host: "192.168.0.20" }, body: JSON.stringify(body) });
     expect((await as("00000000-0000-4000-8000-000000000001", "PATCH", { enabled: true })).status).toBe(403);
     expect((await as("setup/no-such-job", "POST", { action: "approve" })).status).toBe(403);
   });

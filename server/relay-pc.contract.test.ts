@@ -62,7 +62,7 @@ async function twoPcs(options: { direct?: { reachable: (dial: number, host: stri
   const bState = stateDir();
   const service = new RelayService({ stateDir: bState, relay: `wss://127.0.0.1:${relay.port}`, connect: local, pairCodeRelay: `wss://127.0.0.1:${relay.port}`,
     ...(options.direct ? { direct: { addresses: () => ["127.0.0.1"], advertise: (port: number) => { listener.port = port; return options.direct!.named?.(port) ?? [`ws://${LAN}:7319`]; }, peerAllowed: () => true, preferredPort: 0 } } : {}) });
-  const b = createServer({ port: 0, hostname: "127.0.0.1", stateDir: bState, token: "", tailscaleOwner: null, sidecar: false, registerBridge: false, relay: service, ...(options.updates ? { updates: options.updates } : {}) });
+  const b = createServer({ port: 0, hostname: "127.0.0.1", stateDir: bState, token: "", sidecar: false, registerBridge: false, relay: service, ...(options.updates ? { updates: options.updates } : {}) });
   cleanup.push(async () => { await service.shutdown(); b.stop(); });
   const bBase = `http://127.0.0.1:${b.port}`;
   const started = await fetch(`${bBase}/api/relay/start`, { method: "POST", headers: { origin: bBase, "x-herdr-update": "1" } });
@@ -99,7 +99,7 @@ async function twoPcs(options: { direct?: { reachable: (dial: number, host: stri
     return socket;
   };
   const startA = () => {
-    const a = createServer({ port: 0, hostname: "127.0.0.1", stateDir: aState, token: "", tailscaleOwner: null, sidecar: false, registerBridge: false, relayPcSocket: local, relayPcDirectSocket: onLan,
+    const a = createServer({ port: 0, hostname: "127.0.0.1", stateDir: aState, token: "", sidecar: false, registerBridge: false, relayPcSocket: local, relayPcDirectSocket: onLan,
       pcUpdateTimings: { pollMs: 20, startMs: 5_000, checkMs: 1_000 } });
     let stopped = false;
     const stop = () => { if (!stopped) { stopped = true; a.stop(); } };

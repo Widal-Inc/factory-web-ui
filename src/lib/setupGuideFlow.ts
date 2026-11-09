@@ -85,14 +85,13 @@ export function agentRows(catalog: readonly AgentCatalogRow[] | null, ready: rea
 /**
  * Which way the guide's Connect your phone box leads with: the Ovis relay where it is offered here (a
  * server with the route, a direct page, not the hosted shell), this browser may control it (not a
- * watching device, not a Portal visitor: the server refuses both) and nothing blocks it (a serve-only
- * install, an unreadable identity); else the other ways (phoneBoxMode). It waits for the relay's first
+ * watching device: the server refuses it) and nothing blocks it (an unreadable identity); else the other ways (phoneBoxMode). It waits for the relay's first
  * answer, so a page on the PC's loopback is not sent to Settings before the relay could lead.
  */
 export function phoneWay(relay: { unsupported: boolean; status: Pick<RelayStatus, "blocked"> | null }, shell: boolean, auth: HealthAuth | null): "wait" | "relay" | "other" {
   if (shell || relay.unsupported) return "other";
   if (auth === null) return "wait";
-  if (auth.role === "watch" || auth.via === "portal") return "other";
+  if (auth.role === "watch") return "other";
   if (relay.status === null) return "wait";
   return relay.status.blocked === null ? "relay" : "other";
 }

@@ -128,8 +128,7 @@ export function requiresAuth(pathname: string): boolean {
   return pathname !== "/api/health" && pathname !== "/api/auth" && pathname !== "/api/devices/pair";
 }
 
-export function unauthorizedJson(reason: "other_user" | "pairing_required" | "token_required" = "token_required"): Response {
-  if (reason === "other_user") return jsonResponse({ error: { code: "other_user", message: "this PC belongs to another Tailscale user" } }, 403);
+export function unauthorizedJson(reason: "pairing_required" | "token_required" = "token_required"): Response {
   return jsonResponse({ error: { code: "unauthorized", message: reason === "pairing_required" ? "pair this device, or use the token" : "token required" } }, 401);
 }
 

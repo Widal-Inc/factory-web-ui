@@ -17,8 +17,8 @@ type CoreSocket = Parameters<ReturnType<typeof createCore>["socketHandlers"]["op
 const fixtures: ReturnType<typeof relayFixture>[] = [];
 const workspaces: string[] = [];
 const restores: (() => void)[] = [];
-function fixture(options: Parameters<typeof relayFixture>[1] = {}) {
-  const value = relayFixture(false, { sidecar: true, ...options });
+function fixture(options: Parameters<typeof relayFixture>[0] = {}) {
+  const value = relayFixture({ sidecar: true, ...options });
   fixtures.push(value);
   return value;
 }

@@ -16,7 +16,7 @@
  */
 import { NO_AGENT_MESSAGE } from "../../shared/submit-outcome.ts";
 import { resolveHerdrKeys } from "../../shared/herdr-keys.ts";
-import type { AgentIntegration, AgentStatus, CommandForm, CommandOutcome, ConversationTurn, DevicePairedEvent, DevicesRevokedAll, HealthAuth, IntegrationsResponse, Machine, MachineEvent, OmoActivity, OmoTask, PairedDevice, PairingCode, PaneBackgroundAgentDetail, PaneDirection, PaneFindMatch, PaneFindRequest, PaneMoved, PanePlan, PaneResized, PaneSplit, PaneSwapped, PaneZoomed, PendingMessage, PlanStep, PluginActionResult, PluginActions, PluginActionsResponse, PortalStatus, RelayStatus, SecuritySummary, ServerMessage, SessionSnapshot, SlashCommand, TabMoved, TabMovedToWorkspace, UsageReport, WorkspaceCreated, WorkspaceInfo, WorktreeEntry, WorktreeInventory, WorktreeListing, WorktreeOpened, WorktreeRemoved } from "../../shared/protocol.ts";
+import type { AgentIntegration, AgentStatus, CommandForm, CommandOutcome, ConversationTurn, DevicePairedEvent, DevicesRevokedAll, HealthAuth, IntegrationsResponse, Machine, MachineEvent, OmoActivity, OmoTask, PairedDevice, PairingCode, PaneBackgroundAgentDetail, PaneDirection, PaneFindMatch, PaneFindRequest, PaneMoved, PanePlan, PaneResized, PaneSplit, PaneSwapped, PaneZoomed, PendingMessage, PlanStep, PluginActionResult, PluginActions, PluginActionsResponse, RelayStatus, SecuritySummary, ServerMessage, SessionSnapshot, SlashCommand, TabMoved, TabMovedToWorkspace, UsageReport, WorkspaceCreated, WorkspaceInfo, WorktreeEntry, WorktreeInventory, WorktreeListing, WorktreeOpened, WorktreeRemoved } from "../../shared/protocol.ts";
 import type { PushSubscriptionStatus, RepoBranchComparison, RepoDiffFile, RepoDiffFileList, RepoDiffFilePatch, RepoDiffRefs, RepoDiffRepository, RepoDiffScope, SessionHistoryAgent, SessionHistoryResponse, SessionResumeResponse } from "../../shared/protocol.ts";
 import { nextTabLabels, normalizeThemeChange, sharedPreferencesBody, type SharedPreferences } from "../../shared/preferences.ts";
 import type { PullRequestCheckLog, PullRequestView } from "../../shared/pull-request.ts";
@@ -64,8 +64,8 @@ const demoSecurity = (): string => {
   try { return sessionStorage.getItem("ovis:demo-security") ?? DEMO_SECURITY_AT_LOAD; } catch { return DEMO_SECURITY_AT_LOAD; }
 };
 const DEMO_SECURITY_FACTS: Record<string, SecuritySummary> = {
-  known: { token_configured: true, pairing_gate: "closed", bind_scope: "loopback", observed_ingress: "tailscale", public_exposure: "unknown" },
-  watch: { token_configured: true, pairing_gate: "closed", bind_scope: "loopback", observed_ingress: "tailscale", public_exposure: "unknown" },
+  known: { token_configured: true, pairing_gate: "closed", bind_scope: "loopback", observed_ingress: "direct", public_exposure: "unknown" },
+  watch: { token_configured: true, pairing_gate: "closed", bind_scope: "loopback", observed_ingress: "direct", public_exposure: "unknown" },
   unknown: { token_configured: false, pairing_gate: "open", bind_scope: "other", observed_ingress: "unknown", public_exposure: "unknown" },
   proxy: { token_configured: false, pairing_gate: "open", bind_scope: "loopback", observed_ingress: "proxy", public_exposure: "unknown" },
   gated: { token_configured: false, pairing_gate: "closed", bind_scope: "other", observed_ingress: "direct", public_exposure: "unknown" },
@@ -1231,8 +1231,6 @@ const PLUGINS: PluginActions[] = [
   ] },
 ];
 
-const NO_PORTAL: PortalStatus = { supported: false, version: null, min_version: "v2.6.1", usable: false, phase: "idle", relay: null, url: null, blocked: null, error: null, output: null, auth: { method: "none", allow: [], issuer: null, client_id: null }, auth_methods: [], oidc_secret: false };
-
 // ---- the Ovis relay (Settings → Phone & devices → Connect a phone) ------------------
 
 /**
@@ -1260,19 +1258,6 @@ function demoRelayOffer(): Response {
   const url = encodeOffer({ v: 1, server_id: demoRelayServerId(), server_public_key: DEMO_RELAY_PUBLIC_KEY, relay: DEMO_RELAY, code: pairing.code }, DEMO_RELAY_APP);
   return json({ url, expires_at: pairing.expires_at }, 200, { "cache-control": "no-store" });
 }
-/**
- * The demo opens no public address, so its Portal section stays hidden. A QA script may stage a
- * fictional status (a recovering Portal, say) as JSON in sessionStorage["ovis:demo-portal"]
- * before the app loads; starting and stopping stay refused either way.
- */
-function demoPortal(): PortalStatus {
-  try {
-    const staged = window.sessionStorage.getItem("ovis:demo-portal");
-    if (staged !== null) return { ...NO_PORTAL, supported: true, ...(JSON.parse(staged) as Partial<PortalStatus>) };
-  } catch { /* storage blocked or not JSON: the section stays hidden */ }
-  return NO_PORTAL;
-}
-
 async function route(url: URL, method: string, init: RequestInit | undefined, input: RequestInfo | URL): Promise<Response> {
   const path = url.pathname;
   const query = url.searchParams;
@@ -1367,7 +1352,6 @@ async function route(url: URL, method: string, init: RequestInit | undefined, in
   }
   if (path === "/api/telemetry") return json({ error: { code: "not_found", message: "This server sends no telemetry" } }, 404, { "cache-control": "no-store" });
   if (path === "/api/herdr/update") return json({ supported: false, phase: "idle", server_version: null, binary_version: null, stale: false, output: null, finished_at: null }, 200, { "cache-control": "no-store" });
-  if (path === "/api/portal") return json(demoPortal(), 200, { "cache-control": "no-store" });
   if (path === "/api/relay") return json(demoRelayStatus(), 200, { "cache-control": "no-store" });
   if (path === "/api/relay/start" || path === "/api/relay/stop" || path === "/api/relay/offer" || path === "/api/relay/reset-identity"
     || path === "/api/relay/link" || path === "/api/relay/pairing" || path === "/api/relay/code" || path === "/api/relay/code/cancel" || path === "/api/relay/direct") {
@@ -1400,7 +1384,6 @@ async function route(url: URL, method: string, init: RequestInit | undefined, in
     else demoRelayIdentities += 1;
     return json(demoRelayStatus(), 200, { "cache-control": "no-store" });
   }
-  if (path === "/api/portal/start" || path === "/api/portal/stop" || path === "/api/portal/invite") return error("portal_unsupported", "The demo opens no public address.", 409);
   if (path === "/api/herdr-ui") return json({ copy_on_select: true, keys: resolveHerdrKeys(undefined) }, 200, { "cache-control": "no-store" });
   if (path === "/api/access") return json({ port: 7317, relay: demoRelayStatus(), tailscale: { state: "running", dns_name: "workstation.example.ts.net", serving_url: "https://workstation.example.ts.net", serve_command: null, serve_url: null } });
   if (path === "/api/system") return json(systemReport(), 200, { "cache-control": "no-store" });

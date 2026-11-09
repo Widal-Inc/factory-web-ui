@@ -235,7 +235,7 @@ describe("resumable follow-up receipts (#2421)", () => {
       return `${DEVICE_COOKIE}=${paired.token}`;
     };
     const owner = pair("drive"), other = pair("drive"), watcher = pair("watch");
-    const central = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-server-token", tailscaleOwner: null, stateDir });
+    const central = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-server-token", stateDir });
     const sockets: Socket[] = [];
     const connect = async (resumeId: string, cookie = owner) => {
       const socket = new Socket(central.port, `/ws?machine_id=${remoteId}`, cookie); sockets.push(socket);
@@ -293,7 +293,7 @@ describe("resumable follow-up receipts (#2421)", () => {
       return `${DEVICE_COOKIE}=${paired.token}`;
     };
     const owner = pair("drive"), other = pair("drive"), watcher = pair("watch");
-    const central = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-server-token", tailscaleOwner: null, stateDir });
+    const central = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-server-token", stateDir });
     const sockets: Socket[] = [];
     const connect = async (resumeId: string, cookie = owner) => {
       const socket = new Socket(central.port, `/ws?machine_id=${remoteId}`, cookie); sockets.push(socket);

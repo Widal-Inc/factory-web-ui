@@ -273,7 +273,6 @@ export class RelaySession {
         if (frame.type === FrameType.PAIR && this.options.signInOnly) { this.close("auth_failed"); return; }
         this.state = "verifying";
         const devices = this.options.services.devices;
-        if (this.options.services.serveOnly) { this.close("auth_failed"); return; }
         this.keyProven = frame.type === FrameType.AUTH;
         const device = frame.type === FrameType.AUTH
           ? await devices.matchRelay(frame.payload.device_id, this.nonce, frame.payload.signature, this.options.serverId)
@@ -285,7 +284,6 @@ export class RelaySession {
         // a direct carrier pairs nothing, whatever was offered: refused as a sign-in failure, before the binding is looked at
         if (this.options.signInOnly) { this.close("auth_failed"); return; }
         if (this.state !== "auth" || !this.sasBinding) { this.close("protocol_error"); return; }
-        if (this.options.services.serveOnly) { this.close("auth_failed"); return; }
         // nobody asked for a link lately: refused before any prompt, and not counted, since no person was asked,
         // unless it is an account join the account service has seen (accountJoin, docs/account.md design 5.3)
         let membersOnly = false;

@@ -89,7 +89,7 @@ export interface FileViewerProps {
   panelStart?: ReactNode;
   onKind?: (presentation: FilePresentation) => void;
   onTogglePresentation?: () => void;
-  /** this browser drives the PC (not a watching device, a Portal visitor or an open LAN window): with Settings → Edit text files on, a text file can be edited */
+  /** this browser drives the PC (not a watching device or an open LAN window): with Settings → Edit text files on, a text file can be edited */
   editable?: boolean;
 }
 

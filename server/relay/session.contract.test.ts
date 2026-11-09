@@ -8,13 +8,12 @@ import type { MachineEvent } from "../../shared/machines.ts";
 import { handleRequest } from "../dispatch.ts";
 import { PairingRateLimitedError, readDeviceRegistry } from "../devices.ts";
 import { machineEventsClock, machineEventsQueuedBytes } from "../machine-api.ts";
-import { PortalService } from "../portal.ts";
 import { relayHeaders, RELAY_ORIGIN } from "./session.ts";
 import { bounded, deferred, relayConnection, relayDevice, relayFixture, TestClock } from "./test-helpers.ts";
 
 const fixtures: ReturnType<typeof relayFixture>[] = [];
-function fixture(serveOnly = false) {
-  const value = relayFixture(serveOnly);
+function fixture() {
+  const value = relayFixture();
   fixtures.push(value);
   return value;
 }
@@ -276,7 +275,7 @@ it("drops all forged identity headers at the Request boundary", async () => {
   const forged = [
     ["cookie", "ovis_device=forged"], ["authorization", "Bearer forged"], ["host", "evil.example"],
     ["origin", "https://evil.example"], ["x-forwarded-host", "evil.example"], ["x-forwarded-for", "127.0.0.1"],
-    ["tailscale-user-login", "owner@example.com"], ["accept", "application/json"],
+    ["accept", "application/json"],
   ] as const;
   const seen = new Request(RELAY_ORIGIN + "/api/health", { headers: relayHeaders(forged) });
   expect(seen.headers.get("origin")).toBe(RELAY_ORIGIN);
@@ -290,10 +289,6 @@ it("drops all forged identity headers at the Request boundary", async () => {
 
 it("drops forged headers on the encrypted wire and dispatches with synthetic origin", async () => {
   const f = fixture();
-  const portal = new PortalService({ stateDir: f.stateDir });
-  f.app.context.services.options.portal = portal;
-  const proof = spyOn(portal, "vouches").mockReturnValue(true);
-  const portalRole = spyOn(portal, "roleFor").mockReturnValue("drive");
   const device = await relayDevice(f, "watch");
   const handled = deferred<Request>();
   const link = await relayConnection(f, { dispatch: async (request, context) => {
@@ -301,48 +296,38 @@ it("drops forged headers on the encrypted wire and dispatches with synthetic ori
     handled.resolve(request);
     return handleRequest(request, context);
   } });
-  try {
-    expect(await link.auth(device)).toMatchObject({ device_id: device.id, role: "watch" });
-    // Inject after mux serialization but before encryption, bypassing the client's header filter.
-    link.transformClientFrame = (bytes) => {
-      const decoded = decodeFrame(bytes);
-      if (decoded.type !== FrameType.HTTP_OPEN) return bytes;
-      const metadata = new TextEncoder().encode(JSON.stringify({
-        ...decoded.payload,
-        headers: [["cookie", "forged"], ["origin", "https://evil.example"], ["authorization", "Bearer forged"],
-          ["host", "evil.example"], ["x-forwarded-for", "127.0.0.1"], ["tailscale-user-login", "owner@example.com"],
-          ["x-portal-proof", "valid-portal-proof"], ["x-portal-user", "owner"], ["x-portal-auth", "credential"]],
-      }));
-      const frame = new Uint8Array(8 + metadata.length);
-      frame.set(bytes.subarray(0, 8));
-      frame.set(metadata, 8);
-      return frame;
-    };
-    const response = await link.open("/api/health").response;
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      auth: { authenticated: true, via: "relay", role: "watch" },
-      security: { observed_ingress: "relay" },
-    });
-    const request = await bounded(handled.promise);
-    expect(request.headers.get("origin")).toBe(RELAY_ORIGIN);
-    expect(request.headers.get("sec-fetch-site")).toBe("same-origin");
-    for (const name of ["cookie", "authorization", "host", "x-forwarded-for", "tailscale-user-login",
-      "x-portal-proof", "x-portal-user", "x-portal-auth"]) {
-      expect(request.headers.has(name)).toBe(false);
-    }
-    const write = await link.open("/api/preferences", { method: "PUT" }).response;
-    expect(write.status).toBe(403);
-    expect(await write.json()).toMatchObject({ error: { code: "read_only" } });
-    expect(link.channel.securityMode()).toBe("protected");
-    expect(link.daemon.securityMode()).toBe("protected");
-    expect(proof).not.toHaveBeenCalled();
-    expect(portalRole).not.toHaveBeenCalled();
-  } finally {
-    proof.mockRestore();
-    portalRole.mockRestore();
-    await portal.shutdown();
+  expect(await link.auth(device)).toMatchObject({ device_id: device.id, role: "watch" });
+  // Inject after mux serialization but before encryption, bypassing the client's header filter.
+  link.transformClientFrame = (bytes) => {
+    const decoded = decodeFrame(bytes);
+    if (decoded.type !== FrameType.HTTP_OPEN) return bytes;
+    const metadata = new TextEncoder().encode(JSON.stringify({
+      ...decoded.payload,
+      headers: [["cookie", "forged"], ["origin", "https://evil.example"], ["authorization", "Bearer forged"],
+        ["host", "evil.example"], ["x-forwarded-for", "127.0.0.1"]],
+    }));
+    const frame = new Uint8Array(8 + metadata.length);
+    frame.set(bytes.subarray(0, 8));
+    frame.set(metadata, 8);
+    return frame;
+  };
+  const response = await link.open("/api/health").response;
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    auth: { authenticated: true, via: "relay", role: "watch" },
+    security: { observed_ingress: "relay" },
+  });
+  const request = await bounded(handled.promise);
+  expect(request.headers.get("origin")).toBe(RELAY_ORIGIN);
+  expect(request.headers.get("sec-fetch-site")).toBe("same-origin");
+  for (const name of ["cookie", "authorization", "host", "x-forwarded-for"]) {
+    expect(request.headers.has(name)).toBe(false);
   }
+  const write = await link.open("/api/preferences", { method: "PUT" }).response;
+  expect(write.status).toBe(403);
+  expect(await write.json()).toMatchObject({ error: { code: "read_only" } });
+  expect(link.channel.securityMode()).toBe("protected");
+  expect(link.daemon.securityMode()).toBe("protected");
 });
 
 it("pairs with a valid code and stores the relay public key before AUTH_OK", async () => {
@@ -628,16 +613,6 @@ it("cannot dispatch the first request after its authenticated device is revoked"
   expect(await bounded(link.serverError)).toBe("auth_revoked");
   expect(await outcome).toBeInstanceOf(Error);
   expect(calls).toBe(0);
-});
-
-it("refuses relay admission on a serve-only installation", async () => {
-  const f = fixture(true);
-  const device = await relayDevice(f);
-  const link = await relayConnection(f);
-  const admission = link.auth(device).catch((error: unknown) => error);
-  expect(await bounded(link.serverError)).toBe("auth_failed");
-  expect(await admission).toBeInstanceOf(Error);
-  expect(link.frames.some((frame) => frame.type === FrameType.AUTH_OK)).toBe(false);
 });
 
 it("preserves every whitelisted security header and drops cookies and unrelated response headers", async () => {

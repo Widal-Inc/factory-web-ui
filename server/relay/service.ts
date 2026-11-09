@@ -425,7 +425,7 @@ export class RelayService {
   resume(services: RequestServices, port: number): void {
     this.services = services;
     this.port = port;
-    this.blocked = services.serveOnly ? "serve_only" : null;
+    this.blocked = null;
     try {
       let saved: unknown;
       try { saved = JSON.parse(readFileSync(join(this.options.stateDir, "relay", "state.json"), "utf8")); }
@@ -450,7 +450,6 @@ export class RelayService {
     const services = this.services;
     if (!services || this.shuttingDown) throw new Error("Relay service is not available.");
     if (this.resetting) throw new Error("Relay identity reset is in progress.");
-    if (services.serveOnly) { this.blocked = "serve_only"; return this.status(); }
     if (this.link) return this.status();
     try {
       this.identity = loadRelayIdentity(this.options.stateDir);
@@ -564,7 +563,6 @@ export class RelayService {
   async resetIdentity(): Promise<RelayStatus> {
     const services = this.services;
     if (!services || this.shuttingDown) throw new Error("Relay service is not available.");
-    if (services.serveOnly) { this.blocked = "serve_only"; return this.status(); }
     // Close old admissions before revoking or replacing the key they authenticated against.
     if (this.resetting) throw new Error("Relay identity reset is in progress.");
     this.resetting = true;

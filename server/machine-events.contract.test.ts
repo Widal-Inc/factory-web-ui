@@ -31,7 +31,7 @@ const pairings = (frames: ServerMessage[]) => frames.filter((frame) => frame.typ
 
 it("multiplexes initial documents and live updates onto the existing authenticated socket", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-events-"));
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", tailscaleOwner: null });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token" });
   const base = `http://127.0.0.1:${server.port}`;
   const client = await connection(base);
   try {
@@ -67,7 +67,7 @@ it("keeps SSE available when the server's transport rollback switch disables the
   const before = process.env["OVIS_MACHINE_EVENTS_WS"];
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-events-rollback-"));
   process.env["OVIS_MACHINE_EVENTS_WS"] = "0";
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", tailscaleOwner: null });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token" });
   const base = `http://127.0.0.1:${server.port}`;
   let client: Awaited<ReturnType<typeof connection>> | undefined;
   try {
@@ -87,7 +87,7 @@ it("keeps SSE available when the server's transport rollback switch disables the
 
 it("keeps watch-device authority and closes its machine document when the device is revoked", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-events-watch-"));
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", tailscaleOwner: null });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token" });
   const base = `http://127.0.0.1:${server.port}`;
   const devices = server.context.services.devices;
   const paired = devices.pair(devices.startPairing().code, "Observer", "watch")!;
@@ -107,7 +107,7 @@ it("keeps watch-device authority and closes its machine document when the device
 
 it("gives another server's bridge no machine document, even when it asks for one", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-events-bridge-"));
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", bridgeToken: "test-bridge", tailscaleOwner: null });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", bridgeToken: "test-bridge" });
   const base = `http://127.0.0.1:${server.port}`;
   let client: Awaited<ReturnType<typeof connection>> | undefined;
   try {
@@ -121,7 +121,7 @@ it("gives another server's bridge no machine document, even when it asks for one
 
 it("tells a pairing to every machine-event socket but the asking browser's and one that came in through the open LAN, as SSE does", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-events-pairing-"));
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "" });
   const base = `http://127.0.0.1:${server.port}`;
   const guard = { "x-herdr-machine": "1", "content-type": "application/json" };
   const askingBrowser = `${STREAM_COOKIE_PREFIX}${"a".repeat(32)}=1`;
@@ -129,18 +129,18 @@ it("tells a pairing to every machine-event socket but the asking browser's and o
   try {
     const local = await connection(base, withHeaders({})); clients.push(local);
     const asking = await connection(base, withHeaders({ cookie: askingBrowser })); clients.push(asking);
-    const lan = await connection(base, withHeaders({ "x-forwarded-for": "192.168.0.20" })); clients.push(lan);
+    const lan = await connection(base, withHeaders({ host: "192.168.0.20" })); clients.push(lan);
     for (const client of clients) {
       client.socket.send(JSON.stringify({ type: "machine-events", enabled: true }));
       await client.wait((frame) => frame.type === "machine-event" && frame.event.type === "preferences");
     }
     const { code } = await (await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: guard })).json() as { code: string };
     const told = local.wait((frame) => frame.type === "machine-event" && frame.event.type === "device-paired");
-    const paired = await fetch(`${base}/api/devices/pair`, { method: "POST", headers: { ...guard, "x-forwarded-for": "192.168.0.30", cookie: askingBrowser }, body: JSON.stringify({ code, label: "Phone" }) });
+    const paired = await fetch(`${base}/api/devices/pair`, { method: "POST", headers: { ...guard, host: "192.168.0.30", cookie: askingBrowser }, body: JSON.stringify({ code, label: "Phone" }) });
     expect(paired.status).toBe(204);
     // the first device on an open install is enrolled, and told, once it signs in
     const device = paired.headers.get("set-cookie")!.split(";")[0]!;
-    expect((await fetch(`${base}/api/session`, { headers: { "x-forwarded-for": "192.168.0.30", cookie: device } })).status).toBe(200);
+    expect((await fetch(`${base}/api/session`, { headers: { host: "192.168.0.30", cookie: device } })).status).toBe(200);
     expect(await told).toMatchObject({ event: { type: "device-paired", label: "Phone" } });
     await asking.fence();
     expect(pairings(asking.frames)).toEqual([]);
@@ -151,7 +151,7 @@ it("tells a pairing to every machine-event socket but the asking browser's and o
 
 it("tells relay pairings waiting for approval to a driving machine-event socket, as SSE does", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-events-relay-pairings-"));
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", tailscaleOwner: null });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token" });
   const client = await connection(`http://127.0.0.1:${server.port}`);
   const waiting = (count: number) => (frame: ServerMessage) => frame.type === "machine-event" && frame.event.type === "relay-pairings" && frame.event.pairings.length === count;
   try {
@@ -172,7 +172,7 @@ it("tells relay pairings waiting for approval to a driving machine-event socket,
 
 it("tells a watch device's machine-event socket that no relay pairing waits for it, so a window that lost drive drops its prompts", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-events-relay-watch-"));
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", tailscaleOwner: null });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token" });
   const devices = server.context.services.devices;
   const paired = devices.pair(devices.startPairing().code, "Observer", "watch")!;
   const asked = server.context.services.relay.approvals.ask("New phone", "123456", Date.now() + 90_000);

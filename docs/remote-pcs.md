@@ -82,18 +82,6 @@ end-to-end encryption and the same device key, kept on this server in
 `Ovis on <this PC's name>`, with the access any paired device has. The PC itself is saved in
 `<stateDir>/relay-pcs.json`, apart from `machines.json`, so going back to an older release still starts.
 
-**PCs on your Tailscale**, in the dialog of an older Ovis, saved typing the code: it lists
-the other PCs of this PC's own Tailscale login whose Ovis already lets this PC in as you (served by
-`tailscale serve`, no token), and **Add PC** adds one through the relay in one tap. This PC reads
-`tailscale status`, asks only online, untagged peers of its own login that do not report iOS or
-Android (the first 32 of them in that list; type a code for one past that), asks the
-chosen PC for its code over Tailscale, and checks that the relay found the same PC (`server_id`)
-before it pairs; on a mismatch nothing is added. A PC whose relay is off shows **Turn the relay on
-on that PC first**. PCs of another login, tagged nodes and iOS or Android devices are never asked, and Tailscale
-alone never adds a PC to your account (`GET` and `POST /api/machines/tailnet`; the `POST` takes only
-an address the latest look found in the last 10 minutes, including a PC it left off the list because
-it was already added).
-
 Its workspaces then join the sidebar as an SSH PC's do. Nothing is installed on that PC: it runs
 its own Ovis, which updates itself, so it has no bridge controls; its update can still be started
 from here ([Updating PCs from here](#updating-pcs-from-here)). Its connection carries the PC's
@@ -191,10 +179,9 @@ server's bridge token, which asks for its own install by revision.
 
 | May | Who |
 |---|---|
-| Yes | a driving sign-in on this PC, its token, its Tailscale login |
+| Yes | a driving sign-in on this PC, its token |
 | Yes | a driving device paired with this install, directly or over the relay (the owner's phone, his other PCs) |
 | No | a visitor of an open install, with nothing paired |
-| No | a Portal visitor, whatever role Portal gives |
 | No | any device that only watches |
 
 The request must also come from this app's own page: the `X-Herdr-Update: 1` header, same origin,
@@ -305,7 +292,7 @@ The current server keeps one status-only WebSocket per remote PC without attachi
 | `PATCH /api/machines/:id` | Rename or change `enabled` |
 | `DELETE /api/machines/:id` | Forget the PC and remove its local private key |
 | `/api/machines/:id/{session,agents,pane/*,workspace/*}` | Allowlisted target API routes |
-| `GET/POST/DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/{stop,stop-all,install}` | That PC's move to herdr-core, for the owner only: this PC, the token, a Tailscale login, a paired or relay device that drives; never an open LAN visitor, a Portal visitor or a device that watches ([runtime-move.md](runtime-move.md#on-another-pc)); 409 `pc_update_required` from an Ovis too old for it |
+| `GET/POST/DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/{stop,stop-all,install}` | That PC's move to herdr-core, for the owner only: this PC, the token, a paired or relay device that drives; never an open LAN visitor or a device that watches ([runtime-move.md](runtime-move.md#on-another-pc)); 409 `pc_update_required` from an Ovis too old for it |
 | `POST /api/machines/runtime/move-all` | Starts every previewed PC's move at once, for the owner only (as above): 202 `{ started, refused, unknown }` |
 | `/ws?machine_id=…` | Immutable terminal destination |
 
@@ -320,8 +307,7 @@ herdr 0.9.3). Older bridge bundles keep waiting until updated, and observe conne
 
 When the connection server and remote bridge support receipt recovery, a returning browser can
 recover the exact outcome of a sent or discarded follow-up without typing it again. The connection
-server scopes the receipt identity to that server, PC, authenticated device (or Portal user or
-Tailscale login) and browser; watch-only connections cannot recover it. Receipts last at most ten
+server scopes the receipt identity to that server, PC, authenticated device and browser; watch-only connections cannot recover it. Receipts last at most ten
 minutes, with at most 1024 outcomes retained.
 A missing receipt or a restart of either server leaves the saved copy **Not confirmed**.
 

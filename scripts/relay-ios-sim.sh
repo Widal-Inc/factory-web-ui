@@ -172,7 +172,7 @@ const service = new RelayService({ stateDir, relay: process.env["RELAY_URL"]!, a
   socket.addEventListener("message", (message) => { if (typeof message.data === "string" && message.data.includes('"sync"')) synced.resolve(); });
   return socket;
 } });
-const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, relay: service });
+const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", relay: service });
 const base = `http://127.0.0.1:${app.port}`;
 const post = (path: string) => fetch(`${base}/api/relay${path}`, { method: "POST", headers: { origin: base, "x-herdr-update": "1" } });
 const devices = app.context.services.devices;

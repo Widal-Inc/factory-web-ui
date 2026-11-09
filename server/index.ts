@@ -1,4 +1,3 @@
-import type { TailnetPcsOptions } from "./tailnet-pcs.ts";
 import type { SshCandidatesOptions } from "./ssh-candidates.ts";
 import "./adopt-legacy-env.ts";
 import type { RelaySocket } from "../shared/relay-channel.ts";
@@ -19,8 +18,8 @@ import { PreferenceStore } from "./preferences.ts";
 import { readOmpHeldFilesSetting } from "./omp.ts";
 import { SeenStore } from "./seen.ts";
 import type { SeenFinish } from "../shared/seen.ts";
-import { TailnetIdentitySource } from "./tailscale.ts";
 import { SHELL_AGENTS, ShellAgentLocator } from "./shell-agent.ts";
+import { TailnetAddressSource } from "./tailscale.ts";
 import { AgentDetector, catalogLocator, defaultLoginProbe } from "./agent-catalog-detect.ts";
 import { InstalledLookup } from "./installed-lookup.ts";
 import { agentCatalogFor } from "./agent-catalog-routes.ts";
@@ -44,7 +43,6 @@ import { sweepSshDirs } from "./ssh.ts";
 import { OpenCodePromptState } from "./prompt.ts";
 import { connectUpdater, type UpdateService } from "./update-api.ts";
 import { HerdrUpdater } from "./herdr-update.ts";
-import { PortalService } from "./portal.ts";
 import { RelayService } from "./relay/service.ts";
 import { AccountMailbox, accountServiceUrl, passAccountService } from "./account/mailbox.ts";
 import { AccountHolds } from "./account/holds.ts";
@@ -157,12 +155,6 @@ export function createServer(
      * Only the real entrypoint passes one; a test passes a temp dir.
      */
     siblingStateDir?: string | null;
-    /** the PC's own Tailscale login, for the identity check; tests set it, otherwise `tailscale status` says */
-    tailscaleOwner?: string | null;
-    /** the operator declares `tailscale serve` as this install's only ingress; OVIS_TAILSCALE_SERVE_ONLY=1 says the same */
-    tailscaleServeOnly?: boolean;
-    /** the tailnet identity behind the access check; unset, the tailscale CLI says. Tests pass one with their own status reader. */
-    tailnet?: TailnetIdentitySource;
     /** Native Codex store; defaults to CODEX_HOME. Tests use an isolated store. */
     codexHome?: string;
     grokHome?: string;
@@ -187,8 +179,6 @@ export function createServer(
     herdrCoreInstaller?: HcInstaller;
     /** whether the launcher took this bridge as its own after its startup check (server/supervisor.ts); unset, nothing is told */
     launchAccepted?: () => boolean;
-    /** a public address through Portal (server/portal.ts); unset, the app offers none. Tests pass one that runs a stand-in portal. */
-    portal?: PortalService;
     /** Relay opt-in and identity persist in stateDir; tests can supply a local physical transport. */
     relay?: RelayService;
     /** Where this PC collects account records left for it (server/account/mailbox.ts); tests pass the in-memory service. */
@@ -212,8 +202,6 @@ export function createServer(
     relayPcDirectSocket?: (url: string) => RelaySocket;
     /** how often another PC's own update is looked at while it runs; tests shorten it */
     pcUpdateTimings?: { pollMs?: number; startMs?: number; checkMs?: number; offerMs?: number };
-    /** how other PCs on this PC's Tailscale are found (server/tailnet-pcs.ts); tests give their own */
-    tailnetPcs?: TailnetPcsOptions;
     /** where Add a connection → SSH reads its list from; tests point it at a fixture */
     sshCandidates?: SshCandidatesOptions;
     /** a bridge this app starts on a PC (server/remote-entry.ts): its token is the credential its connection server holds, and no browser reaches it, so its snapshots go whole (#2160) */
@@ -281,7 +269,6 @@ export function createServer(
   const ipv6Loopback = (options.ipv6Loopback ?? process.env["OVIS_IPV6_LOOPBACK"] === "1") && hostname === "127.0.0.1";
   /** Empty token = gate disabled; every route then behaves exactly as it did before auth existed. */
   const token = options.token ?? process.env["OVIS_TOKEN"] ?? "";
-  /** paired devices (server/devices.ts) and the PC's Tailscale login: the two ways in besides the token and this PC itself */
   // resolved once: a merge can give the old dir files of its own, after which resolving again could name the other dir
   const stateDir = options.stateDir ?? defaultStateDir();
   const ovisRelay = options.relay ?? new RelayService({ stateDir, accountService: passAccountService(options.accountService?.url), ...(options.accountService?.fetch ? { accountFetch: options.accountService.fetch } : {}) });
@@ -343,17 +330,6 @@ export function createServer(
     }
   });
   const voice = options.voice ?? new VoiceService({ stateDir, env: process.env, fetch });
-  /** a login named here is taken as it is: a tagged node has none of its own to read (OVIS_TAILSCALE_OWNER) */
-  const namedOwner = options.tailscaleOwner !== undefined ? options.tailscaleOwner : process.env["OVIS_TAILSCALE_OWNER"]?.trim() || undefined;
-  const tailnet = options.tailnet ?? new TailnetIdentitySource();
-  const identityOf = async (grantPath: boolean, host: string | null, loginPath = false) => {
-    if (namedOwner !== undefined) return { ...(grantPath ? await tailnet.freshIdentity(host) : { soleLogin: null, dnsName: null, tailnetIp: null }), owner: namedOwner, tagged: false };
-    return grantPath ? tailnet.freshIdentity(host) : loginPath ? tailnet.loginIdentity() : tailnet.identity();
-  };
-  const serveOnly = options.tailscaleServeOnly ?? process.env["OVIS_TAILSCALE_SERVE_ONLY"] === "1";
-  /** what lets Portal open an address: this server's own values, never a request's */
-  const portalGuards = () => ({ tokenSet: token !== "", serveOnly });
-
   const shellAgents = options.shellAgents ?? new ShellAgentLocator({ probe: null });
   const agentDetector = options.agentDetector ?? new AgentDetector({ locate: catalogLocator({ probe: null }) });
   // GET /api/agents: on a PATH a pane's shell starts it from, read again once after an install put it
@@ -410,20 +386,8 @@ export function createServer(
   }
   // started after createCore's Node probe (server/pty/sidecar.ts), which can hold the thread up to 3 s: that wait
   // would count against the read's own 2.5 s limit, and a read cut short leaves the owner unknown for 5 minutes
-  identityOf(false, null);
   const bridgeToken = options.bridgeToken ?? randomBytes(32).toString("hex");
   const piReader = new PiSessionReader({ deadlineMs: options.piSessionDeadlineMs });
-
-  type PortalStartup = { ok: true } | { ok: false; error: unknown };
-  let settlePortalStartup!: (result: PortalStartup) => void;
-  let portalStartupResult: PortalStartup | undefined;
-  const portalStartup = new Promise<PortalStartup>((resolve) => {
-    settlePortalStartup = (result) => {
-      if (portalStartupResult !== undefined) return;
-      portalStartupResult = result;
-      resolve(result);
-    };
-  });
 
   const envPort = process.env["PORT"];
   const clientConnectionLog = new ClientConnectionLog();
@@ -483,8 +447,7 @@ export function createServer(
       switchRuntime: () => { const answer = options.runtimeService!.request("herdr-core"); return answer.ok ? null : answer.message; },
       ...(options.herdrCoreInstaller ? { installer: options.herdrCoreInstaller } : {}),
     }) : null,
-    options, relay: ovisRelay, relayReceiptIds: new RelayReceiptIds(), hostname, token, bridgeToken, bootId, devices, accountMailbox, accountIntroductions: new AccountIntroductions(Date.now, join(stateDir, "account-introductions.json")), accountHolds, preferences, herdrSidebar, identityOf, serveOnly, portalGuards, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, usageAccounts, systemSampler, fontsDir: join(stateDir, "fonts"), voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog, portalStartup,
-    get portalStartupResult() { return portalStartupResult; },
+    options, relay: ovisRelay, relayReceiptIds: new RelayReceiptIds(), hostname, token, bridgeToken, bootId, devices, accountMailbox, accountIntroductions: new AccountIntroductions(Date.now, join(stateDir, "account-introductions.json")), accountHolds, preferences, herdrSidebar, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, usageAccounts, systemSampler, fontsDir: join(stateDir, "fonts"), voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog,
   };
   ovisRelay.resume(services, server.port ?? DEFAULT_PORT);
   accountMailbox.start();
@@ -503,7 +466,7 @@ export function createServer(
         const listener = Bun.serve<SocketData>({
           hostname: address, port, maxRequestBodySize: BUN_BODY_CEILING, tls: { cert: certificate.cert, key: certificate.key },
           fetch: (request, bunServer) => privateLanPeer(bunServer.requestIP(request)?.address)
-            // the port is the main listener's: Portal and /api/access route plain http to it, never to this TLS one
+            // the port is the main listener's: /api/access routes plain http to it, never to this TLS one
             ? handleRequest(request, { ...socketContext(bunServer), get port() { return server.port; }, lanHttps: true })
             : new Response("forbidden", { status: 403 }),
           websocket: core.websocket,
@@ -516,23 +479,6 @@ export function createServer(
       for (const listener of lanListeners.splice(0)) listener.stop(true);
       console.error(`LAN HTTPS is off: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }
-
-  if (options.portal) {
-    // a Portal that ends on its own is started again only while this server's own token and serve-only allow it
-    options.portal.authorize(portalGuards);
-    let resume: Promise<void>;
-    try {
-      resume = options.portal.resume({ port: server.port ?? DEFAULT_PORT, ...portalGuards() });
-    } catch (error) {
-      resume = Promise.reject(error);
-    }
-    void resume.then(
-      () => settlePortalStartup({ ok: true }),
-      (error: unknown) => settlePortalStartup({ ok: false, error }),
-    );
-  } else {
-    settlePortalStartup({ ok: true });
   }
 
   // the app's SSH tunnel reaches a bridge on the PC's 127.0.0.1 only (#1960)
@@ -567,11 +513,9 @@ export function createServer(
       services.runtimeMove?.stop();
       accountMailbox.stop();
       void ovisRelay.shutdown();
-      settlePortalStartup({ ok: false, error: new Error("Server stopped before Portal startup cleanup completed") });
       core.stop(() => {
         clearInterval(draftTimer);
         openCodeState.clear();
-        void options.portal?.shutdown();
         registration?.close();
         relay?.stop();
         closeCodexDaemonSources();
@@ -635,10 +579,9 @@ if (import.meta.main) {
   const updates = connectUpdater();
   const version = (JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string }).version;
   const telemetry = new Telemetry({ stateDir, version, env: process.env, fetch, previousVersion: () => updates.installed().previous_version, runtime: herdrCore === null ? "herdr" : "herdr-core" });
-  const portal = new PortalService({ stateDir });
   // the direct carrier on this PC's private and Tailscale addresses, which the phone apps' OvisDirect plugin opens (docs/relay.md)
-  const tailnet = new TailnetIdentitySource();
-  const relay = new RelayService({ stateDir, direct: { tailnetIp: () => tailnet.identity().tailnetIp }, accountService: passAccountService() });
+  const tailnet = new TailnetAddressSource();
+  const relay = new RelayService({ stateDir, direct: { tailnetIp: () => tailnet.ip() }, accountService: passAccountService() });
   const lanConfig = lanHttpsConfig(process.env);
   if (lanConfig !== null && "error" in lanConfig) console.error(`LAN HTTPS is off: ${lanConfig.error}.`);
   let instance: ReturnType<typeof createServer>;
@@ -646,7 +589,7 @@ if (import.meta.main) {
     instance = createServer({ updates, herdrUpdate: new HerdrUpdater(), herdrCoreFacts, herdrCoreInstaller: herdrCoreInstaller(),
       launchAccepted: () => launchAccepted,
       runtimeService: runtimeService({ stateDir, port: Number(startEnv["PORT"] || DEFAULT_PORT), serving: choice.runtime, source: choice.source, ...(fallback ? { fallback } : {}), env: startEnv, core: herdrCoreFacts, accepted: () => launchAccepted, restart: (id) => process.send?.({ type: "runtime-restart", id }) }),
-      portal, relay, tailnet, telemetry, registerBridge: true, herdrProfiles: readHerdrProfiles, shellAgents: new ShellAgentLocator(), agentDetector: new AgentDetector({ locate: catalogLocator({ probe: defaultLoginProbe() }) }), stateDir, siblingStateDir: siblingStateDir(stateDir),
+      relay, telemetry, registerBridge: true, herdrProfiles: readHerdrProfiles, shellAgents: new ShellAgentLocator(), agentDetector: new AgentDetector({ locate: catalogLocator({ probe: defaultLoginProbe() }) }), stateDir, siblingStateDir: siblingStateDir(stateDir),
       desktopActivity: process.env["OVIS_DESKTOP_APP"] === "1",
       ...(lanConfig !== null && !("error" in lanConfig) ? { lanHttps: lanConfig } : {}) });
     instance.warmAgentCatalog();
@@ -672,10 +615,9 @@ if (import.meta.main) {
     stopping = true;
     telemetry.stop();
     instance.stop();
-    // Attach sidecars need ~1.2s to release herdr's exclusive client slot; Portal unregisters from
-    // its relay, and the pipes it logs to must outlive it
+    // Attach sidecars need ~1.2s to release herdr's exclusive client slot
     // herdr-core's adapter answers what the stopping server still asks meanwhile
-    void Promise.all([Bun.sleep(2000), portal.shutdown(), relay.shutdown()]).then(() => {
+    void Promise.all([Bun.sleep(2000), relay.shutdown()]).then(() => {
       herdrCore?.stop();
       process.exit(0);
     });

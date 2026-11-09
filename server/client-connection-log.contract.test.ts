@@ -14,7 +14,7 @@ it("gates bounded client diagnostics by auth and same origin, permits watch repo
   devices.match(paired.token); // Confirm only this fixture's first pairing before the server loads it.
   const lines: string[] = [];
   const warn = spyOn(console, "warn").mockImplementation((line) => { lines.push(String(line)); });
-  const app = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-owner-token", stateDir, machines: false, registerBridge: false, herdrProfiles: async () => [], tailscaleOwner: null });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", token: "fixture-owner-token", stateDir, machines: false, registerBridge: false, herdrProfiles: async () => [] });
   const base = `http://127.0.0.1:${app.port}`;
   const trace = { client_id: "00000000-0000-4000-8000-000000000001", target: "local", events: [{ seq: 1, at: Date.now(), connection: 1, kind: "close", socket_state: 3, visibility: "visible", online: true, code: 1005 }] };
   const owner = { authorization: "Bearer fixture-owner-token" };

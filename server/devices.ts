@@ -251,7 +251,7 @@ export function mergeAccountTombstones(active: string, sibling: string): string 
 
 export class DeviceStore {
   private devices: StoredDevice[] = [];
-  /** when the first device was paired: from then on, only this PC, the owner's login, a device or the token get in */
+  /** when the first device was paired: from then on, only this PC, a device or the token get in */
   private gateClosedAt: string | null = null;
   /**
    * `remote`: started through the relay, so it never lets a removed key back in; `startedBy`: the account
@@ -304,8 +304,8 @@ export class DeviceStore {
       this.devices = read.devices;
     } else if (read.kind === "bad") {
       // A damaged registry is not a first installation. Keep it intact for recovery and
-      // let the existing local/token/Tailscale routes provide access to the owner.
-      this.error = `Cannot read ${this.path}. Restore a valid devices.json or fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
+      // let the existing local/token routes provide access to the owner.
+      this.error = `Cannot read ${this.path}. Restore a valid devices.json or fix its permissions, then restart the server. External access without a token remains blocked.`;
       console.error(this.error);
     }
     if (blocked !== null && this.error === null) {
@@ -1012,8 +1012,8 @@ export async function handleDeviceRequest(request: Request, pathname: string, st
     if (request.method !== "GET") return badRequest("method_not_allowed", "use GET");
     const drive = access.level === "full" && access.role === "drive";
     // how the other devices are connected, and pinging them all, is for a caller that may manage them:
-    // not a watching device, nor a Portal visitor, who see the list as before
-    const manager = drive && access.via !== "portal";
+    // not a watching device, who sees the list as before
+    const manager = drive;
     // `?check=1` ("Check now"): every session's round trip is measured before the answer, within CHECK_MS
     if (manager && connections && new URL(request.url).searchParams.get("check") === "1") await connections.check(CHECK_MS);
     const live = manager ? connections?.list() ?? new Map<string, DeviceConnection>() : new Map<string, DeviceConnection>();

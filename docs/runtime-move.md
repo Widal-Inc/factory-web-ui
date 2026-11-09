@@ -116,11 +116,9 @@ every pane's folder and conversation:
 |---|---|
 | The owner on this PC itself | Yes |
 | The owner with the app's token | Yes |
-| The owner's Tailscale login | Yes |
 | A device the owner paired that drives | Yes |
 | A device paired through the relay that drives (the owner's phone, another of the owner's PCs) | Yes |
 | An open LAN visitor (nothing paired, no token) | No |
-| A Portal visitor, even one given drive | No |
 | A device that only watches, paired directly or through the relay | No |
 
 Anyone else is answered 403. A change (anything but the plan's `GET`) also needs `x-herdr-update: 1`

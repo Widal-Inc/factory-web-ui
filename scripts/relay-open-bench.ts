@@ -32,7 +32,7 @@ async function serve(stateDir: string): Promise<void> {
     stateDir, ...(process.env["BENCH_RELAY"] ? { relay: process.env["BENCH_RELAY"] } : {}),
     ...(local ? { relay: "wss://relay.bench", connect: (url: string) => { const target = new URL(url); return new WebSocket(`${local}${target.pathname}${target.search}`); } } : {}),
   });
-  const server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir, tailscaleOwner: null, usage: new UsageService(undefined, []), relay });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir, usage: new UsageService(undefined, []), relay });
   console.log(`BENCH-PORT ${server.port}`);
   process.on("SIGTERM", () => { server.stop(); process.exit(0); });
 }

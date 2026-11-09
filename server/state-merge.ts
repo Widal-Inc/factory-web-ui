@@ -263,7 +263,7 @@ function mergeDevices(active: string, sibling: string, base: MergeRecord | null,
   const other = readDeviceRegistry(otherPath);
   const unreadable = own.kind === "bad" ? ownPath : other.kind === "bad" ? otherPath : null;
   if (unreadable !== null) {
-    return { ids: null, changed: 0, blocked: `Cannot read ${unreadable}, so the paired devices of ${active} and ${sibling} cannot be merged. Restore a valid devices.json there or fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.` };
+    return { ids: null, changed: 0, blocked: `Cannot read ${unreadable}, so the paired devices of ${active} and ${sibling} cannot be merged. Restore a valid devices.json there or fix its permissions, then restart the server. External access without a token remains blocked.` };
   }
   // an incomplete registry (closeGateOnDisk) adds its devices and its closed gate, and revokes nothing
   const ownIncomplete = own.kind === "ok" && own.placeholder || existsSync(join(active, INCOMPLETE));
@@ -274,7 +274,7 @@ function mergeDevices(active: string, sibling: string, base: MergeRecord | null,
   if (mine === null && theirs === null) {
     // both gone after a merge that knew paired devices or a closed gate: this is no first installation
     if (base !== null && (base.devices.length > 0 || base.gated === true || (base.pending?.ids.length ?? 0) > 0)) {
-      return { ids: null, changed: 0, blocked: `Neither ${ownPath} nor ${otherPath} exists, although the last merge of these dirs knew ${base.devices.length} paired device(s)${base.gated ? " and a closed gate" : ""}. Restore devices.json from ${join(active, BACKUPS)} or ${join(sibling, BACKUPS)}, then restart the server. External access without a token or trusted Tailscale login remains blocked.` };
+      return { ids: null, changed: 0, blocked: `Neither ${ownPath} nor ${otherPath} exists, although the last merge of these dirs knew ${base.devices.length} paired device(s)${base.gated ? " and a closed gate" : ""}. Restore devices.json from ${join(active, BACKUPS)} or ${join(sibling, BACKUPS)}, then restart the server. External access without a token remains blocked.` };
     }
     return { blocked: null, ids: [], changed: 0 };
   }
@@ -285,7 +285,7 @@ function mergeDevices(active: string, sibling: string, base: MergeRecord | null,
   const added = merged.devices.filter((device) => !mine?.devices.some((held) => held.id === device.id)).length;
   const needOwn = text(onDisk(own)) !== text(merged);
   const needOther = text(onDisk(other)) !== text(merged);
-  const ownFailed = (error: unknown) => ({ ids: null, changed: 0, blocked: `Cannot write the paired devices of ${sibling} into ${ownPath} (${error instanceof Error ? error.message : String(error)}). Fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.` });
+  const ownFailed = (error: unknown) => ({ ids: null, changed: 0, blocked: `Cannot write the paired devices of ${sibling} into ${ownPath} (${error instanceof Error ? error.message : String(error)}). Fix its permissions, then restart the server. External access without a token remains blocked.` });
   // the new bytes first, each in a file of its own: publishing one renames it into place (MergeRecord.pending)
   let ownTemp: string | null = null;
   let otherTemp: string | null = null;
@@ -313,7 +313,7 @@ function mergeDevices(active: string, sibling: string, base: MergeRecord | null,
   }
   try { markIncomplete(active, !complete); }
   catch (error) {
-    return { ids: null, changed: 0, blocked: `Cannot mark whether ${ownPath} is complete (${error instanceof Error ? error.message : String(error)}). Fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.` };
+    return { ids: null, changed: 0, blocked: `Cannot mark whether ${ownPath} is complete (${error instanceof Error ? error.message : String(error)}). Fix its permissions, then restart the server. External access without a token remains blocked.` };
   }
   if (needOther) {
     try {
@@ -332,7 +332,7 @@ function mergeDevices(active: string, sibling: string, base: MergeRecord | null,
       // the base of the next merge is what the other dir still holds of what both held: the devices
       // both hold now, and those of the last base it still holds although this dir revoked them
       const known = new Set([...merged.devices.map((device) => device.id), ...bases.other ?? []]);
-      const blocked = risk === null ? null : `${reason}. An Ovis release before 0.4.16 starting on ${sibling} would ${risk}. Fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
+      const blocked = risk === null ? null : `${reason}. An Ovis release before 0.4.16 starting on ${sibling} would ${risk}. Fix its permissions, then restart the server. External access without a token remains blocked.`;
       return { blocked, ids: (theirs?.devices ?? []).map((device) => device.id).filter((id) => known.has(id)), changed: added, gated: merged.gate_closed_at !== null };
     }
   }
@@ -541,7 +541,7 @@ export function mergeSiblingState(active: string, sibling: string, now = new Dat
     blocked = merge(active, sibling, now, stamp);
   } catch (error) {
     // whatever went wrong, the server still starts, gated: a start that failed would fall back to an older release
-    blocked = `Cannot merge the state of ${sibling} into ${active} (${error instanceof Error ? error.message : String(error)}). External access without a token or trusted Tailscale login remains blocked; restart the server once it is fixed.`;
+    blocked = `Cannot merge the state of ${sibling} into ${active} (${error instanceof Error ? error.message : String(error)}). External access without a token remains blocked; restart the server once it is fixed.`;
   }
   // the device store says why (devices.ts)
   if (blocked !== null) closeGateOnDisk(active, stamp, now);
@@ -555,7 +555,7 @@ function merge(active: string, sibling: string, now: Date, stamp: string): strin
     base = readRecord([active, sibling], pair);
   } catch (error) {
     // without the last merge a revoked device could come back: nothing is merged, and the store stays gated
-    return `${error instanceof Error ? error.message : String(error)}, so the paired devices of ${active} and ${sibling} cannot be merged. Restore or remove it, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
+    return `${error instanceof Error ? error.message : String(error)}, so the paired devices of ${active} and ${sibling} cannot be merged. Restore or remove it, then restart the server. External access without a token remains blocked.`;
   }
   let intent: MergeRecord | null = null;
   const intend: Intent = (ids, sides, gated) => {
@@ -565,7 +565,7 @@ function merge(active: string, sibling: string, now: Date, stamp: string): strin
     try { writePrivateState(join(active, RECORD), intent); }
     catch (error) {
       intent = null;
-      return `Cannot write ${join(active, RECORD)} before publishing the merged paired devices (${error instanceof Error ? error.message : String(error)}). Fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
+      return `Cannot write ${join(active, RECORD)} before publishing the merged paired devices (${error instanceof Error ? error.message : String(error)}). Fix its permissions, then restart the server. External access without a token remains blocked.`;
     }
     // the newer of the two records is read: the active dir's copy is enough
     try { writePrivateState(join(sibling, RECORD), intent); } catch { /* reported with the record that follows */ }
@@ -603,7 +603,7 @@ function merge(active: string, sibling: string, now: Date, stamp: string): strin
       console.error(reason);
       // without it the next merge compares with an older one, and would bring back a device revoked
       // until then: this run changes no device, so it cannot revoke one
-      if (dir === active) blocked ??= `${reason}. Fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
+      if (dir === active) blocked ??= `${reason}. Fix its permissions, then restart the server. External access without a token remains blocked.`;
     }
   }
   // once the newest record names no pending publication, the prepared files left by an unfinished one go

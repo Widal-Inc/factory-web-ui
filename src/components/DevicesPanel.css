@@ -128,11 +128,6 @@
   color: var(--accent);
 }
 
-/* a wallet address or an email is one long word */
-.devices-portal {
-  overflow-wrap: anywhere;
-}
-
 /* on the phone itself the code is what the other device types: as large as the screen allows, read at a glance */
 .devices-pairing-phone {
   flex-direction: column;

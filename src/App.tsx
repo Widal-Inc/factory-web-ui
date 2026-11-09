@@ -2,10 +2,9 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, us
 import { Bell, ChevronDown, CircleHelp, Ellipsis, FolderOpen, Link, Menu, MessageCircle, MessageSquare, PanelLeft, Search, SquareTerminal, Target, X } from "lucide-react";
 
 import type { HerdrPane, PaneDirection } from "../shared/protocol.ts";
-import { authenticate, createTab, movePaneBeside, moveTabToWorkspace, paneSessionKey, shareSeen, swapPaneWith } from "./lib/api.ts";
+import { authenticate, createTab, movePaneBeside, moveTabToWorkspace, paneSessionKey, shareSeen, signOut, swapPaneWith } from "./lib/api.ts";
 import { layoutActions } from "./lib/layoutActions.ts";
 import { displayPaneTitle, storedBackgroundFolded, storedWorktreeCollapsed, tabPaneTitle } from "./components/Sidebar.tsx";
-import { endSignIn } from "./lib/signOut.ts";
 import { PaneCanvas } from "./components/PaneCanvas.tsx";
 import { MachineSessionsProvider } from "./lib/machineSessionContext.tsx";
 import { PaneTerminal } from "./components/PaneTerminal.tsx";
@@ -260,7 +259,7 @@ export function App() {
   // labels from first messages (#2019): keyed once their pane is seen, gone with their pane, all gone with the setting off
   const tabLabelWatching = auth?.role === "watch";
   // a file is edited only from a browser that drives this PC, as the server checks too (server/file-edit.ts)
-  const fileEditable = auth?.role === "drive" && auth.via !== "portal" && auth.via !== "open";
+  const fileEditable = auth?.role === "drive" && auth.via !== "open";
   useEffect(() => {
     setTabLabelLearning(settings.autoTabNames, tabLabelWatching);
     const settle = (): void => settleTabLabels(machines);
@@ -334,17 +333,15 @@ export function App() {
     await removePushSubscription().catch(() => undefined);
     setPushOn(false);
     resetPushHealth();
-    let reload = false;
     try {
-      ({ reload } = await endSignIn(auth?.via));
+      await signOut();
     } catch {
       throw new Error(t("Could not sign out. Try again."));
     } finally {
       // The response may have been lost after the cookie was cleared.
-      if (!reload) await loadHealth();
+      await loadHealth();
     }
-    if (reload) window.location.reload();
-  }, [auth?.via, loadHealth, t]);
+  }, [loadHealth, t]);
 
   const { selectedMachineRef, selectTarget, selectTargetRef, picks } = useSelectTarget({ selectedMachineId, setConnected, setConnectedBefore, setSelectedMachineId, setSelectedPaneId, setAutoSelected, setDrawerOpen, setOutputStopped, setNotificationViewTarget, setTerminalPeek, pendingLink, pendingFile, setLinkLanded, selectionHint, selectionSince, rosterSeq, snapshot, selectedMachine, selectedPaneId, setHeaderNote, linkTick, movingPanes, onPick: setupGuide.stepAside });
 
@@ -959,7 +956,7 @@ export function App() {
                   {sessionLines.goal !== null && <span>{sessionLines.goal}</span>}
                 </span>}
                 {/* how this device reaches Ovis, said here instead of beside the chip */}
-                <ConnectionRouteMark portal={auth?.via === "portal"} ingress={security.state === "known" ? security.summary.observed_ingress : null} />
+                <ConnectionRouteMark ingress={security.state === "known" ? security.summary.observed_ingress : null} />
               </div>
             ) : undefined}
             items={moreItems}

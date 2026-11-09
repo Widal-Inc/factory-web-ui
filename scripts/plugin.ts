@@ -39,7 +39,7 @@ import { link as linkPc, plainLabel } from "./plugin-link.ts";
 import { activePluginScript } from "./plugin-runtime.ts";
 import { accountServiceOrigin, DEFAULT_ACCOUNT_SERVICE } from "../server/static.ts";
 import { herdrStateDir } from "./plugin-state.ts";
-import { HTTPS_PORT_VARIABLE, HTTPS_PORTS, httpsPorts, parseTailscale, parseTailscaleIp, parseTailscaleOwner, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
+import { HTTPS_PORT_VARIABLE, HTTPS_PORTS, httpsPorts, parseTailscale, parseTailscaleIp, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
 import { descendantProcesses, windowsArgv, windowsProcessTable } from "../server/windows-processes.ts";
 
 /**
@@ -974,14 +974,12 @@ async function phone(): Promise<number> {
   }
   const httpsPort = new URL(url).port || "443";
   if (published) say(`Tailscale now serves ${url} → http://127.0.0.1:${port}, for your tailnet only. To undo: tailscale serve --https=${httpsPort} off`);
-  const owner = parseTailscaleOwner(output?.status ?? null);
   const ip = parseTailscaleIp(output?.status ?? null);
   say("");
   say(`On your phone: ${link(url)}`);
   // the name, not the IP, is what the HTTPS certificate is for: https://100.x.y.z would warn
   if (ip !== null) say(`Tailscale IP of this PC: ${ip}. Open the name above, not the IP: the HTTPS certificate is for the name.`);
-  say(`Scan this with a phone signed in to Tailscale${owner === null ? "" : ` as ${owner}`}; that login gets in without a code (with OVIS_TOKEN set, after entering the token once).`);
-  say("Anyone else on your tailnet needs a pairing code: Settings → Devices, or the pair command.");
+  say("Scan this with a phone signed in to Tailscale. It needs the access token (OVIS_TOKEN) or a pairing code the first time: Settings → Devices, or the pair command.");
   say(qr(url));
   return 0;
 }

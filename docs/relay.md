@@ -238,7 +238,7 @@ sends 32 fresh random bytes, and the phone signs `ovis-relay-auth/1`, those byte
 `server_id` with its key (`matchRelay` in [`server/devices.ts`](../server/devices.ts)). A signature
 the relay saw is therefore no use later, or with another PC.
 
-**What doesn't count through the relay.** The token, device cookies, a Tailscale login and being
+**What doesn't count through the relay.** The token, device cookies and being
 "this computer": only the phone's key does. A request through the relay keeps only a short list of
 headers ([below](#requests-through-the-mux)), never `Cookie`, `Authorization`, `Host`, `Origin` or
 forwarding headers, and signing in with the token answers 403 `device_key_required`. A phone on the
@@ -340,10 +340,6 @@ and anyone who can forward a port to it. On a PC that others log in to, set `OVI
   makes a new one. That includes an identity made by a prerelease build, from before the PC proved
   its key to the relay: reset it, then scan a new QR code on each phone. The identity lives in `relay/identity.json` under `OVIS_STATE_DIR`, readable by
   your user only.
-
-**Serve-only installs.** `OVIS_TAILSCALE_SERVE_ONLY=1` says `tailscale serve` is the only way into
-the PC. The relay would be another, so it can't be turned on there, no phone is admitted through
-it, and the identity reset is refused.
 
 ## How a connection is made
 

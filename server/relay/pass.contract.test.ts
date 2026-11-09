@@ -111,7 +111,7 @@ async function fixture(mode: "grace" | "enforce" = "enforce", extra: Partial<Rel
   };
   const options = { stateDir, relay: origin, regionalRelays: [], connect, accountService: "https://account.test" as string | Error, accountFetch, ovisRelays: [origin], pairCodeRelay: origin, ...extra };
   let service = new RelayService(options);
-  let app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, sidecar: false, relay: service });
+  let app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", sidecar: false, relay: service });
   cleanup.push(async () => { await service.shutdown(); app.stop(); });
   const base = () => `http://127.0.0.1:${app.port}`;
   return {
@@ -133,7 +133,7 @@ async function fixture(mode: "grace" | "enforce" = "enforce", extra: Partial<Rel
       synced = deferred();
       refused = deferred();
       service = new RelayService({ ...options, ...changes });
-      app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, sidecar: false, relay: service });
+      app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", sidecar: false, relay: service });
     },
   };
 }

@@ -266,7 +266,7 @@ describe("POST /api/agent-catalog/install and /sign-in", () => {
       const state = join(root, "state");
       mkdirSync(state);
       writeFileSync(join(state, "devices.json"), JSON.stringify({ gate_closed_at: new Date().toISOString(), devices: [{ id: "0123456789abcdef", label: "Watch fixture", role: "watch", token_hash: createHash("sha256").update(WATCH_TOKEN).digest("hex"), created_at: new Date().toISOString(), last_seen_at: null }] }), { mode: 0o600 });
-      server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "install-token", bridgeToken: BRIDGE_TOKEN, machines: false, sidecar: false, tailscaleOwner: null, agentDetector: nowhere });
+      server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "install-token", bridgeToken: BRIDGE_TOKEN, machines: false, sidecar: false, agentDetector: nowhere });
     });
     afterAll(() => { server.stop(); rmSync(root, { recursive: true, force: true }); });
 

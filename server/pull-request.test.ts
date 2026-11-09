@@ -192,7 +192,7 @@ describe("the /api/workspace/pr routes", () => {
     const watchToken = store.pair(store.startPairing().code, "Watch", "watch")!.token;
     expect(store.match(watchToken)).not.toBeNull();
     watchCookie = `ovis_device=${watchToken}`;
-    server = createServer({ port: 0, stateDir, token: "test-pull-request", tailscaleOwner: null, machines: false });
+    server = createServer({ port: 0, stateDir, token: "test-pull-request", machines: false });
     base = `http://127.0.0.1:${server.port}`;
   });
   afterAll(() => { server.stop(); rmSync(stateDir, { recursive: true, force: true }); });

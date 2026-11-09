@@ -12,7 +12,7 @@ const TABS = 8;
 const stateDir = mkdtempSync(join(tmpdir(), "ovis-machine-browser-"));
 const previous = process.env["OVIS_MACHINE_EVENTS_WS"];
 delete process.env["OVIS_MACHINE_EVENTS_WS"];
-const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, sidecar: false });
+const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", sidecar: false });
 const base = `http://127.0.0.1:${server.port}`;
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {

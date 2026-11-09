@@ -62,7 +62,6 @@
   "scripts/chat-scroll-padding-regression.ts": 18,
   "scripts/file-preview-text-browser-qa.ts": 18,
   "scripts/phone-split-grid-demo-regression.ts": 18,
-  "scripts/portal-regression.ts": 16,
   "scripts/gjc-status-browser-regression.ts": 16,
   "scripts/pwa-update-browser-qa.ts": 16,
   "scripts/pane-input-focus-demo-regression.ts": 15,

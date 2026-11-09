@@ -40,12 +40,11 @@ const platform = (): NodeJS.Platform => textSaveHooks.platform ?? process.platfo
 
 /**
  * Who may read a file to edit it and save it: a device that drives this PC, never a watching one, a
- * Portal visitor (even one given drive) or a window of an open LAN install, which signed in as
- * nobody. The connection server reaching this PC with its bridge token (an SSH PC) has checked its
+ * window of an open LAN install, which signed in as nobody. The connection server reaching this PC with its bridge token (an SSH PC) has checked its
  * own caller already; that token opens only this PC's own route, never a PC behind it.
  */
 export function textEditAllowed(access: Access, bridgeAuthorized: boolean, proxied: boolean): boolean {
-  if (access.level === "full") return access.role === "drive" && access.via !== "portal" && access.via !== "open";
+  if (access.level === "full") return access.role === "drive" && access.via !== "open";
   return bridgeAuthorized && !proxied;
 }
 

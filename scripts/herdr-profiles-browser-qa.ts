@@ -17,7 +17,7 @@ const workspace = await workspaceCreate({ label: "ovis-test-profile-inheritance"
 // Discovery must not connect. Explicit setup uses a closed loopback port, never a user’s machine.
 const profile: HerdrMachineProfile = { id: "browser-fixture", label: "Build machine", enabled: true, target: { destination: "127.0.0.1", port: 1, session: "project-agents" } };
 let profiles = [profile];
-const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, herdrProfiles: async () => profiles });
+const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", herdrProfiles: async () => profiles });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? chromium.executablePath(), headless: true, args: ["--no-sandbox"] });
 try {
   for (const phone of [false, true]) {

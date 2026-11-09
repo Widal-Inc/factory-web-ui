@@ -24,7 +24,7 @@ function useDirectCarrier(relay: boolean): boolean {
  * lists shares, so it sits with the chip, not on a PC. Tailscale and LAN are names, the same in
  * every language. Nothing in the phone app's demo, which reaches no PC.
  */
-export function ConnectionRouteMark({ portal, ingress }: { portal: boolean; ingress: ObservedIngress | null }) {
+export function ConnectionRouteMark({ ingress }: { ingress: ObservedIngress | null }) {
   const t = useT();
   // the server's word on this page's requests holds through a failed health read, which clears the
   // facts it brought: a missing answer is no evidence of another route
@@ -32,13 +32,12 @@ export function ConnectionRouteMark({ portal, ingress }: { portal: boolean; ingr
   if (ingress !== null) known.current = ingress;
   const relay = inRelayShell();
   const directCarrier = useDirectCarrier(relay);
-  const route = connectionRoute({ relay, portal, ingress: known.current, protocol: window.location.protocol, hostname: window.location.hostname });
+  const route = connectionRoute({ relay, ingress: known.current, protocol: window.location.protocol, hostname: window.location.hostname });
   if (route === null) return null;
   const shown = route === "relay" && directCarrier ? "relay-direct" : route;
   const [Icon, word, title]: [LucideIcon, string, string] =
     shown === "relay-direct" ? [Wifi, t("direct"), t("Directly on the same network, not through the relay")]
     : route === "relay" ? [RadioTower, t("relay"), t("Via the Ovis relay")]
-    : route === "portal" ? [RadioTower, t("relay"), t("Via the Portal relay")]
     : route === "tailscale" ? [Network, "Tailscale", t("Via Tailscale")]
     : route === "tailscale-name" ? [Network, "Tailscale", t("Via Tailscale, or Funnel from the internet")]
     : route === "lan" ? [Wifi, "LAN", t("Via the local network")]

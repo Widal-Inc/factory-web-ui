@@ -19,7 +19,7 @@ it("turns Claude's status-line reading on and off from a boolean only, and a wat
   const watch = store.pair(store.startPairing().code, "Watch", "watch")!;
   store.match(watch.token);
   const usage = new UsageService({ ...systemUsageContext(), home, env: {} }, []);
-  const server = createServer({ port: 0, stateDir: join(root, "state"), token: "test-statusline", tailscaleOwner: null, machines: false, usage });
+  const server = createServer({ port: 0, stateDir: join(root, "state"), token: "test-statusline", machines: false, usage });
   const base = `http://127.0.0.1:${server.port}`;
   const owner = { ...guard, authorization: "Bearer test-statusline" };
   const watching = { ...guard, cookie: `ovis_device=${watch.token}` };

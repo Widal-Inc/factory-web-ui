@@ -278,7 +278,6 @@ describe("who may edit a file", () => {
     ["a driving phone over the relay", full("relay", "drive"), false, false, true],
     ["a driving device, for another PC", full("device", "drive"), false, true, true],
     ["a watching device", full("device", "watch"), false, false, false],
-    ["a Portal visitor given drive", full("portal", "drive"), false, false, false],
     ["an open LAN window", full("open", "drive"), false, false, false],
     ["the connection server's bridge token", none, true, false, true],
     ["the bridge token, for a PC behind this one", none, true, true, false],

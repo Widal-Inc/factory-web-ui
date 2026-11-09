@@ -7,7 +7,7 @@ import "./DevicesPanel.css";
 
 import type { Machine } from "../../shared/machines.ts";
 import type { AddPcPreset } from "../lib/actions.ts";
-import { ApiError, findSshCandidates, findTailnetPcs, requestRelayOffer, startPairing, type SshCandidate } from "../lib/api.ts";
+import { ApiError, findSshCandidates, requestRelayOffer, startPairing, type SshCandidate } from "../lib/api.ts";
 import { copyText } from "../lib/clipboard.ts";
 import { useT } from "../lib/i18n.ts";
 import type { PhonePlan } from "../lib/phone.ts";
@@ -22,8 +22,6 @@ import { PhonePanel, QrReveal, ShareLink } from "./PhonePanel.tsx";
 import { QrCode } from "./QrCode.tsx";
 import { failureText, openOwnOffer, RelayPairing, statusText } from "./RelayPanel.tsx";
 import { SettingsQuery, Toggle } from "./SettingsControls.tsx";
-import { PortalPanel } from "./PortalPanel.tsx";
-import { usePortal } from "../lib/portal.ts";
 import { CompactPair } from "./CompactPair.tsx";
 
 /** the sheet's ways, one tab each: PCs over SSH, phones and browsers on this PC's address, and the Ovis relay through the account */
@@ -61,12 +59,10 @@ export interface ConnectPhoneDialogProps {
   /** an address a phone can open now, for the pairing code's QR code; null shows the code alone */
   pairUrl: string | null;
   relay: RelayState;
-  /** a watching device or a Portal visitor: it reads, and starts nothing */
+  /** a watching device: it reads, and starts nothing */
   readOnly: boolean;
   /** turning the relay on closes the open device gate */
   closesGate: boolean;
-  /** a Portal visitor may not start pairing codes (the server refuses it) */
-  canPair: boolean;
   /** this browser is signed in to the Ovis account */
   signedIn: boolean;
   /**
@@ -90,11 +86,11 @@ export interface ConnectPhoneDialogProps {
  * Settings → Devices and PCs → Add a connection, as herdr's Add a machine: one tab per way, the PCs each way
  * finds listed with Add, and a field to type one. SSH lists the PCs saved in herdr, the hosts of this PC's ssh
  * config and its Tailscale login's other PCs, each opening Add PC with its address. Phones and devices holds
- * what a phone or browser opens this PC with: its Tailscale address, a pairing code, and Portal where installed.
+ * what a phone or browser opens this PC with: its Tailscale address and a pairing code.
  * The Ovis relay is used through the Ovis account, so its tab is the sign-in, or once signed in how a new device
  * joins. The relay and Tailscale stay apart: nothing on the SSH tab goes through the relay.
  */
-export function ConnectPhoneDialog({ plan, pairUrl, relay, readOnly, closesGate, canPair, signedIn, joinBySignIn, onAccount, onAddPc, machines, onConnectMachine, onClose }: ConnectPhoneDialogProps) {
+export function ConnectPhoneDialog({ plan, pairUrl, relay, readOnly, closesGate, signedIn, joinBySignIn, onAccount, onAddPc, machines, onConnectMachine, onClose }: ConnectPhoneDialogProps) {
   const t = useT();
   const id = useId();
   const surface = useFocusTrap<HTMLDivElement>(true);
@@ -148,7 +144,7 @@ export function ConnectPhoneDialog({ plan, pairUrl, relay, readOnly, closesGate,
           )}
           {opened.current.has("devices") && (
             <div className="connect-tab" data-tab-panel="devices" hidden={tab !== "devices"}>
-              <DevicesTab plan={plan} pairUrl={pairUrl} readOnly={readOnly} canPair={canPair} phone={phone} />
+              <DevicesTab plan={plan} pairUrl={pairUrl} readOnly={readOnly} phone={phone} />
             </div>
           )}
           {opened.current.has("relay") && tabs.includes("relay") && (
@@ -170,7 +166,7 @@ const SOURCE_LABEL: Record<FoundSource, string> = { herdr: "herdr", ssh_config: 
 
 /**
  * SSH: the PCs found, each with Connect (saved in herdr, its own dialog), Add (Add PC with its address) or Added,
- * then a field for any other address. A window the server will not tell (an open LAN window, Portal, the relay)
+ * then a field for any other address. A window the server will not tell (an open LAN window, the relay)
  * gets the field alone.
  */
 export function SshTab({ machines, onAddPc, onConnectMachine }: { machines: readonly Machine[]; onAddPc: (preset?: AddPcPreset) => void; onConnectMachine: (machine: Machine) => void }) {
@@ -179,19 +175,6 @@ export function SshTab({ machines, onAddPc, onConnectMachine }: { machines: read
   const [failed, setFailed] = useState(false);
   const [reads, setReads] = useState(0);
   const [typed, setTyped] = useState("");
-  // the Tailscale PCs whose Ovis is older than 0.5 (#3253), by MagicDNS name: told to update it there instead of Add
-  const [outdated, setOutdated] = useState<ReadonlySet<string>>(new Set());
-  // until that answer is in (it asks each PC, a few seconds), a Tailscale PC's Add waits (its own row, or the config
-  // host that names it), so an older one is not added
-  const [tailnetRead, setTailnetRead] = useState(false);
-  useEffect(() => {
-    let live = true;
-    setTailnetRead(false);
-    findTailnetPcs().then(({ pcs }) => {
-      if (live) setOutdated(new Set(pcs.filter((pc) => pc.outdated).map((pc) => new URL(pc.url).hostname.toLowerCase())));
-    }, () => undefined).finally(() => { if (live) setTailnetRead(true); });
-    return () => { live = false; };
-  }, [reads]);
   useEffect(() => {
     let live = true;
     setFailed(false);
@@ -231,9 +214,7 @@ export function SshTab({ machines, onAddPc, onConnectMachine }: { machines: read
               <button type="button" className="btn" onClick={() => onConnectMachine(machine)}>{t("Connect")}</button>))}
             {found.map((pc) => row(`${pc.source}:${pc.destination}`, pc.name, pc.detail, pc.source, added(pc.destination)
               ? <span className="connect-found-added"><Check aria-hidden="true" />{t("Added")}</span>
-              : pc.tailnet !== undefined && outdated.has(pc.tailnet.toLowerCase())
-              ? <span className="settings-hint">{t("Update Ovis on that PC to 0.5 first.")}</span>
-              : <button type="button" className="btn" disabled={pc.tailnet !== undefined && !tailnetRead} aria-label={t("Add {name}", { name: pc.name })} onClick={() => onAddPc({ destination: pc.destination, name: pc.name })}>{t("Add")}</button>))}
+              : <button type="button" className="btn" aria-label={t("Add {name}", { name: pc.name })} onClick={() => onAddPc({ destination: pc.destination, name: pc.name })}>{t("Add")}</button>))}
           </ul>
         </div>
       )}
@@ -255,17 +236,15 @@ export function SshTab({ machines, onAddPc, onConnectMachine }: { machines: read
 }
 
 /**
- * Phones and devices: this PC's Tailscale address once it has one, a pairing code, and Portal where it can run. A way
+ * Phones and devices: this PC's Tailscale address once it has one, and a pairing code. A way
  * this PC or window cannot use is left out, not explained.
  */
-function DevicesTab({ plan, pairUrl, readOnly, canPair, phone }: { plan: PhonePlan; pairUrl: string | null; readOnly: boolean; canPair: boolean; phone: boolean }) {
+function DevicesTab({ plan, pairUrl, readOnly, phone }: { plan: PhonePlan; pairUrl: string | null; readOnly: boolean; phone: boolean }) {
   const t = useT();
-  const { status: portal } = usePortal();
   const address = plan.kind === "here" || plan.kind === "served";
-  const pairs = canPair && !readOnly;
-  const portalShown = portal?.supported === true && (portal.phase !== "idle" || (portal.usable && portal.blocked === null));
+  const pairs = !readOnly;
   // nothing this window can use: one line on where it can be done, never an empty sheet
-  if (!address && !pairs && !portalShown) return <p className="settings-description">{t("Open Ovis on the PC itself to add a connection.")}</p>;
+  if (!address && !pairs) return <p className="settings-description">{t("Open Ovis on the PC itself to add a connection.")}</p>;
   return (
     <>
       {address && (
@@ -278,11 +257,6 @@ function DevicesTab({ plan, pairUrl, readOnly, canPair, phone }: { plan: PhonePl
         <section className="connect-section" aria-label={t("Pairing code")}>
           <p className="settings-label">{t("Pairing code")}</p>
           <CodeRoute pairUrl={inRelayShell() ? null : pairUrl} startAtOnce phone={phone} compact />
-        </section>
-      )}
-      {portalShown && (
-        <section className="connect-section" aria-label="Portal">
-          <PortalPanel readOnly={readOnly} />
         </section>
       )}
     </>
@@ -400,8 +374,7 @@ export function RelayRoute({ relay, readOnly, phone = false, pairHere = false, s
       )}
       {error !== null && <p className="settings-hint relay-error" role="alert">{error}</p>}
       {status.phase === "online" && !readOnly && <RelayPairing phone={phone} compact={compact} />}
-      {/* a serve-only install refuses the reset too; an unreadable identity is what the reset mends */}
-      {!compact && !readOnly && status.blocked !== "serve_only" && (
+      {!compact && !readOnly && (
         <div className="phone-actions connect-phone-reset">
           <button ref={resetButton} type="button" className="btn btn-ghost" disabled={pending} onClick={() => setConfirmingReset(true)}>{t("Reset relay identity")}</button>
         </div>

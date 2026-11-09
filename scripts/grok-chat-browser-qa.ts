@@ -36,7 +36,7 @@ try {
     await Bun.sleep(50);
   }
   await herdrRpc("pane.report_agent_session", { pane_id: pane, source: "herdr:grok", agent: "grok", agent_session_id: session, session_start_source: "new", seq: 1 });
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), grokHome: root, tailscaleOwner: null });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), grokHome: root });
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? chromium.executablePath(), headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 }, locale: "en-US" });
   page.setDefaultTimeout(12_000);

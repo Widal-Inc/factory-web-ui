@@ -18,7 +18,7 @@ const guard = { "x-herdr-machine": "1", "content-type": "application/json" };
 
 it("pairs a relay device, authenticates its key, and dispatches with the stored role", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-relay-contract-"));
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "configured", tailscaleOwner: null, machines: false, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "configured", machines: false, sidecar: false });
   try {
     const store = app.context.services.devices;
     const keys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
@@ -58,11 +58,11 @@ it("pairs a relay device, authenticates its key, and dispatches with the stored 
 
 it("never promotes forged relay headers or cookies on a real HTTP socket", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-relay-forged-"));
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "configured", tailscaleOwner: "owner@example.com", machines: false, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "configured", machines: false, sidecar: false });
   try {
     for (const headers of [
       new Headers({ "x-ovis-relay-peer": "1" }),
-      new Headers({ "x-ovis-relay-peer": "1", "x-forwarded-for": "100.64.0.9", "tailscale-user-login": "another@example.com", cookie: "ovis_device=relay:0123456789abcdef" }),
+      new Headers({ "x-ovis-relay-peer": "1", "x-forwarded-for": "100.64.0.9", cookie: "ovis_device=relay:0123456789abcdef" }),
     ]) {
       const health = await fetch(`http://127.0.0.1:${app.port}/api/health`, { headers });
       expect(await health.json()).toMatchObject({ auth: { authenticated: false, reason: "token_required" } });
@@ -77,7 +77,7 @@ it("never promotes forged relay headers or cookies on a real HTTP socket", async
 
 it("returns pairing_rate_limited on the eleventh HTTP code issue", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-relay-issue-limit-"));
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", tailscaleOwner: null, machines: false, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", machines: false, sidecar: false });
   try {
     for (let i = 0; i < 10; i++) {
       const response = await fetch(`http://127.0.0.1:${app.port}/api/devices/pair/start`, { method: "POST", headers: guard });
@@ -130,7 +130,7 @@ it("keeps the gate closed, and a device paired in the install's other state dir 
   const created = "2026-10-25T05:20:00.000Z";
   writeFileSync(join(sibling, "devices.json"), JSON.stringify({ gate_closed_at: created, devices: [{ id: "0123456789abcdef", label: "Phone", role: "drive", token_hash: createHash("sha256").update(token).digest("hex"), created_at: created, last_seen_at: null }] }));
   writeFileSync(join(sibling, "preferences.json"), JSON.stringify({ revision: 1, settings: { language: "en", sidebarRows: "two" } }));
-  const server = createServer({ port: 0, stateDir: active, siblingStateDir: sibling, tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: active, siblingStateDir: sibling });
   const base = `http://127.0.0.1:${server.port}`;
   // a request through a proxy on this PC stands for one from another device
   const remote = { "x-forwarded-for": "100.64.0.9" };
@@ -170,7 +170,7 @@ it("serves the state dir it merged into, even when the merge gave the old dir fi
   });
   let server: ReturnType<typeof createServer> | undefined;
   try {
-    server = createServer({ port: 0, siblingStateDir: legacy, tailscaleOwner: null, machines: false });
+    server = createServer({ port: 0, siblingStateDir: legacy, machines: false });
     const base = `http://127.0.0.1:${server.port}`;
     const remote = { "x-forwarded-for": "100.64.0.9" };
     expect((await fetch(`${base}/api/preferences`, { headers: remote })).status).toBe(401);
@@ -251,7 +251,7 @@ async function openEvents(base: string, headers: Record<string, string>, signal:
 for (const action of ["revoke", "role change"] as const) {
 it(`keeps native WS and SSE open on rename until ${action}`, async () => {
   const root = mkdtempSync(join(tmpdir(), "ovis-native-rename-"));
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", tailscaleOwner: null, sidecar: false });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", sidecar: false });
   const base = `http://127.0.0.1:${server.port}`;
   const store = server.context.services.devices;
   const paired = store.pair(store.startPairing().code, "Phone", "drive");
@@ -309,7 +309,7 @@ function cookieJar() {
 
 it("revocation closes an active device's terminal and roster stream without disconnecting another device", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-device-access-"));
-  const server = createServer({ port: 0, stateDir: root, token: "test-device-access", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "test-device-access" });
   const base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-device-access" };
   const sockets: WebSocket[] = [];
@@ -357,19 +357,17 @@ it("revocation closes an active device's terminal and roster stream without disc
   }
 }, 10_000);
 
-it("revoking every device closes each paired client's streams at once, voids every credential, and leaves the token, this PC and the Tailscale login in, also after a restart", async () => {
+it("revoking every device closes each paired client's streams at once, voids every credential, and leaves the token and this PC in, also after a restart", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-device-revoke-all-"));
-  const OWNER = "owner@example.com";
   // a device that only watches: issued through the store itself, since the pairing route pairs drivers only
   const seed = new DeviceStore(root);
   const watch = seed.pair(seed.startPairing().code, "Watch", "watch")!;
   seed.match(watch.token);
-  const options = { port: 0, stateDir: root, token: "test-revoke-all", tailscaleOwner: OWNER } as const;
+  const options = { port: 0, stateDir: root, token: "test-revoke-all" } as const;
   let server = createServer(options);
   let base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-revoke-all" };
   const stranger = { "x-forwarded-for": "100.64.0.9" };
-  const tailscale = { ...stranger, "tailscale-user-login": OWNER };
   const sockets: WebSocket[] = [];
   const abort = new AbortController();
   let workspaceId: string | undefined;
@@ -444,12 +442,11 @@ it("revoking every device closes each paired client's streams at once, voids eve
     const registry = JSON.parse(readFileSync(join(root, "devices.json"), "utf8")) as { gate_closed_at: string | null; devices: unknown[] };
     expect(registry).toEqual({ gate_closed_at: expect.any(String), devices: [] });
     // the owner's stream and the token are untouched, and the policy for the rest is what it was: with a token
-    // configured, this PC itself and the PC's Tailscale login are asked for it (token_required), a stranger too
+    // configured, this PC itself is asked for it (token_required), a stranger too
     expect(owner.events.length).toBeGreaterThan(0);
     expect((await fetch(`${base}/api/session`, { headers: { authorization: "Bearer test-revoke-all" } })).status).toBe(200);
     const authOf = async (headers: Record<string, string>) => ((await (await fetch(`${base}/api/health?scope=bridge`, { headers })).json()) as { auth: { authenticated: boolean; reason?: string } }).auth;
     expect(await authOf({})).toMatchObject({ authenticated: false, reason: "token_required" });
-    expect(await authOf(tailscale)).toMatchObject({ authenticated: false, reason: "token_required" });
     expect(await authOf(stranger)).toMatchObject({ authenticated: false, reason: "token_required" });
     expect(await authOf({ ...stranger, cookie: cookieA })).toMatchObject({ authenticated: false });
     // a late socket with a revoked cookie is refused at the upgrade, as the gate is closed to it
@@ -464,7 +461,6 @@ it("revoking every device closes each paired client's streams at once, voids eve
     expect((await fetch(`${base}/api/session`, { headers: stranger })).status).toBe(401);
     for (const cookie of [cookieA, cookieD, watchCookie]) expect((await fetch(`${base}/api/session`, { headers: { ...stranger, cookie } })).status).toBe(401);
     expect((await fetch(`${base}/api/session`, { headers: { authorization: "Bearer test-revoke-all" } })).status).toBe(200);
-    expect((await fetch(`${base}/api/session`, { headers: { ...tailscale, authorization: "Bearer test-revoke-all" } })).status).toBe(200);
     const cookieE = await pair("E");
     expect((await fetch(`${base}/api/session`, { headers: { ...stranger, cookie: cookieE } })).status).toBe(200);
   } finally {
@@ -504,7 +500,7 @@ it("revoking every device closes relayed remote terminals through /ws?machine_id
   });
   const endpoint = spyOn(MachineManager.prototype, "endpoint").mockImplementation((id) =>
     id === "fictional-remote" ? { url: `http://127.0.0.1:${upstream.port}`, token: "fictional-remote" } : undefined);
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "test-revoke-all-relay", tailscaleOwner: null, sidecar: false });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "test-revoke-all-relay", sidecar: false });
   const base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-revoke-all-relay" };
   const stranger = { "x-forwarded-for": "100.64.0.9" };
@@ -570,10 +566,11 @@ it("revoking every device closes relayed remote terminals through /ws?machine_id
 
 it("a revocation of every device that cannot be persisted changes nothing, and once it can, every credential issued before is void", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-device-revoke-all-write-"));
-  const options = { port: 0, stateDir: root, token: "", tailscaleOwner: null } as const;
+  const options = { port: 0, stateDir: root, token: "" } as const;
   let server = createServer(options);
   let base = `http://127.0.0.1:${server.port}`;
-  const forwarded = { "x-forwarded-for": "198.51.100.24" };
+  // another device on the network: a Host that is not this PC's, with nothing forwarded
+  const forwarded = { host: "198.51.100.24" };
   const abort = new AbortController();
   const start = async () => (await (await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: guard })).json() as { code: string }).code;
   const issue = async (code: string) => {
@@ -643,7 +640,7 @@ it("a corrupt device registry refuses strangers while keeping local recovery and
   const root = mkdtempSync(join(tmpdir(), "herdr-device-recovery-"));
   const path = join(root, "devices.json");
   writeFileSync(path, "{broken registry");
-  const server = createServer({ port: 0, stateDir: root, token: "", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "" });
   const base = `http://127.0.0.1:${server.port}`;
   try {
     expect((await fetch(`${base}/api/session`, { headers: { "x-forwarded-for": "192.0.2.1" } })).status).toBe(401);
@@ -655,19 +652,20 @@ it("a corrupt device registry refuses strangers while keeping local recovery and
   } finally { server.stop(); rmSync(root, { recursive: true, force: true }); }
 });
 
-it("keeps a forwarded first-pair gate open until a returned cookie is durably confirmed", async () => {
+it("keeps an outside client's first-pair gate open until a returned cookie is durably confirmed", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-first-pair-proxy-"));
-  const options = { port: 0, stateDir: root, token: "", tailscaleOwner: null, machines: false } as const;
+  const options = { port: 0, stateDir: root, token: "", machines: false } as const;
   let server = createServer(options);
   let base = `http://127.0.0.1:${server.port}`;
-  const forwarded = { "x-forwarded-for": "198.51.100.24" };
+  // another device on the network: a Host that is not this PC's, with nothing forwarded
+  const forwarded = { host: "198.51.100.24" };
   const start = async () => {
-    const response = await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: { origin: base, "x-herdr-machine": "1", ...forwarded } });
+    const response = await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: { origin: `http://${forwarded.host}`, "x-herdr-machine": "1", ...forwarded } });
     expect(response.status).toBe(200);
     return (await response.json() as { code: string }).code;
   };
   const issue = async (code: string) => {
-    const response = await fetch(`${base}/api/devices/pair`, { method: "POST", headers: { origin: base, "x-herdr-machine": "1", "content-type": "application/json", ...forwarded }, body: JSON.stringify({ code }) });
+    const response = await fetch(`${base}/api/devices/pair`, { method: "POST", headers: { origin: `http://${forwarded.host}`, "x-herdr-machine": "1", "content-type": "application/json", ...forwarded }, body: JSON.stringify({ code }) });
     expect(response.status).toBe(204);
     return response.headers.get("set-cookie")!.split(";")[0]!;
   };
@@ -713,7 +711,7 @@ it("keeps a forwarded first-pair gate open until a returned cookie is durably co
 
 it("never tells a browser of the device it paired itself, on any stream or push subscription it had before, even from tabs that opened at once", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-self-pair-"));
-  const server = createServer({ port: 0, stateDir: root, token: "test-self-pair", tailscaleOwner: null, pushLoopbackHttp: true });
+  const server = createServer({ port: 0, stateDir: root, token: "test-self-pair", pushLoopbackHttp: true });
   const base = `http://127.0.0.1:${server.port}`;
   const bearer = { authorization: "Bearer test-self-pair" };
   const abort = new AbortController();
@@ -822,7 +820,7 @@ it("watch credentials cannot mutate HTTP state, read credential files, or elevat
   const store = new DeviceStore(root);
   const watch = store.pair(store.startPairing().code, "Watch", "watch")!;
   store.match(watch.token);
-  const server = createServer({ port: 0, stateDir: root, token: "test-watch", tailscaleOwner: null, machines: false });
+  const server = createServer({ port: 0, stateDir: root, token: "test-watch", machines: false });
   const base = `http://127.0.0.1:${server.port}`;
   const cookie = `ovis_device=${watch.token}`;
   const headers = { ...guard, cookie };
@@ -837,7 +835,7 @@ it("watch credentials cannot mutate HTTP state, read credential files, or elevat
   }, websocket: { open(ws) { ws.data.relay.bind(ws); }, message(ws, raw) { ws.data.relay.message(raw); }, close(ws) { ws.data.relay.close(); } } });
   try {
     expect((await fetch(`${base}/api/session`, { headers })).status).toBe(200);
-    for (const path of ["pane/input", "workspace/create", "tab/create", "tab/rename", "tab/close", "machines/setup", "updates/install", "herdr/update", "portal/start", "portal/stop", "portal/invite"]) {
+    for (const path of ["pane/input", "workspace/create", "tab/create", "tab/rename", "tab/close", "machines/setup", "updates/install", "herdr/update"]) {
       expect((await fetch(`${base}/api/${path}`, { method: "POST", headers, body: "{}" })).status).toBe(403);
     }
     // the shared settings: a watching device reads them, and cannot change them for every browser
@@ -898,7 +896,7 @@ it("a route spelled with a trailing, doubled or encoded slash is no route, for a
   store.match(watch.token);
   const drive = store.pair(store.startPairing().code, "Drive", "drive")!;
   store.match(drive.token);
-  const server = createServer({ port: 0, stateDir: root, token: "test-route-spelling", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "test-route-spelling" });
   const base = `http://127.0.0.1:${server.port}`;
   const query = "?workspace_id=w1&agent=pi";
   try {
@@ -938,7 +936,7 @@ it("a pane's command rows are refused to a watching device on this PC, its alias
   store.match(watch.token);
   const drive = store.pair(store.startPairing().code, "Drive", "drive")!;
   store.match(drive.token);
-  const server = createServer({ port: 0, stateDir: root, token: "test-pane-commands", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "test-pane-commands" });
   const base = `http://127.0.0.1:${server.port}`;
   const query = "?pane_id=ovis-test-absent:p1";
   try {
@@ -966,7 +964,7 @@ it("the paths under a pane's folder and a plugin run's output are refused to a w
   store.match(watch.token);
   const drive = store.pair(store.startPairing().code, "Drive", "drive")!;
   store.match(drive.token);
-  const server = createServer({ port: 0, stateDir: root, token: "test-pane-files", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "test-pane-files" });
   const base = `http://127.0.0.1:${server.port}`;
   // the @-mention picker's paths, and where a plugin action's run stands (what its command printed when it failed)
   const routes = ["pane/files?pane_id=ovis-test-absent:p1&q=commands", "plugin/action?plugin_id=ovis-test-absent&log_id=plugin-log-1", "pane/docs?pane_id=ovis-test-absent:p1"];
@@ -999,7 +997,7 @@ it("a repository's checkouts are refused to a watching device on this PC, its al
   store.match(watch.token);
   const drive = store.pair(store.startPairing().code, "Drive", "drive")!;
   store.match(drive.token);
-  const server = createServer({ port: 0, stateDir: root, token: "test-worktree-list", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "test-worktree-list" });
   const base = `http://127.0.0.1:${server.port}`;
   // every checkout of the workspace's repository: paths and branches, those not open in herdr too;
   // the inventory answers the same for several workspaces at once (#2661)
@@ -1026,7 +1024,7 @@ it("a repository's checkouts are refused to a watching device on this PC, its al
 
 it("revoking a paired device removes its persistent push subscription", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-device-push-"));
-  const server = createServer({ port: 0, stateDir: root, token: "test-push-owner", tailscaleOwner: null, machines: false, pushLoopbackHttp: true });
+  const server = createServer({ port: 0, stateDir: root, token: "test-push-owner", machines: false, pushLoopbackHttp: true });
   const fake = await startFakePushService();
   const base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-push-owner" };
@@ -1051,7 +1049,7 @@ it("returns an error when revocation cannot be persisted, then allows a successf
   const store = new DeviceStore(root);
   const paired = store.pair(store.startPairing().code, "Phone", "drive")!;
   store.match(paired.token);
-  const server = createServer({ port: 0, stateDir: root, token: "test-write", tailscaleOwner: null, machines: false });
+  const server = createServer({ port: 0, stateDir: root, token: "test-write", machines: false });
   const base = `http://127.0.0.1:${server.port}`;
   try {
     const revoke = () => fetch(`${base}/api/devices/${paired.device.id}`, { method: "DELETE", headers: { ...guard, authorization: "Bearer test-write" } });
@@ -1069,11 +1067,11 @@ it("returns an error when revocation cannot be persisted, then allows a successf
 
 it("never announces a pairing to a stream that came in through the open LAN, before or after every device is revoked", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-open-stream-"));
-  const server = createServer({ port: 0, stateDir: root, token: "", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "" });
   const base = `http://127.0.0.1:${server.port}`;
   const abort = new AbortController();
-  // a request through a proxy on this PC stands for one from another device; with nothing paired it gets in through the open LAN
-  const lan = { "x-forwarded-for": "100.64.0.9" };
+  // a Host that is not this PC's stands for another device on the network; with nothing paired it gets in through the open LAN
+  const lan = { host: "100.64.0.9" };
   const isPairing = (label: string) => (event: MachineEvent): event is DevicePairedEvent => event.type === "device-paired" && event.label === label;
   const pairedLabels = (stream: { events: MachineEvent[] }) => stream.events.filter((event) => event.type === "device-paired").map((event) => (event as DevicePairedEvent).label);
   const pair = async (label: string) => {
@@ -1112,7 +1110,7 @@ it("never announces a pairing to a stream that came in through the open LAN, bef
 
 it("a script pairs for its token in JSON and authenticates with Authorization: Device under the cookie's role, last-seen and revocation (#2744)", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-device-header-"));
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "configured", tailscaleOwner: null, machines: false, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "configured", machines: false, sidecar: false });
   const base = `http://127.0.0.1:${app.port}`;
   const admin = { ...guard, authorization: "Bearer configured" };
   const code = async () => ((await (await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: admin })).json()) as { code: string }).code;
@@ -1179,7 +1177,7 @@ it("a device downgraded to watch while its relayed /ws?machine_id= upgrade is pe
   });
   const endpoint = spyOn(MachineManager.prototype, "endpoint").mockImplementation((id) =>
     id === "fictional-remote" ? { url: `http://127.0.0.1:${upstream.port}`, token: "fictional-remote" } : undefined);
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "test-downgrade-relay", tailscaleOwner: null, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "test-downgrade-relay", sidecar: false });
   const base = `http://127.0.0.1:${app.port}`;
   const admin = { ...guard, authorization: "Bearer test-downgrade-relay" };
   const stranger = { "x-forwarded-for": "100.64.0.9" };
@@ -1217,7 +1215,7 @@ it("a device downgraded to watch while its relayed /ws?machine_id= upgrade is pe
 
 it("a script's first pairing on a fresh install is kept at once, so its token still works after a restart (#2744)", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-device-header-first-"));
-  const options = { port: 0, hostname: "127.0.0.1", stateDir, token: "configured", tailscaleOwner: null, machines: false, sidecar: false } as const;
+  const options = { port: 0, hostname: "127.0.0.1", stateDir, token: "configured", machines: false, sidecar: false } as const;
   let app = createServer(options);
   try {
     let base = `http://127.0.0.1:${app.port}`;
@@ -1310,7 +1308,7 @@ it("a key re-paired on a PC in no account with a code another device started sta
 
 it("POST /api/devices/pair/cancel takes back the pending code, so it pairs nothing", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-device-cancel-"));
-  const server = createServer({ port: 0, stateDir: root, token: "test-device-cancel", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "test-device-cancel" });
   const base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-device-cancel" };
   try {
@@ -1327,7 +1325,7 @@ it("POST /api/devices/pair/cancel takes back the pending code, so it pairs nothi
 
 it("POST /api/devices/pair/cancel with a code ends only that pairing, not one started after it", async () => {
   const root = mkdtempSync(join(tmpdir(), "herdr-device-cancel-own-"));
-  const server = createServer({ port: 0, stateDir: root, token: "test-device-cancel-own", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: root, token: "test-device-cancel-own" });
   const base = `http://127.0.0.1:${server.port}`;
   const admin = { ...guard, authorization: "Bearer test-device-cancel-own" };
   try {

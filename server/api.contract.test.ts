@@ -11,10 +11,9 @@ import { createServer } from "./index.ts";
 import { AgentDetector, catalogLocator } from "./agent-catalog-detect.ts";
 import * as appModule from "./index.ts";
 import * as herdrClient from "./herdr/client.ts";
-import type { AgentKind, AgentStatus, ApiError, HealthAuth, IntegrationsResponse, LanExposure, PortalStatus, SecuritySummary, PushKey, RemoteAccess, SessionSnapshot, TabMoved, TabMovedToWorkspace, PaneFindResponse, PaneReadResult, UsageReport, WorkspaceCreated, WorktreeListing, WorktreeOpened, WorktreeRemoved } from "../shared/protocol.ts";
+import type { AgentKind, AgentStatus, ApiError, HealthAuth, IntegrationsResponse, LanExposure, SecuritySummary, PushKey, RemoteAccess, SessionSnapshot, TabMoved, TabMovedToWorkspace, PaneFindResponse, PaneReadResult, UsageReport, WorkspaceCreated, WorktreeListing, WorktreeOpened, WorktreeRemoved } from "../shared/protocol.ts";
 import { SUPPORTED_AGENT_KINDS } from "../shared/supported-agents.ts";
 import { HerdrUpdater } from "./herdr-update.ts";
-import { PortalService } from "./portal.ts";
 import { noInstalledNotes, noUpdateNotes, unmanagedUpdateStatus, type HerdrUpdateStatus, type InstalledNotes, type UpdateNotes, type UpdateStatus } from "../shared/update.ts";
 import { USAGE_PROVIDERS, UsageService } from "./usage.ts";
 import { VoiceService } from "./voice.ts";
@@ -27,7 +26,6 @@ import { startFakePushService, type FakePushService } from "./push.fake.ts";
 import { descriptorPath, type BridgeDescriptor } from "./bridge.ts";
 import { handleMachineRequest } from "./machine-api.ts";
 import type { MachineManager } from "./machines.ts";
-import { TailnetIdentitySource } from "./tailscale.ts";
 import { forgetTranscriptState } from "./conversation.ts";
 import type { RepoDiffFileList, RepoDiffFilePatch, RepoDiffRefs, SessionHistoryResponse, SessionResumeResponse } from "../shared/protocol.ts";
 import { claudeProjectDir } from "./claude-store.ts";
@@ -1132,90 +1130,6 @@ describe("herdr's selection preference", () => {
   });
 });
 
-describe("Portal API", () => {
-  it("does not serve requests until startup cleanup completes", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-portal-startup-gate-"));
-    let releaseCleanup!: () => void;
-    const cleanup = new Promise<void>((resolve) => { releaseCleanup = resolve; });
-    class DeferredPortal extends PortalService {
-      override resume(): Promise<void> { return cleanup; }
-    }
-    const server = createServer({ port: 0, stateDir: state, token: "", portal: new DeferredPortal({ stateDir: state }) });
-    try {
-      let resolved = false;
-      const request = fetch(`http://127.0.0.1:${server.port}/api/health?scope=bridge`).then((response) => {
-        resolved = true;
-        return response;
-      });
-      const deadline = Date.now() + 50;
-      while (!resolved && Date.now() < deadline) await Bun.sleep(5);
-      expect(resolved).toBe(false);
-      releaseCleanup();
-      const response = await request;
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ ok: true, bridge_protocol: expect.any(Number) });
-    } finally {
-      releaseCleanup();
-      server.stop();
-      rmSync(state, { recursive: true, force: true });
-    }
-  });
-
-  it("fails closed when startup cleanup rejects", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-portal-startup-failure-"));
-    class FailedPortal extends PortalService {
-      override resume(): Promise<void> { return Promise.reject(new Error("Portal cleanup failed")); }
-    }
-    const server = createServer({ port: 0, stateDir: state, token: "", portal: new FailedPortal({ stateDir: state }) });
-    try {
-      const response = await fetch(`http://127.0.0.1:${server.port}/api/health?scope=bridge`);
-      expect(response.status).toBe(500);
-      expect(await response.json()).toMatchObject({ error: { code: "internal_error" } });
-    } finally {
-      server.stop();
-      rmSync(state, { recursive: true, force: true });
-    }
-  });
-
-  it("opens a public address only behind the token, and closes it again", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-portal-api-"));
-    const standIn = join(state, "stand-in-portal");
-    writeFileSync(standIn, [
-      "#!/bin/sh",
-      'case "$1" in',
-      "  version) echo v2.6.1 ;;",
-      "  expose) [ \"$2\" = --help ] && exit 0; trap 'exit 0' TERM; echo 'INF service ready at https://herdr-test-0123.relay.example:443'; while :; do sleep 0.05; done ;;",
-      "  *) exit 2 ;;",
-      "esac",
-      "",
-    ].join("\n"));
-    chmodSync(standIn, 0o755);
-    const relay = (async () => Response.json({ data: { release_version: "v2.6.1" } })) as unknown as typeof fetch;
-    const server = createServer({ port: 0, stateDir: state, token: "test-portal-token", portal: new PortalService({ stateDir: state, bin: standIn, fetch: relay }) });
-    const url = `http://127.0.0.1:${server.port}/api/portal`;
-    const signedIn = { authorization: "Bearer test-portal-token" };
-    const post = (action: string, headers: Record<string, string>) => fetch(`${url}/${action}`, { method: "POST", headers: { ...headers, "x-herdr-update": "1", "content-type": "application/json" }, body: JSON.stringify({ relay: "relay.example" }) });
-    const status = async (headers: Record<string, string> = signedIn) => await (await fetch(url, { headers })).json() as PortalStatus;
-    try {
-      expect((await fetch(url)).status).toBe(401);
-      expect(await status()).toMatchObject({ supported: true, usable: true, blocked: null, phase: "idle" });
-      expect((await post("start", {})).status).toBe(401);
-      expect((await post("invite", {})).status).toBe(401);
-      expect((await post("start", signedIn)).status).toBe(202);
-      const deadline = Date.now() + 10_000;
-      let running = await status();
-      while (running.phase === "starting") {
-        if (Date.now() >= deadline) throw new Error("Timed out: Portal was ready");
-        await Bun.sleep(20);
-        running = await status();
-      }
-      expect(running).toMatchObject({ phase: "running", url: "https://herdr-test-0123.relay.example", relay: "https://relay.example" });
-      expect((await post("stop", signedIn)).status).toBe(202);
-      expect((await status()).url).toBeNull();
-    } finally { server.stop(); rmSync(state, { recursive: true, force: true }); }
-  });
-});
-
 describe("mutation body validation", () => {
   it("rejects non-object JSON without touching herdr or losing the error envelope", async () => {
     for (const path of [
@@ -1481,7 +1395,7 @@ describe("agent rename", () => {
     const paneId = owned.root_pane.pane_id;
     const state = mkdtempSync(join(tmpdir(), "ovis-agent-rename-bridge-"));
     // the other PC's bridge asks its browsers for a token of its own; the proxy holds only the bridge token it registered
-    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: state, tailscaleOwner: null });
+    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: state });
     const registered = JSON.parse(readFileSync(descriptorPath(), "utf8")) as BridgeDescriptor;
     const endpoint = `http://127.0.0.1:${bridge.port}`;
     const manager = { endpoint: (id: string) => id === "rename-remote" ? { url: endpoint, token: registered.token } : null, trackTerminal: () => () => {} } as unknown as MachineManager;
@@ -1506,7 +1420,7 @@ describe("agent rename", () => {
 
   it("answers the new-tab dialog's agent commands to another PC's registered bridge token", async () => {
     const state = mkdtempSync(join(tmpdir(), "ovis-agent-commands-bridge-"));
-    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: state, tailscaleOwner: null });
+    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: state });
     const registered = JSON.parse(readFileSync(descriptorPath(), "utf8")) as BridgeDescriptor;
     const endpoint = `http://127.0.0.1:${bridge.port}`;
     const manager = { endpoint: (id: string) => id === "commands-remote" ? { url: endpoint, token: registered.token } : null, trackTerminal: () => () => {} } as unknown as MachineManager;
@@ -1528,7 +1442,7 @@ describe("agent rename", () => {
     const error = spyOn(console, "error").mockImplementation(() => {});
     let app: ReturnType<typeof createServer> | undefined;
     try {
-      app = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: state, tailscaleOwner: null });
+      app = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: state });
       const url = `http://127.0.0.1:${app.port}/api/machines/settings`;
       const settings = await (await fetch(url)).json() as MachineSettings;
       expect(settings).toEqual({ auto_update_bridges: true, set_aside: [expect.stringMatching(/^machines\.json\.corrupt-\S+$/)] });
@@ -1641,7 +1555,7 @@ describe("tab creation", () => {
   it("forwards remote tab creation using the registered bridge token", async () => {
     const owned = await workspaceCreate({ cwd: tmpdir(), label: "ovis-test-tab-bridge" });
     const state = mkdtempSync(join(tmpdir(), "ovis-tab-bridge-"));
-    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: state, tailscaleOwner: null });
+    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: state });
     const registered = JSON.parse(readFileSync(descriptorPath(), "utf8")) as BridgeDescriptor;
     const endpoint = `http://127.0.0.1:${bridge.port}`;
     const manager = { endpoint: (id: string) => id === "tab-remote" ? { url: endpoint, token: registered.token } : null, trackTerminal: () => () => {} } as unknown as MachineManager;
@@ -4184,186 +4098,48 @@ describe("web push", () => {
 });
 
 describe("pairing and identity", () => {
-  /** no token: the gate is where the request comes from, who Tailscale says it is, or a paired device's cookie */
-  const OWNER = "owner@example.com";
+  /** no token: the gate is where the request comes from, or a paired device's cookie */
   let open: { port: number; stop: () => void };
   const openState = mkdtempSync(join(tmpdir(), "herdr-pairing-"));
-  beforeAll(() => { open = createServer({ port: 0, stateDir: openState, tailscaleOwner: OWNER }); });
+  beforeAll(() => { open = createServer({ port: 0, stateDir: openState }); });
   afterAll(() => { open?.stop(); rmSync(openState, { recursive: true, force: true }); });
   const base = () => `http://127.0.0.1:${open.port}`;
   /** as if `tailscale serve` or a reverse proxy had forwarded it: the test client is on loopback, like a proxy */
-  const proxied = (login?: string, extra: Record<string, string> = {}) => ({ "x-forwarded-for": "100.64.0.9", ...(login ? { "tailscale-user-login": login } : {}), ...extra });
+  const proxied = (extra: Record<string, string> = {}) => ({ "x-forwarded-for": "100.64.0.9", ...extra });
   const auth = async (headers: Record<string, string> = {}) => ((await (await fetch(`${base()}/api/health?scope=bridge`, { headers })).json()) as { auth: HealthAuth }).auth;
   const guard = { "content-type": "application/json", "x-herdr-machine": "1" };
   let cookie = "";
   let deviceId = "";
 
-  it("lets this PC in, and not a proxied request with no login while the PC's Tailscale login is known", async () => {
+  it("lets this PC in, and not a proxied request, even before the first device is paired", async () => {
     expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-    // tailscale serve names no person for a tagged node: it pairs, even before the first device
     expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
     expect((await fetch(`${base()}/api/session`, { headers: proxied() })).status).toBe(401);
   });
 
-  it("does not take a proxied request for this PC when the proxy sends no X-Forwarded-For", async () => {
-    // a proxy that keeps the browser's Host, or sends only another forwarding header
-    expect(await auth({ host: "app.example.test" })).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    expect((await fetch(`${base()}/api/session`, { headers: { host: "app.example.test" } })).status).toBe(401);
-    for (const name of ["x-forwarded-proto", "x-forwarded-host", "x-real-ip", "forwarded", "via"]) {
+  it("does not take a proxied request for this PC, whatever the proxy sends", async () => {
+    // a proxy that sends only a forwarding header is refused until the token or a pairing
+    for (const name of ["x-forwarded-for", "x-forwarded-proto", "x-forwarded-host", "x-real-ip", "forwarded", "via"]) {
       expect(await auth({ [name]: "https" })).toMatchObject({ authenticated: false, reason: "pairing_required" });
     }
+    // a proxy that keeps the browser's Host and adds nothing is no more this PC than a client on the network: open, as any
+    // other address is while nothing is paired, and not the owner's own
+    expect(await auth({ host: "app.example.test" })).toMatchObject({ authenticated: true, via: "open" });
     // this PC under its other names is still this PC
     for (const host of [`localhost:${open.port}`, `herdr.localhost:${open.port}`, "localhost:5173"]) {
       expect(await auth({ host })).toMatchObject({ authenticated: true, via: "local" });
     }
   });
 
-  it("trusts the PC's own Tailscale login and refuses another", async () => {
-    expect(await auth(proxied(OWNER))).toMatchObject({ authenticated: true, via: "tailscale" });
-    expect(await auth(proxied("Owner@Example.com"))).toMatchObject({ authenticated: true, via: "tailscale" });
-    expect(await auth(proxied("someone@example.com"))).toMatchObject({ authenticated: false, reason: "other_user" });
-    const refused = await fetch(`${base()}/api/session`, { headers: proxied("someone@example.com") });
-    expect(refused.status).toBe(403);
-    expect(((await refused.json()) as ApiError).error.code).toBe("other_user");
-  });
-
-  it("regression: refuses identity headers without a single tailnet forwarded address", async () => {
-    for (const forwardedFor of [null, "127.0.0.1", "203.0.113.50", "100.64.0.9, 100.64.0.10"]) {
-      const headers = { "tailscale-user-login": OWNER, ...(forwardedFor === null ? {} : { "x-forwarded-for": forwardedFor }) };
-      const response = await fetch(`${base()}/api/devices`, { headers });
-      expect(response.status).toBe(401);
-      expect(((await response.json()) as ApiError).error.code).toBe("unauthorized");
-      expect(await auth(headers)).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    }
-    // control: Serve may forward either tailnet address family.
-    expect((await fetch(`${base()}/api/devices`, { headers: proxied(OWNER, { "x-forwarded-for": "fd7a:115c:a1e0::1" }) })).status).toBe(200);
-  });
-
-  it("lets the owner's own device in with no login header, where serve is the only ingress and one login owns the tailnet", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-sole-user-"));
-    const savedOwner = process.env["OVIS_TAILSCALE_OWNER"];
-    const savedServeOnly = process.env["OVIS_TAILSCALE_SERVE_ONLY"];
-    delete process.env["OVIS_TAILSCALE_OWNER"];
-    // what `tailscale status --json` says for the reported tailnet: one login, every node untagged
-    const NODE = "denisss-macbook-pro-m1.tail5cc90b.ts.net";
-    const status = JSON.stringify({ BackendState: "Running", Self: { DNSName: `${NODE}.`, UserID: 7, TailscaleIPs: ["100.101.102.103"] }, Peer: { phone: { DNSName: "phone.tail5cc90b.ts.net.", UserID: 7 } }, User: { "7": { LoginName: OWNER } } });
-    const tailnet = new TailnetIdentitySource(async () => status);
-    process.env["OVIS_TAILSCALE_SERVE_ONLY"] = "1";
-    const sole = createServer({ port: 0, stateDir: state, tailnet });
-    if (savedServeOnly === undefined) delete process.env["OVIS_TAILSCALE_SERVE_ONLY"]; else process.env["OVIS_TAILSCALE_SERVE_ONLY"] = savedServeOnly;
-    const off = createServer({ port: 0, stateDir: state, tailscaleServeOnly: false, tailnet });
-    const named = createServer({ port: 0, stateDir: state, tailscaleOwner: OWNER, tailscaleServeOnly: true, tailnet });
-    const other = createServer({ port: 0, stateDir: state, tailscaleOwner: "named@example.com", tailscaleServeOnly: true, tailnet });
-    const at = async (port: number, headers: Record<string, string>) => ((await (await fetch(`http://127.0.0.1:${port}/api/health?scope=bridge`, { headers })).json()) as { auth: HealthAuth }).auth;
-    try {
-      // the captain's phone: tailscale serve proxied it, names no person, and the address is this PC's Tailscale name
-      const phone = { ...proxied(), host: NODE };
-      expect(await at(sole.port, phone)).toMatchObject({ authenticated: true, via: "tailscale" });
-      expect((await fetch(`http://127.0.0.1:${sole.port}/api/session`, { headers: phone })).status).not.toBe(401);
-      // the same name in another case, or this PC's tailnet address, is the same PC
-      expect(await at(sole.port, { ...proxied(), host: NODE.toUpperCase() })).toMatchObject({ authenticated: true, via: "tailscale" });
-      expect(await at(sole.port, { ...proxied(), host: "100.101.102.103:7317" })).toMatchObject({ authenticated: true, via: "tailscale" });
-      // a rebinding page or a public domain forwarded here presents its own Host, and pairs
-      expect(await at(sole.port, { ...proxied(), host: "evil.example:7317" })).toMatchObject({ authenticated: false, reason: "pairing_required" });
-      expect((await fetch(`http://127.0.0.1:${sole.port}/api/session`, { headers: { ...proxied(), host: "evil.example:7317" } })).status).toBe(401);
-      // and the floor stays where it was: another login, Funnel and a LAN client gain nothing
-      expect(await at(sole.port, { ...phone, "tailscale-user-login": "someone@example.com" })).toMatchObject({ authenticated: false, reason: "other_user" });
-      expect(await at(sole.port, { ...phone, "tailscale-funnel-request": "?1" })).toMatchObject({ authenticated: false, reason: "pairing_required" });
-      expect(await at(sole.port, { ...phone, "tailscale-user-login": OWNER })).toMatchObject({ authenticated: true, via: "tailscale" });
-      // regression: a rejected identity is not an absent identity, even at this PC's Host.
-      expect(await at(sole.port, { ...phone, "tailscale-user-login": OWNER, "x-forwarded-for": "127.0.0.1" })).toMatchObject({ authenticated: false, reason: "pairing_required" });
-      // where the operator did not declare serve the only ingress, the same request pairs, with or without the tailnet's name as Host
-      expect(await at(off.port, proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
-      expect(await at(off.port, phone)).toMatchObject({ authenticated: false, reason: "pairing_required" });
-      expect((await fetch(`http://127.0.0.1:${off.port}/api/session`, { headers: proxied() })).status).toBe(401);
-      // a named owner is read the same way: the sole login it matches is let in, another name is not
-      expect(await at(named.port, phone)).toMatchObject({ authenticated: true, via: "tailscale" });
-      expect(await at(other.port, phone)).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    } finally {
-      sole.stop();
-      off.stop();
-      named.stop();
-      other.stop();
-      if (savedOwner === undefined) delete process.env["OVIS_TAILSCALE_OWNER"]; else process.env["OVIS_TAILSCALE_OWNER"] = savedOwner;
-      rmSync(state, { recursive: true, force: true });
-    }
-  });
-
-  it("refuses a serve request inside the cache's TTL once a node is tagged since the cache was read", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-stale-identity-"));
-    const savedOwner = process.env["OVIS_TAILSCALE_OWNER"];
-    delete process.env["OVIS_TAILSCALE_OWNER"];
-    const NODE = "stale-pc.example.ts.net";
-    const self = { DNSName: `${NODE}.`, TailscaleIPs: ["100.101.102.103"], UserID: 7 };
-    const sole = JSON.stringify({ BackendState: "Running", Self: self, User: { "7": { LoginName: OWNER } } });
-    const tagged = JSON.stringify({ BackendState: "Running", Self: self, Peer: { node: { UserID: 7, Tags: ["tag:server"] } }, User: { "7": { LoginName: OWNER } } });
-    let read = 0;
-    const tailnet = new TailnetIdentitySource(() => Promise.resolve(read++ === 0 ? sole : tagged));
-    await tailnet.freshIdentity(NODE);
-    const serveOnly = createServer({ port: 0, stateDir: state, tailscaleServeOnly: true, tailnet });
-    try {
-      const auth = ((await (await fetch(`http://127.0.0.1:${serveOnly.port}/api/health?scope=bridge`, { headers: { ...proxied(), host: NODE } })).json()) as { auth: HealthAuth }).auth;
-      expect(auth).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    } finally {
-      serveOnly.stop();
-      if (savedOwner === undefined) delete process.env["OVIS_TAILSCALE_OWNER"]; else process.env["OVIS_TAILSCALE_OWNER"] = savedOwner;
-      rmSync(state, { recursive: true, force: true });
-    }
-  });
-
-  it("regression: lets the owner's login in as soon as Tailscale finishes starting, not five minutes after a boot", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-boot-identity-"));
-    const savedOwner = process.env["OVIS_TAILSCALE_OWNER"];
-    delete process.env["OVIS_TAILSCALE_OWNER"];
-    // a PC that paired a device before: the gate is closed to strangers
-    writeFileSync(join(state, "devices.json"), JSON.stringify({ gate_closed_at: new Date().toISOString(), devices: [] }));
-    // at boot the server asks before tailscaled has logged in: no user yet; every later read is Running
-    const starting = JSON.stringify({ BackendState: "NoState", Self: { DNSName: "" } });
-    const running = JSON.stringify({ BackendState: "Running", Self: { DNSName: "pc.example.ts.net.", UserID: 7, TailscaleIPs: ["100.101.102.103"] }, User: { "7": { LoginName: OWNER } } });
-    let reads = 0;
-    const tailnet = new TailnetIdentitySource(async () => reads++ === 0 ? starting : running);
-    await tailnet.freshIdentity(null);
-    const booted = createServer({ port: 0, stateDir: state, tailnet });
-    const at = async (headers: Record<string, string>) => ((await (await fetch(`http://127.0.0.1:${booted.port}/api/health?scope=bridge`, { headers })).json()) as { auth: HealthAuth }).auth;
-    // the owner's phone asks a few seconds after the boot read, once tailscaled is up
-    const start = Date.now();
-    const clock = spyOn(Date, "now").mockImplementation(() => start + 3_000);
-    try {
-      expect(await at(proxied(OWNER))).toMatchObject({ authenticated: true, via: "tailscale" });
-      // once the login is known it is kept for the cache's life: later polls read nothing
-      const settled = reads;
-      expect(await at(proxied(OWNER))).toMatchObject({ authenticated: true, via: "tailscale" });
-      expect(reads).toBe(settled);
-      // a stranger still pairs
-      expect(await at(proxied("someone@example.com"))).toMatchObject({ authenticated: false, reason: "other_user" });
-      expect(await at(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    } finally {
-      clock.mockRestore();
-      booted.stop();
-      if (savedOwner === undefined) delete process.env["OVIS_TAILSCALE_OWNER"]; else process.env["OVIS_TAILSCALE_OWNER"] = savedOwner;
-      rmSync(state, { recursive: true, force: true });
-    }
-  });
-
-  it("takes the login named in OVIS_TAILSCALE_OWNER for the PC's own, as a tagged node needs", async () => {
-    const state = mkdtempSync(join(tmpdir(), "herdr-named-owner-"));
-    const before = process.env["OVIS_TAILSCALE_OWNER"];
-    process.env["OVIS_TAILSCALE_OWNER"] = " named@example.com ";
-    const named = createServer({ port: 0, stateDir: state });
-    try {
-      const at = async (headers: Record<string, string>) => ((await (await fetch(`http://127.0.0.1:${named.port}/api/health?scope=bridge`, { headers })).json()) as { auth: HealthAuth }).auth;
-      expect(await at(proxied("named@example.com"))).toMatchObject({ authenticated: true, via: "tailscale" });
-      expect(await at(proxied("someone@example.com"))).toMatchObject({ authenticated: false, reason: "other_user" });
-      expect(await at(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
-    } finally {
-      named.stop();
-      if (before === undefined) delete process.env["OVIS_TAILSCALE_OWNER"]; else process.env["OVIS_TAILSCALE_OWNER"] = before;
-      rmSync(state, { recursive: true, force: true });
-    }
+  it("does not read a Tailscale login header: it neither lets a proxied request in nor marks this PC's own as proxied", async () => {
+    const login = { "tailscale-user-login": "someone@example.com" };
+    expect(await auth(proxied(login))).toMatchObject({ authenticated: false, reason: "pairing_required" });
+    expect((await fetch(`${base()}/api/session`, { headers: proxied(login) })).status).toBe(401);
+    expect(await auth(login)).toMatchObject({ authenticated: true, via: "local" });
   });
 
   it("never treats a Funnel request as open", async () => {
-    expect(await auth(proxied(undefined, { "tailscale-funnel-request": "?1" }))).toMatchObject({ authenticated: false, reason: "pairing_required" });
+    expect(await auth(proxied({ "tailscale-funnel-request": "?1" }))).toMatchObject({ authenticated: false, reason: "pairing_required" });
   });
 
   it("pairs a device with a code from this PC, and the gate closes for strangers", async () => {
@@ -4385,7 +4161,6 @@ describe("pairing and identity", () => {
     expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
     expect((await fetch(`${base()}/api/session`, { headers: proxied() })).status).toBe(401);
     expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-    expect(await auth(proxied(OWNER))).toMatchObject({ authenticated: true, via: "tailscale" });
     const list = (await (await fetch(`${base()}/api/devices`, { headers: { ...proxied(), cookie } })).json()) as { devices: Array<{ id: string; label: string; current: boolean }> };
     expect(list.devices.map((d) => [d.label, d.current])).toEqual([["Test phone", true]]);
     deviceId = list.devices[0]!.id;
@@ -4428,10 +4203,9 @@ describe("pairing and identity", () => {
     expect(revoked.headers.getSetCookie()).toEqual([DEVICE_COOKIE_CLEARED, CLEAR_LEGACY_DEVICE_COOKIE]);
     for (const cookie of [phone, tablet]) expect(await auth({ ...proxied(), cookie })).toMatchObject({ authenticated: false, reason: "pairing_required" });
     expect(((await (await fetch(`${base()}/api/devices`)).json()) as { devices: unknown[] }).devices).toEqual([]);
-    // the gate stays shut to strangers; this PC and the PC's Tailscale login are in as before
+    // the gate stays shut to strangers; this PC is in as before
     expect(await auth(proxied())).toMatchObject({ authenticated: false, reason: "pairing_required" });
     expect(await auth()).toMatchObject({ authenticated: true, via: "local" });
-    expect(await auth(proxied(OWNER))).toMatchObject({ authenticated: true, via: "tailscale" });
     // with nothing left to revoke the answer is the same shape, and still a durable write
     const again = await fetch(`${base()}/api/devices/revoke-all`, { method: "POST", headers: guard });
     expect([again.status, await again.json()]).toEqual([200, { revoked: 0 }]);
@@ -4459,7 +4233,7 @@ describe("pairing and identity", () => {
       expect(list.devices.map((d) => d.label)).toContain("Phone by CLI");
       // with a token configured, the script reads it from the plugin's .env file and gets past the gate
       const tokenState = mkdtempSync(join(tmpdir(), "herdr-pair-cli-token-"));
-      const secured = createServer({ port: 0, stateDir: tokenState, token: "cli-t0k3n", tailscaleOwner: null });
+      const secured = createServer({ port: 0, stateDir: tokenState, token: "cli-t0k3n" });
       try {
         writeFileSync(join(configDir, ".env"), "OVIS_TOKEN=cli-t0k3n\n");
         const withToken = await pairCli(secured.port);
@@ -4474,9 +4248,9 @@ describe("pairing and identity", () => {
     } finally { rmSync(configDir, { recursive: true, force: true }); }
   });
 
-  it("a configured token gates this PC and its Tailscale login, and a paired device gets past it", async () => {
+  it("a configured token gates this PC, and a paired device gets past it", async () => {
     const state = mkdtempSync(join(tmpdir(), "herdr-pairing-token-"));
-    const secured = createServer({ port: 0, stateDir: state, token: "t0k3n", tailscaleOwner: OWNER });
+    const secured = createServer({ port: 0, stateDir: state, token: "t0k3n" });
     const at = (headers: Record<string, string> = {}) => fetch(`http://127.0.0.1:${secured.port}/api/health?scope=bridge`, { headers }).then((r) => r.json() as Promise<{ auth: HealthAuth }>).then((b) => b.auth);
     try {
       expect(await at()).toMatchObject({ authenticated: false, reason: "token_required" });
@@ -4485,13 +4259,12 @@ describe("pairing and identity", () => {
       // a token held in the sign-in cookie is one signing out can clear
       expect(await at({ cookie: "ovis_token=t0k3n" })).toEqual({ required: false, authenticated: true, via: "token", role: "drive" });
       expect(await at({ cookie: "ovis_token=t0k3n", authorization: "Bearer wrong" })).toEqual({ required: false, authenticated: true, via: "token", role: "drive" });
-      // another proxy on this PC can pass a visitor's copy of the login header on: the token is asked for anyway
-      expect(await at(proxied(OWNER))).toMatchObject({ authenticated: false, reason: "token_required" });
-      expect(await at(proxied("someone@example.com"))).toMatchObject({ authenticated: false, reason: "token_required" });
-      expect(await at({ ...proxied(OWNER), authorization: "Bearer t0k3n" })).toMatchObject({ authenticated: true, via: "token" });
-      // health only reports the decision: the guarded routes and the upgrade must refuse the header too
-      expect((await fetch(`http://127.0.0.1:${secured.port}/api/session`, { headers: proxied(OWNER) })).status).toBe(401);
-      expect((await fetch(`http://127.0.0.1:${secured.port}/ws`, { headers: proxied(OWNER) })).status).toBe(401);
+      // a proxy on this PC does not get in on being a proxy: the token is asked for
+      expect(await at(proxied())).toMatchObject({ authenticated: false, reason: "token_required" });
+      expect(await at({ ...proxied(), authorization: "Bearer t0k3n" })).toMatchObject({ authenticated: true, via: "token" });
+      // health only reports the decision: the guarded routes and the upgrade must refuse it too
+      expect((await fetch(`http://127.0.0.1:${secured.port}/api/session`, { headers: proxied() })).status).toBe(401);
+      expect((await fetch(`http://127.0.0.1:${secured.port}/ws`, { headers: proxied() })).status).toBe(401);
       // a pairing started with the token lets a device in without it
       const started = await fetch(`http://127.0.0.1:${secured.port}/api/devices/pair/start`, { method: "POST", headers: { ...guard, authorization: "Bearer t0k3n" } });
       const { code } = (await started.json()) as { code: string };
@@ -4578,7 +4351,7 @@ describe("token auth", () => {
       // pairing one device closes the gate to strangers, and the warning leaves with the state
       const guard = { "content-type": "application/json", "x-herdr-machine": "1" };
       const { code } = (await (await fetch(`http://127.0.0.1:${open.port}/api/devices/pair/start`, { method: "POST", headers: guard })).json()) as { code: string };
-      const paired = await fetch(`http://127.0.0.1:${open.port}/api/devices/pair`, { method: "POST", headers: { ...guard, "x-forwarded-for": "100.64.0.9" }, body: JSON.stringify({ code, label: "Phone" }) });
+      const paired = await fetch(`http://127.0.0.1:${open.port}/api/devices/pair`, { method: "POST", headers: { ...guard, host: "192.168.0.20" }, body: JSON.stringify({ code, label: "Phone" }) });
       expect(paired.status).toBe(204);
       expect((await health(open.port)).lan_exposure).toEqual({ host: "0.0.0.0" });
       const cookie = paired.headers.get("set-cookie")!.split(";")[0]!;
@@ -4831,7 +4604,7 @@ describe("terminal lens of a bridge without the PTY sidecar", () => {
 
 it("refuses cross-origin changes while allowing same-origin and CLI requests", async () => {
   const root = mkdtempSync(join(tmpdir(), "ovis-origin-"));
-  const instance = createServer({ port: 0, stateDir: root, token: "", tailscaleOwner: null, machines: false });
+  const instance = createServer({ port: 0, stateDir: root, token: "", machines: false });
   const base = `http://127.0.0.1:${instance.port}`;
   const created = await workspaceCreate({ cwd: root, label: "ovis-test-origin" });
   try {
@@ -5189,7 +4962,7 @@ describe("GET /api/sessions/history", () => {
       expect(unknown.status).toBe(400);
       // another PC asks with the bridge token this server registered, not a browser's: the proxy's way in
       const bridgeState = mkdtempSync(join(tmpdir(), "ovis-session-history-bridge-"));
-      const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: bridgeState, codexHome, tailscaleOwner: null });
+      const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: bridgeState, codexHome });
       try {
         const registered = JSON.parse(readFileSync(descriptorPath(), "utf8")) as BridgeDescriptor;
         const manager = { endpoint: (id: string) => id === "history-remote" ? { url: `http://127.0.0.1:${bridge.port}`, token: registered.token } : null, trackTerminal: () => () => {} } as unknown as MachineManager;
@@ -5633,7 +5406,7 @@ setInterval(() => {}, 1 << 30);
     writeSession(alternate, REMOTE, "remote store prompt");
     const source = await sourcePane(alternate);
     const bridgeState = mkdtempSync(join(tmpdir(), "ovis-claude-resume-bridge-"));
-    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: bridgeState, tailscaleOwner: null });
+    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token: "test-browser-token", machines: false, registerBridge: true, stateDir: bridgeState });
     try {
       const registered = JSON.parse(readFileSync(descriptorPath(), "utf8")) as BridgeDescriptor;
       const manager = { endpoint: (id: string) => id === "resume-remote" ? { url: `http://127.0.0.1:${bridge.port}`, token: registered.token } : null, trackTerminal: () => () => {} } as unknown as MachineManager;
@@ -5698,7 +5471,7 @@ describe("shared preferences API", () => {
 
   it("advertises the mute list from the first document on, saves the first mute, and refuses what is not a list", async () => {
     const root = mkdtempSync(join(tmpdir(), "herdr-web-ui-test-preferences-"));
-    const server = createServer({ port: 0, stateDir: root, token: "test-preferences", tailscaleOwner: null });
+    const server = createServer({ port: 0, stateDir: root, token: "test-preferences" });
     const base = `http://127.0.0.1:${server.port}`;
     const headers = { ...guard, authorization: "Bearer test-preferences" };
     const put = (body: unknown, extra: Record<string, string> = {}) => fetch(`${base}/api/preferences`, { method: "PUT", headers: { ...headers, ...extra }, body: typeof body === "string" ? body : JSON.stringify(body) });
@@ -5737,7 +5510,7 @@ describe("shared preferences API", () => {
     const root = mkdtempSync(join(tmpdir(), "herdr-web-ui-test-preferences-"));
     const stored = { revision: 4, settings: { theme: "dark" }, pins: ["local:w1:p1"] };
     writeFileSync(join(root, "preferences.json"), JSON.stringify(stored));
-    const server = createServer({ port: 0, stateDir: root, token: "test-preferences", tailscaleOwner: null });
+    const server = createServer({ port: 0, stateDir: root, token: "test-preferences" });
     const base = `http://127.0.0.1:${server.port}`;
     const headers = { ...guard, authorization: "Bearer test-preferences" };
     const abort = new AbortController();
@@ -5763,7 +5536,7 @@ describe("shared preferences API", () => {
     const devices = new DeviceStore(root);
     const watch = devices.pair(devices.startPairing().code, "Watch", "watch")!;
     devices.match(watch.token);
-    const server = createServer({ port: 0, stateDir: root, token: "test-preferences", tailscaleOwner: null });
+    const server = createServer({ port: 0, stateDir: root, token: "test-preferences" });
     const base = `http://127.0.0.1:${server.port}`;
     const driving = { ...guard, authorization: "Bearer test-preferences" };
     const watching = { ...guard, cookie: `ovis_device=${watch.token}` };
@@ -5805,10 +5578,10 @@ describe("access facts on /api/health", () => {
   const guard = { "content-type": "application/json", "x-herdr-machine": "1" };
   /** a server of its own: a temp state dir, an empty token unless one is given, nothing from the runner's environment */
   const CORE_FACTS: HerdrCoreFacts = { version: "0.1.17", session: "default", running: false };
-  const serve = (options: { hostname?: string; token?: string; serveOnly?: boolean; owner?: string | null; seed?: (stateDir: string) => void; runtime?: RuntimeService; accepted?: () => boolean; bridgeToken?: string } = {}) => {
+  const serve = (options: { hostname?: string; token?: string; seed?: (stateDir: string) => void; runtime?: RuntimeService; accepted?: () => boolean; bridgeToken?: string } = {}) => {
     const stateDir = mkdtempSync(join(tmpdir(), "herdr-security-summary-"));
     options.seed?.(stateDir);
-    const instance = createServer({ port: 0, hostname: options.hostname ?? "127.0.0.1", token: options.token ?? "", stateDir, ...(options.bridgeToken ? { bridgeToken: options.bridgeToken } : {}), tailscaleOwner: options.owner ?? null, tailscaleServeOnly: options.serveOnly ?? false, herdrCoreFacts: () => CORE_FACTS, ...(options.runtime ? { runtimeService: options.runtime } : {}), ...(options.accepted ? { launchAccepted: options.accepted } : {}) });
+    const instance = createServer({ port: 0, hostname: options.hostname ?? "127.0.0.1", token: options.token ?? "", stateDir, ...(options.bridgeToken ? { bridgeToken: options.bridgeToken } : {}), herdrCoreFacts: () => CORE_FACTS, ...(options.runtime ? { runtimeService: options.runtime } : {}), ...(options.accepted ? { launchAccepted: options.accepted } : {}) });
     const read = async (headers: Record<string, string> = {}, scope = "") => {
       const response = await fetch(`http://127.0.0.1:${instance.port}/api/health${scope}`, { headers });
       const text = await response.text();
@@ -5836,7 +5609,7 @@ describe("access facts on /api/health", () => {
     try {
       expect((await open.read()).body.security).toEqual({ token_configured: false, pairing_gate: "open", bind_scope: "other", observed_ingress: "direct", public_exposure: "unknown" });
       const { code } = (await (await fetch(`http://127.0.0.1:${open.port}/api/devices/pair/start`, { method: "POST", headers: guard })).json()) as { code: string };
-      const paired = await fetch(`http://127.0.0.1:${open.port}/api/devices/pair`, { method: "POST", headers: { ...guard, "x-forwarded-for": "100.64.0.9" }, body: JSON.stringify({ code, label: "Phone" }) });
+      const paired = await fetch(`http://127.0.0.1:${open.port}/api/devices/pair`, { method: "POST", headers: { ...guard, host: "192.168.0.20" }, body: JSON.stringify({ code, label: "Phone" }) });
       const cookie = paired.headers.get("set-cookie")!.split(";")[0]!;
       // the first use of the cookie confirms the pairing, which closes the gate for good
       expect((await open.read({ cookie })).body.auth).toMatchObject({ authenticated: true, via: "device" });
@@ -5890,7 +5663,7 @@ describe("access facts on /api/health", () => {
     } finally { secured.stop(); }
     const open = serve({ hostname: "0.0.0.0" });
     try {
-      const stranger = await open.read({ "x-forwarded-for": "192.168.0.20" });
+      const stranger = await open.read({ host: "192.168.0.20" });
       expect(stranger.body.auth).toMatchObject({ authenticated: true, via: "open" });
       expect(stranger.body.herdr_core).toBeUndefined();
       expect((await open.read({})).body.herdr_core).toEqual(CORE_FACTS);
@@ -5951,9 +5724,9 @@ describe("access facts on /api/health", () => {
     answer = { ok: true };
     const open = serve({ hostname: "0.0.0.0", runtime });
     try {
-      const stranger = await fetch(`http://127.0.0.1:${open.port}/api/runtime`, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1", "x-forwarded-for": "192.168.0.20" }, body: JSON.stringify({ runtime: "herdr-core" }) });
+      const stranger = await fetch(`http://127.0.0.1:${open.port}/api/runtime`, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1", host: "192.168.0.20" }, body: JSON.stringify({ runtime: "herdr-core" }) });
       expect(stranger.status).toBe(403);
-      expect((await open.read({ "x-forwarded-for": "192.168.0.20" })).body.herdr_runtime).toBeUndefined();
+      expect((await open.read({ host: "192.168.0.20" })).body.herdr_runtime).toBeUndefined();
       expect(asked).toEqual([]);
     } finally { open.stop(); }
   });
@@ -5996,24 +5769,21 @@ describe("access facts on /api/health", () => {
   });
 
   it("auth via is not ingress", async () => {
-    const OWNER = "owner@example.com";
     const bearer = { authorization: `Bearer ${SECRET}` };
-    const tailscaleShape = { ...bearer, "x-forwarded-for": "100.64.0.9", "tailscale-user-login": OWNER };
-    // the same token, three different ways in; Tailscale's header shape alone is no proof: any
-    // client on this PC can send it unless serve is declared the only ingress
-    const cases: Array<[boolean, Record<string, string>, SecuritySummary["observed_ingress"]]> = [
-      [false, bearer, "direct"],
-      [false, { ...bearer, "x-forwarded-for": "203.0.113.7" }, "proxy"],
-      [false, tailscaleShape, "unknown"],
-      [false, { ...bearer, "x-forwarded-for": "100.64.0.99", "tailscale-user-login": "unverified@example.test" }, "unknown"],
-      [true, tailscaleShape, "tailscale"],
+    // the same token, different ways in: the ingress is what the request shows of how it came
+    const cases: Array<[Record<string, string>, SecuritySummary["observed_ingress"]]> = [
+      [bearer, "direct"],
+      [{ ...bearer, "x-forwarded-for": "203.0.113.7" }, "proxy"],
+      // a Tailscale login header is not read: it says nothing of how the request came
+      [{ ...bearer, "tailscale-user-login": "someone@example.com" }, "direct"],
+      [{ ...bearer, "x-forwarded-for": "100.64.0.9", "tailscale-user-login": "someone@example.com" }, "proxy"],
     ];
-    for (const [serveOnly, headers, ingress] of cases) {
-      const secured = serve({ token: SECRET, owner: OWNER, serveOnly });
+    for (const [headers, ingress] of cases) {
+      const secured = serve({ token: SECRET });
       try {
         const body = (await secured.read(headers)).body;
         expect(body.auth).toMatchObject({ authenticated: true, via: "token" });
-        expect([serveOnly, headers, body.security?.observed_ingress]).toEqual([serveOnly, headers, ingress]);
+        expect([headers, body.security?.observed_ingress]).toEqual([headers, ingress]);
       } finally { secured.stop(); }
     }
     // and a local sign-in is not "direct" because of its via: a rewritten Host is a proxy on this PC
@@ -6027,25 +5797,15 @@ describe("access facts on /api/health", () => {
 
   it("unknown proxy never means local only", async () => {
     // a loopback bind behind some proxy on this PC: nothing proves where that proxy listens
-    const behind = serve();
+    const behind = serve({ token: SECRET });
+    const bearer = { authorization: `Bearer ${SECRET}` };
     try {
-      const answer = await behind.read({ "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https" });
-      expect(answer.body.security).toEqual({ token_configured: false, pairing_gate: "open", bind_scope: "loopback", observed_ingress: "proxy", public_exposure: "unknown" });
+      const answer = await behind.read({ ...bearer, "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https" });
+      expect(answer.body.security).toEqual({ token_configured: true, pairing_gate: "open", bind_scope: "loopback", observed_ingress: "proxy", public_exposure: "unknown" });
       expect(answer.body.lan_exposure).toBeUndefined();
-      // a Tailscale header nothing here could have written stays unknown, and so does exposure
-      const forged = await behind.read({ "x-forwarded-for": "203.0.113.7", "tailscale-user-login": "someone@example.com" });
-      expect(forged.body.security).toMatchObject({ observed_ingress: "unknown", public_exposure: "unknown" });
+      // Funnel's own header, from loopback where Tailscale's proxy connects from, is the one evidence of the public internet
+      expect((await behind.read({ ...bearer, "x-forwarded-for": "203.0.113.7", "tailscale-funnel-request": "?1" })).body.security).toMatchObject({ observed_ingress: "funnel", public_exposure: "observed" });
     } finally { behind.stop(); }
-    // Funnel counts as public evidence only where serve is declared the only ingress
-    const funnelHeaders = { authorization: `Bearer ${SECRET}`, "x-forwarded-for": "203.0.113.7", "tailscale-funnel-request": "?1" };
-    const undeclared = serve({ token: SECRET, owner: "owner@example.com" });
-    try {
-      expect((await undeclared.read(funnelHeaders)).body.security).toMatchObject({ observed_ingress: "unknown", public_exposure: "unknown" });
-    } finally { undeclared.stop(); }
-    const declared = serve({ token: SECRET, owner: "owner@example.com", serveOnly: true });
-    try {
-      expect((await declared.read(funnelHeaders)).body.security).toMatchObject({ observed_ingress: "funnel", public_exposure: "observed" });
-    } finally { declared.stop(); }
   });
 
   it("bridge health does not require herdr", async () => {

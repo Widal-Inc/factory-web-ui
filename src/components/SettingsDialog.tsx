@@ -1181,11 +1181,11 @@ function AccessFacts({ facts }: { facts: SecurityFacts }) {
       {fact(t("Pairing gate"), gate === "open" ? t("Not yet closed") : gate === "closed" ? t("Closed") : t("Unavailable"),
         gate === "open" ? t("No device has been paired yet, so no pairing code is asked for.")
           : gate === "closed" ? t("A new browser needs a pairing code or the token.")
-          : t("The device list cannot be read, so no new device can pair. This PC, the token and Tailscale sign-in still work."))}
+          : t("The device list cannot be read, so no new device can pair. This PC and the token still work."))}
       {fact(t("Listens on"), bind === "loopback" ? t("Loopback") : bind === "tailnet" ? t("Tailscale address") : t("Other address"),
         bind === "other" ? t("A network address, every interface or a host name: other devices on that network may reach it.")
           : t("The address the server listens on. A proxy on this PC can still forward other traffic to it."))}
-      {fact(t("This connection"), ingress === "direct" ? t("No proxy seen") : ingress === "proxy" ? t("Through a proxy") : ingress === "tailscale" ? t("Through Tailscale") : ingress === "funnel" ? t("Through Tailscale Funnel") : ingress === "relay" ? t("Through the Ovis relay") : ingress === "portal" ? t("Through Portal") : t("Unknown"),
+      {fact(t("This connection"), ingress === "direct" ? t("No proxy seen") : ingress === "proxy" ? t("Through a proxy") : ingress === "funnel" ? t("Through Tailscale Funnel") : ingress === "relay" ? t("Through the Ovis relay") : t("Unknown"),
         ingress === "direct" ? t("No proxy said it forwarded this browser's request. One that adds nothing, such as an SSH tunnel, looks the same.")
           : ingress === "relay" ? t("This browser's request came from a phone paired through the Ovis relay, end-to-end encrypted: the relay could not read it.")
           : t("How this browser's request arrived, not how every device reaches the server."))}
@@ -1197,10 +1197,10 @@ function AccessFacts({ facts }: { facts: SecurityFacts }) {
 }
 
 /**
- * Groups of Devices and PCs that merged into My devices (Connect a device holds the ways in, Portal among them),
+ * Groups of Devices and PCs that merged into My devices (Connect a device holds the ways in),
  * by their old link names (`?settings=devices&section=…`).
  */
-const MOVED_GROUPS: Readonly<Record<string, string>> = { phone: "devices", remote: "devices", portal: "devices", "chat-more": "conversation" };
+const MOVED_GROUPS: Readonly<Record<string, string>> = { phone: "devices", remote: "devices", "chat-more": "conversation" };
 
 /**
  * What a paired device is, read from the label the app first gave it (lib/phone.ts deviceLabel, "iPhone · Safari");
@@ -1249,7 +1249,7 @@ function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSett
   // what keeps the switch from working here, only while it does (lib/wakeLock.ts asks for the same two)
   const wakeLockProblem = !window.isSecureContext ? t("Needs HTTPS or localhost.") : !("wakeLock" in navigator) ? t("This browser can't keep the screen on.") : null;
   const relay = useRelay();
-  const relayReadOnly = auth?.role === "watch" || auth?.via === "portal";
+  const relayReadOnly = auth?.role === "watch";
   const closesGate = security.state === "known" && security.summary.pairing_gate === "open" && !security.summary.token_configured;
   const [connecting, setConnecting] = useState(false);
   // each opening of Add a connection asks the account service again, so a service back from an outage signs in there
@@ -1296,7 +1296,7 @@ function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSett
         </div>
         {/* how anything else gets connected: one button, its sheet picks the way; a search finds it as a row by every way it holds */}
         {searching ? (
-          <SettingsRow label={t("Add a connection")} keywords={t("phone browser PC pair pairing code QR relay Tailscale Wi-Fi SSH Portal add PC remote PCs")}>
+          <SettingsRow label={t("Add a connection")} keywords={t("phone browser PC pair pairing code QR relay Tailscale Wi-Fi SSH add PC remote PCs")}>
             <button type="button" className="btn btn-primary" onClick={() => { setConnecting(true); setConnectOpens((count) => count + 1); }}><Plus aria-hidden="true" />{t("Add a connection")}</button>
           </SettingsRow>
         ) : (
@@ -1339,7 +1339,7 @@ function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSett
           {/* in the hosted shell too (a phone reaching this PC through the relay or directly), there without the switch */}
           {(relayOffered(relay) || inRelayShell()) && <RelayDirectRow relay={relay} readOnly={relayReadOnly || inRelayShell()} />}
           <div className="settings-item" ref={setDevicesMore} />
-          {onSignOut && <SignOutRow viaPortal={auth?.via === "portal"} oidc={auth?.portal?.method === "oidc"} onSignOut={onSignOut} label={t("Sign out of this PC")} />}
+          {onSignOut && <SignOutRow onSignOut={onSignOut} label={t("Sign out of this PC")} />}
         </SettingsGroup>
         <SettingsGroup title={t("This device")} section="phone-more">
           <SettingsRow label={t("Keep screen on")} description={<>{t("While a terminal or chat pane is open.")}{wakeLockProblem !== null && <span className="settings-condition">{wakeLockProblem}</span>}</>}>
@@ -1358,7 +1358,7 @@ function DevicesPage({ auth, security, onSignOut, onRevokedAll, machines, pcSett
 
       {connecting && (
         <ConnectPhoneDialog plan={plan} pairUrl={pairUrl}
-          relay={relay} readOnly={relayReadOnly} closesGate={closesGate} canPair={auth?.via !== "portal"}
+          relay={relay} readOnly={relayReadOnly} closesGate={closesGate}
           signedIn={account.signedIn} joinBySignIn={joinBySignIn} onAccount={accountOffered() && account.reachable ? signIn : null}
           onAddPc={(preset) => { setConnecting(false); openAddPc(preset); }} machines={machines}
           onConnectMachine={(machine) => { setConnecting(false); connectPc(machine); }} onClose={closeConnect} />
@@ -1404,12 +1404,9 @@ function RelayControls({ relay, closesGate, onReset }: { relay: RelayState; clos
       </SettingsRow>
       {closesGate && !on && status.blocked === null && <p className="settings-item settings-condition">{t("Turning on the relay closes the device gate: a new browser then needs a pairing code or the access token.")}</p>}
       {error !== null && <p className="settings-item settings-hint relay-error" role="alert">{error}</p>}
-      {/* a serve-only install refuses the reset too; an unreadable identity is what the reset mends */}
-      {status.blocked !== "serve_only" && (
-        <SettingsRow label={t("Reset relay identity")}>
-          <button ref={resetButton} type="button" className="btn" disabled={pending} onClick={() => setConfirmingReset(true)}>{t("Reset")}</button>
-        </SettingsRow>
-      )}
+      <SettingsRow label={t("Reset relay identity")}>
+        <button ref={resetButton} type="button" className="btn" disabled={pending} onClick={() => setConfirmingReset(true)}>{t("Reset")}</button>
+      </SettingsRow>
       {confirmingReset && (
         <ConfirmDialog title={t("Reset the relay identity?")} body={t("Phones paired through the relay will need to scan a new code.")}
           confirmLabel={t("Reset")} onClose={() => setConfirmingReset(false)} onConfirm={async () => {

@@ -1189,7 +1189,7 @@ describe("bridge verification failures", () => {
   /** a bridge whose herdr socket is `socket` */
   function bridge(socket: string): number {
     process.env["HERDR_SOCKET"] = socket;
-    const server = createServer({ port: 0, hostname: "127.0.0.1", token: TOKEN, stateDir: temp(), machines: false, registerBridge: false, tailscaleOwner: null });
+    const server = createServer({ port: 0, hostname: "127.0.0.1", token: TOKEN, stateDir: temp(), machines: false, registerBridge: false });
     stops.push(() => server.stop());
     return server.port!;
   }

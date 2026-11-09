@@ -206,12 +206,10 @@ keeps 443 for something else) when Tailscale runs and does not serve the app yet
 address as a QR code. **Settings → Phone & devices** in the app shows this step's state: the address that already works as a QR
 code, or the exact command still to run. Who gets in:
 
-- The user's own Tailscale devices get in as the user: `tailscale serve` states the login, and the
-  server compares it with this PC's. Nothing to configure. Other people's logins are refused, and
-  tagged devices (no person's login) need pairing. If the user's own phone is asked to pair anyway,
-  `OVIS_TAILSCALE_SERVE_ONLY=1` lets it in without a code on a tailnet one login owns
+- `tailscale serve` is a proxy, and a proxied request is refused until it holds the access token (`OVIS_TOKEN`) or a
+  paired device's cookie: the app does not read the Tailscale login `serve` states
   ([Access and safety](docs/guide.md#access-and-safety)).
-- Any other device (someone else's, or a LAN or public address) is paired: **Settings → Phone & devices**
+- A device is paired: **Settings → Phone & devices**
   on the PC shows a six-digit code and a QR code; the device enters it once. On a headless PC with
   no browser, find the plugin path with `herdr plugin list` (herdr 0.9.4 moved plugin checkouts),
   then run:
@@ -249,7 +247,7 @@ Other PCs over SSH are added in Ovis (Settings → Remote PCs → **Add PC**), n
 | --- | --- | --- |
 | `HOST` | `127.0.0.1` | Bind address |
 | `PORT` | `7317` | HTTP and WebSocket port |
-| `OVIS_TOKEN` | unset | Token for scripts and proxies. Once set, every client that is not a paired device or the user's own Tailscale login needs it, this PC included |
+| `OVIS_TOKEN` | unset | Token for scripts and proxies. Once set, every client that is not a paired device needs it, this PC included |
 | `HERDR_SOCKET` | `~/.config/herdr/herdr.sock` | herdr socket. The plugin follows herdr's session (herdr passes `HERDR_SOCKET_PATH`); a `HERDR_SOCKET` set in the plugin config wins |
 | `OVIS_AUTO_UPDATE` | `0` | `1` installs new versions automatically |
 | `OVIS_STATE_DIR` | `~/.config/ovis` | Push keys, device subscriptions, PC registrations, update builds. Keep it across reinstalls. |
