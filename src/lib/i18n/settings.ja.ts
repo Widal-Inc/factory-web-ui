@@ -290,13 +290,6 @@ export const SETTINGS_JA: Record<string, string> = {
   "onboarding first run getting started welcome": "オンボーディング 初回 はじめに ようこそ",
   "Agent integrations": "エージェント連携",
   // the hosted relay shell's rows (lib/relay/shell.tsx)
-  "This page shows one PC. The front page lists every PC this phone is paired with.": "このページは1台のPCを表示します。トップページにこのスマホとペアリング済みのすべてのPCが並びます。",
-  "Deletes this phone's key for this PC. Pairing again takes a new QR code from the PC.": "このPC用のこのスマホのキーを削除します。再度ペアリングするにはPCの新しいQRコードが必要です。",
-  "Forget this PC?": "このPCを削除しますか？",
-  "This phone's key for it is deleted here, and the PC keeps listing this phone until it is revoked there. Pairing again takes a new QR code from the PC.": "このスマホ側のキーを削除します。PC側ではそこで取り消すまでこのスマホが一覧に残ります。再度ペアリングするにはPCの新しいQRコードが必要です。",
-  "Forget": "削除",
-  "Through the Ovis relay": "Ovis リレー経由",
-  "This browser's request came from a phone paired through the Ovis relay, end-to-end encrypted: the relay could not read it.": "このブラウザーのリクエストは、Ovis リレー経由でペアリングしたスマートフォンから端末間暗号化で届きました。リレーは内容を読めません。",
   "Terminals": "ターミナル",
   "The Herdr app's core (hc {version}) runs on this PC too. To show its terminals here instead, set {setting} and restart Ovis: in the .env file in the folder {command} prints when herdr's plugin starts Ovis, or in the environment of whatever else starts it.": "この PC では Herdr アプリのコア (hc {version}) も動いています。代わりにそのターミナルをここに表示するには、{setting} を設定して Ovis を再起動してください。herdr のプラグインが Ovis を起動する場合は {command} が示すフォルダの .env ファイルに、それ以外の方法で起動する場合はその起動環境に設定します。",
   "The Herdr app's core (hc {version}) is installed on this PC too. To show its terminals here instead, set {setting} and restart Ovis: in the .env file in the folder {command} prints when herdr's plugin starts Ovis, or in the environment of whatever else starts it.": "この PC には Herdr アプリのコア (hc {version}) もインストールされています。代わりにそのターミナルをここに表示するには、{setting} を設定して Ovis を再起動してください。herdr のプラグインが Ovis を起動する場合は {command} が示すフォルダの .env ファイルに、それ以外の方法で起動する場合はその起動環境に設定します。",

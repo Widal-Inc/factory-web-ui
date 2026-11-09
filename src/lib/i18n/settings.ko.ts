@@ -290,13 +290,6 @@ export const SETTINGS_KO: Record<string, string> = {
   "onboarding first run getting started welcome": "온보딩 처음 실행 시작하기 환영",
   "Agent integrations": "에이전트 통합",
   // the hosted relay shell's rows (lib/relay/shell.tsx)
-  "This page shows one PC. The front page lists every PC this phone is paired with.": "이 페이지는 PC 한 대를 보여줍니다. 첫 페이지에 이 폰과 페어링된 모든 PC가 나옵니다.",
-  "Deletes this phone's key for this PC. Pairing again takes a new QR code from the PC.": "이 PC에 대한 이 폰의 키를 삭제합니다. 다시 페어링하려면 PC의 새 QR 코드가 필요합니다.",
-  "Forget this PC?": "이 PC를 잊을까요?",
-  "This phone's key for it is deleted here, and the PC keeps listing this phone until it is revoked there. Pairing again takes a new QR code from the PC.": "이 폰에서 해당 키를 삭제합니다. PC에서는 폐기하기 전까지 이 폰이 목록에 남습니다. 다시 페어링하려면 PC의 새 QR 코드가 필요합니다.",
-  "Forget": "잊기",
-  "Through the Ovis relay": "Ovis 릴레이 경유",
-  "This browser's request came from a phone paired through the Ovis relay, end-to-end encrypted: the relay could not read it.": "이 브라우저의 요청은 Ovis 릴레이로 페어링된 폰에서 종단 간 암호화되어 왔습니다. 릴레이는 내용을 읽을 수 없습니다.",
   "Terminals": "터미널",
   "The Herdr app's core (hc {version}) runs on this PC too. To show its terminals here instead, set {setting} and restart Ovis: in the .env file in the folder {command} prints when herdr's plugin starts Ovis, or in the environment of whatever else starts it.": "이 PC에서 Herdr 앱의 코어(hc {version})도 실행 중입니다. 대신 그 터미널을 여기서 보려면 {setting}을 설정하고 Ovis를 다시 시작하세요. herdr 플러그인이 Ovis를 시작한다면 {command}가 알려 주는 폴더의 .env 파일에, 다른 방법으로 시작한다면 그 실행 환경에 설정합니다.",
   "The Herdr app's core (hc {version}) is installed on this PC too. To show its terminals here instead, set {setting} and restart Ovis: in the .env file in the folder {command} prints when herdr's plugin starts Ovis, or in the environment of whatever else starts it.": "이 PC에는 Herdr 앱의 코어(hc {version})도 설치되어 있습니다. 대신 그 터미널을 여기서 보려면 {setting}을 설정하고 Ovis를 다시 시작하세요. herdr 플러그인이 Ovis를 시작한다면 {command}가 알려 주는 폴더의 .env 파일에, 다른 방법으로 시작한다면 그 실행 환경에 설정합니다.",

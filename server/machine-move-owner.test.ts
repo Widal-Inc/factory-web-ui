@@ -32,8 +32,8 @@ const pairDevice = (label: string, role: "drive" | "watch"): string => {
 const driveDevice = pairDevice("Owner's laptop", "drive");
 const watchDevice = pairDevice("Wall screen", "watch");
 
-const OWNERS = ["this PC", "the token", "a paired device that drives", "a relay device that drives"] as const;
-const OTHERS = ["an open LAN visitor", "a paired device that watches", "a relay device that watches"] as const;
+const OWNERS = ["this PC", "the token", "a paired device that drives"] as const;
+const OTHERS = ["an open LAN visitor", "a paired device that watches"] as const;
 type Kind = typeof OWNERS[number] | typeof OTHERS[number];
 const lan = { address: "192.168.0.20", family: "IPv4", port: 1 };
 const loopback = { address: "127.0.0.1", family: "IPv4", port: 1 };
@@ -42,10 +42,6 @@ function contextFor(kind: Kind): ServerContext {
   const onOpen = kind === "this PC" || kind === "an open LAN visitor";
   const app = onOpen ? open : secured;
   const base = { ...app.context, services: { ...app.context.services, core: { ...app.context.services.core, machines: manager } }, timeout: () => {} };
-  if (kind === "a relay device that drives" || kind === "a relay device that watches") {
-    const role = kind === "a relay device that drives" ? "drive" as const : "watch" as const;
-    return { ...base, peer: { kind: "relay", device: { id: "0123456789abcdef", label: "Phone", role }, sessionId: "s", serverId: "0123456789abcdef0123456789abcdef", key: "" }, requestIP: () => null };
-  }
   return { ...base, requestIP: () => kind === "this PC" ? loopback : lan };
 }
 function headersFor(kind: Kind, extra: Record<string, string>): Record<string, string> {
@@ -96,7 +92,7 @@ it("lets the owner from this PC, the token, a paired or a relay device that driv
 });
 
 it("takes the owner's change to another PC's move only from this app's own page, with no query", async () => {
-  for (const kind of ["this PC", "a relay device that drives"] as const) {
+  for (const kind of ["this PC", "a paired device that drives"] as const) {
     expect(await ask(kind, "pc/runtime/move", "POST", {}, { revision: "shown" })).toEqual([403, "forbidden"]);
     expect(await ask(kind, "runtime/move-all", "POST", {}, plans)).toEqual([403, "forbidden"]);
     // refused by the one guard over every change to this PC's PCs (machine-api.ts), as an update with a query is

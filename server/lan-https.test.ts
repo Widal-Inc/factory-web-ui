@@ -233,18 +233,6 @@ describe("the LAN HTTPS listener", () => {
   const origin = "https://192.168.1.10:7318";
   const pairRequest = (code: string) => new Request(`${origin}/api/devices/pair`, { method: "POST", headers: { host: "192.168.1.10:7318", origin, "content-type": "application/json", "x-herdr-machine": "1" }, body: JSON.stringify({ code, label: "Phone" }) });
 
-  it("never redeems a code started through the relay, nor spends its guesses", async () => {
-    const app = createServer({ ...base, stateDir: tempDir() });
-    try {
-      const store = app.context.services.devices;
-      const { code } = store.startPairing(Date.now(), { remote: true, startedBy: null, memberRequired: false });
-      for (const guess of [code, "000000", "111111", "222222", "333333", "444444"]) expect((await handleRequest(pairRequest(guess), lanContext(app)))!.status).toBe(401);
-      expect(store.activePairing()?.code).toBe(code);
-    } finally {
-      app.stop();
-    }
-  });
-
   it("spends five guesses of its own on a code, never the ones a phone elsewhere types it in with", async () => {
     const app = createServer({ ...base, stateDir: tempDir() });
     try {
@@ -260,7 +248,7 @@ describe("the LAN HTTPS listener", () => {
     }
   });
 
-  it("pauses code pairing there after twenty wrong codes, leaving relay pairing alone", async () => {
+  it("pauses code pairing there after twenty wrong codes", async () => {
     const app = createServer({ ...base, stateDir: tempDir() });
     try {
       const store = app.context.services.devices;
@@ -270,7 +258,6 @@ describe("the LAN HTTPS listener", () => {
       const paused = await handleRequest(pairRequest(code), lanContext(app));
       expect(paused!.status).toBe(429);
       expect(store.activePairing()?.code).toBe(code);
-      expect(() => store.assertRelayPairing()).not.toThrow();
     } finally {
       app.stop();
     }

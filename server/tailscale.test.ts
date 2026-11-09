@@ -1,42 +1,10 @@
-import { describe, expect, it, spyOn } from "bun:test";
-import { HTTPS_PORTS, httpsPorts, parseTailscale, parseTailscaleIp, TailnetAddressSource } from "./tailscale.ts";
+import { describe, expect, it } from "bun:test";
+import { HTTPS_PORTS, httpsPorts, parseTailscale, parseTailscaleIp } from "./tailscale.ts";
 
 const status = (state = "Running", dns = "pc.example.ts.net.") => JSON.stringify({ BackendState: state, Self: { DNSName: dns } });
 /** a `tailscale serve status --json` document: listeners by port, and one "/" proxy per host:port */
 const serve = (tcp: Record<string, { HTTPS?: boolean; HTTP?: boolean }>, web: Record<string, string>) =>
   JSON.stringify({ TCP: tcp, Web: Object.fromEntries(Object.entries(web).map(([key, proxy]) => [key, { Handlers: { "/": { Proxy: proxy } } }])) });
-
-describe("TailnetAddressSource", () => {
-  const self = (ip: string) => JSON.stringify({ BackendState: "Running", Self: { TailscaleIPs: [ip] } });
-  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-  it("answers null until a read lands, then this PC's tailnet address", async () => {
-    const source = new TailnetAddressSource(async () => self("100.64.0.7"));
-    expect(source.ip()).toBeNull();
-    await settle();
-    expect(source.ip()).toBe("100.64.0.7");
-  });
-
-  it("keeps the last address through a failed read, and reads again only after five minutes", async () => {
-    let reads = 0;
-    let answer: string | null = self("100.64.0.7");
-    const source = new TailnetAddressSource(async () => { reads += 1; return answer; });
-    source.ip();
-    await settle();
-    expect(reads).toBe(1);
-    source.ip();
-    expect(reads).toBe(1);
-    answer = null;
-    const start = Date.now();
-    const clock = spyOn(Date, "now").mockImplementation(() => start + 6 * 60_000);
-    try {
-      source.ip();
-      await settle();
-      expect(reads).toBe(2);
-      expect(source.ip()).toBe("100.64.0.7");
-    } finally { clock.mockRestore(); }
-  });
-});
 
 describe("parseTailscaleIp", () => {
   it("picks this PC's IPv4 tailnet address, and nothing when there is none", () => {

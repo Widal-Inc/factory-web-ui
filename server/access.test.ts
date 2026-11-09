@@ -6,11 +6,6 @@ const base: AccessInput = { loopback: true, forwarded: false, forwardingHeaders:
 const via = (input: Partial<AccessInput>) => { const a = decideAccess({ ...base, ...input }); return a.level === "full" ? a.via : `refused:${a.reason}`; };
 
 describe("decideAccess", () => {
-  it("uses the authenticated relay principal before every socket credential", () => {
-    const relayPeer = { id: "relay-device", label: "Relay phone", role: "watch" as const };
-    expect(decideAccess({ ...base, relayPeer, device, tokenMatched: true, tokenConfigured: true, gated: true })).toEqual({ level: "full", via: "relay", role: "watch", device: relayPeer });
-  });
-
   it("lets this PC in without a token, but not through a proxy", () => {
     expect(via({})).toBe("local");
     expect(via({ forwarded: true, gated: true })).toBe("refused:pairing_required");

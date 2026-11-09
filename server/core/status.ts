@@ -5,7 +5,6 @@
 import type { SshCandidatesOptions } from "../ssh-candidates.ts";
 import { createAlertWebhook } from "../alert-webhook.ts";
 import { basename, join } from "node:path";
-import type { RelaySocket } from "../../shared/relay-channel.ts";
 import type { AgentStatus, HerdrPane, PaneContext, PlanSummary, ServerMessage, SessionSnapshot } from "../../shared/protocol.ts";
 import { alertStatus, paneAlertsMuted, pushPaneTitle } from "../../shared/notify-policy.ts";
 import { BackgroundWait } from "../background-wait.ts";
@@ -56,17 +55,11 @@ export function createStatusHub<Owner, Lease>({ options, devices, preferences, c
     codexHome?: string;
     telemetry?: Telemetry;
     machines?: boolean;
-    /** how PCs added through the relay reach it; tests point it at a local relay */
-    relayPcSocket?: (url: string) => RelaySocket;
-    /** how they dial those PCs' direct carriers; tests point it at a local listener */
-    relayPcDirectSocket?: (url: string) => RelaySocket;
     /** how often another PC's own update is looked at while it runs; tests shorten it */
     pcUpdateTimings?: { pollMs?: number; startMs?: number; checkMs?: number; offerMs?: number };
     sshCandidates?: SshCandidatesOptions;
     herdrProfiles?: () => Promise<HerdrMachineProfile[]>;
     alertTiming?: Partial<AlertTiming>;
-    /** this PC's relay ID, where it has one (server/relay/service.ts serverId): devices turn its alerts off by it */
-    serverId?: () => string | undefined;
     pushLoopbackHttp?: boolean;
     backgroundWait?: { grace: number; limit: number };
     statusNow?: () => number;
@@ -103,7 +96,6 @@ export function createStatusHub<Owner, Lease>({ options, devices, preferences, c
   const push = createPushService({
     stateDir: options.stateDir ?? defaultStateDir(),
     webhook: alertWebhook,
-    serverId: options.serverId,
     timing: options.alertTiming,
     now: options.statusNow,
     loopbackHttp: options.pushLoopbackHttp === true,
@@ -398,7 +390,7 @@ export function createStatusHub<Owner, Lease>({ options, devices, preferences, c
   /** A pane's status frame: every one says whether the pane waits on its turn's background work. */
   const paneStatus = (paneId: string, status: AgentStatus, about: { background_tasks?: number; plan?: PlanSummary | null; context?: PaneContext | null } = {}): ServerMessage =>
     ({ type: "pane-status", pane_id: paneId, agent_status: status, ...finishes.status(paneId, status), ...about, ...(waits.waiting(paneId) ? { background_wait: true as const } : {}) });
-  const machines = options.machines === false ? null : new MachineManager(options.stateDir ?? defaultStateDir(), push, completions, clientSnapshot, { restoreReplaced: () => preferences.get().settings.restoreReplacedServer === true, bootId: options.orderSequence?.epoch, localFinishEpoch: () => finishes.epoch, relaySocket: options.relayPcSocket, relayDirectSocket: options.relayPcDirectSocket, serverId: options.serverId, sshCandidates: options.sshCandidates, ...(options.pcUpdateTimings ? { ownUpdate: options.pcUpdateTimings } : {}) });
+  const machines = options.machines === false ? null : new MachineManager(options.stateDir ?? defaultStateDir(), push, completions, clientSnapshot, { restoreReplaced: () => preferences.get().settings.restoreReplacedServer === true, bootId: options.orderSequence?.epoch, localFinishEpoch: () => finishes.epoch, sshCandidates: options.sshCandidates, ...(options.pcUpdateTimings ? { ownUpdate: options.pcUpdateTimings } : {}) });
   if (machines && options.herdrProfiles) machines.watchHerdrProfiles(options.herdrProfiles);
   // on herdr-core, the core's other machines are PCs too, each reached through this PC's core
   if (machines && servingCore()) machines.watchHcMachines(() => listHcMachines(coreConnection()), (machine) => startMachineBridge(machine, options.stateDir ?? defaultStateDir()));

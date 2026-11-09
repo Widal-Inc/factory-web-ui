@@ -13,7 +13,6 @@ import { OpenFileContext } from "../lib/filePaths.ts";
 import { MachineContext } from "../lib/machineContext.tsx";
 import { useT } from "../lib/i18n.ts";
 import { readerFromSearch, readerHref, resolveFromDocument, type ReaderTarget } from "../lib/fileReader.ts";
-import { pageSearch } from "../lib/pageQuery.ts";
 import type { AccessRefusal } from "../../shared/protocol.ts";
 
 const close = (): void => {};
@@ -41,7 +40,7 @@ export function FileReader({ target }: { target: ReaderTarget }) {
 
   useEffect(() => {
     const onPop = (): void => {
-      const next = readerFromSearch(pageSearch());
+      const next = readerFromSearch(window.location.search);
       if (next !== null) setPath(next.path);
     };
     window.addEventListener("popstate", onPop);

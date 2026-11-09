@@ -3,15 +3,10 @@ import { describe, expect, it } from "bun:test";
 import type { ObservedIngress } from "../../shared/protocol.ts";
 import { connectionRoute } from "./connectionRoute.ts";
 
-const route = (hostname: string, page: { relay?: boolean; ingress?: ObservedIngress | null; protocol?: string } = {}) =>
-  connectionRoute({ relay: false, ingress: null, protocol: "https:", hostname, ...page });
+const route = (hostname: string, page: { ingress?: ObservedIngress | null; protocol?: string } = {}) =>
+  connectionRoute({ ingress: null, protocol: "https:", hostname, ...page });
 
 describe("how this device reaches Ovis", () => {
-  it("is the relay on the hosted shell, whatever the address", () => {
-    expect(route("app.ovis.sh", { relay: true })).toBe("relay");
-    expect(route("localhost", { relay: true })).toBe("relay");
-  });
-
   it("says nothing in the phone app's bundled demo, which reaches no PC", () => {
     expect(route("localhost", { protocol: "capacitor:" })).toBeNull();
   });

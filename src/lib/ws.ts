@@ -1045,8 +1045,7 @@ export class HerdrSocket {
   }
 
   /**
-   * Typing the socket took has not yet reached the server: a relay carrier can stop before its mux
-   * writes the frame, and a socket can go half-open just after a send (#2587). The server reads a
+   * Typing the socket took has not yet reached the server: a socket can go half-open just after a send (#2587). The server reads a
    * connection's frames in order, so the pong of a ping sent after the typing proves it was read;
    * until then it is kept, and a connection that ends first leaves it to the pane's terminal, which
    * holds it for review (takeUnconfirmedInput). Typing sent before the bridge said what it takes is kept

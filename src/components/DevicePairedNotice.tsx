@@ -20,9 +20,7 @@ export function DevicePairedNotice({ events, onOpen, onDismiss }: { events: read
     return (
       <div key={event.event_id} className="update-notice is-paired" role="status" data-testid="device-paired-notice">
         <Smartphone aria-hidden="true" />
-        <span>{event.approved_by
-          ? t("A new device joined at {time}: {name}, approved on {approver}. If that was not you, revoke it.", { time, name: event.label, approver: event.approved_by.label })
-          : t("A new device was paired at {time}: {name}. If that was not you, revoke it.", { time, name: event.label })}</span>
+        <span>{t("A new device was paired at {time}: {name}. If that was not you, revoke it.", { time, name: event.label })}</span>
         <div className="device-paired-actions">
           <button type="button" className="btn" onClick={() => onOpen(event)}>{t("Devices and PCs")}</button>
           <button type="button" className="icon-button update-notice-dismiss" aria-label={t("Dismiss")} title={t("Dismiss")} onClick={() => onDismiss(event)}><X /></button>
@@ -34,15 +32,14 @@ export function DevicePairedNotice({ events, onOpen, onDismiss }: { events: read
 
 /**
  * A device was removed from this PC while this window was open (`device-removed`): revoked here,
- * or removed through the account by another device. One calm line per removal, saying by whom, so
- * a removal nobody here made shows; dismissed by hand.
+ * or by another device. One calm line per removal, saying by whom, so a removal nobody here made
+ * shows; dismissed by hand.
  */
 export function DeviceRemovedNotice({ events, onDismiss }: { events: readonly DeviceRemovedEvent[]; onDismiss: (event: DeviceRemovedEvent) => void }) {
   const t = useT();
   return <>{events.map((event) => {
     const time = new Date(event.removed_at).toLocaleTimeString(currentLocale(), { hour: "2-digit", minute: "2-digit" });
-    const text = event.by === undefined ? t("{name} was removed from this PC at {time}.", { name: event.label, time })
-      : event.by === "pc" ? t("{name} was revoked on this PC at {time}.", { name: event.label, time })
+    const text = event.by === "pc" ? t("{name} was revoked on this PC at {time}.", { name: event.label, time })
       : t("{name} was removed from this PC at {time}, by {by}.", { name: event.label, time, by: event.by.label });
     return (
       <div key={event.event_id} className="update-notice is-paired" role="status" data-testid="device-removed-notice">

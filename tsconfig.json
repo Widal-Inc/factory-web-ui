@@ -29,15 +29,12 @@
       ]
     }
   },
-  "references": [{ "path": "./shared/vendor/paseo-e2ee" }],
-  "exclude": ["shared/vendor/**"],
   "include": [
     "src",
     "server",
     "shared",
     "telemetry",
     "push-relay",
-    "relay",
     "vite.config.ts"
   ]
 }

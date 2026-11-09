@@ -27,23 +27,10 @@ import { useSettings } from "../lib/settings.ts";
 import { useAnnouncedText } from "../lib/useAnnouncedText.ts";
 import { machineErrorText, saysHerdrAway } from "../lib/userError.ts";
 import { changePc, inNativeApp } from "../lib/nativeApp.ts";
-import { serverIdOfPath, shellMode } from "../lib/shellMode.ts";
 import { canHideMachine, HIDDEN_MACHINES_MAX, setHiddenMachines, useHiddenMachines, withMachineHidden } from "../lib/hiddenMachines.ts";
 
 /** the release a PC's own Ovis offers as its card shows it: an update installs only that one (docs/remote-pcs.md) */
 const shownRevision = (machine: Machine) => machine.ovis_update?.revision ? { revision: machine.ovis_update.revision } : undefined;
-
-/**
- * Which list of PCs this page goes back to, when it shows one PC of a phone's list: the phone app's
- * own list ("app"), or the hosted shell's front page on a PC's page there ("shell"). Null in a PC's
- * own app, whose sidebar lists its PCs itself.
- */
-export function pcListExit(page: { nativeApp: boolean; relayShell: boolean; pathname: string }): "app" | "shell" | null {
-  // the phone app first: its own list holds every PC it opens, those it reaches through the relay included
-  if (page.nativeApp) return "app";
-  if (page.relayShell && serverIdOfPath(page.pathname) !== null) return "shell";
-  return null;
-}
 
 /** The PC header's state word; "connected" is the quiet default and shows as a dot alone, every other state also writes its word under the name. */
 export const STATE_WORD: Readonly<Record<MachineState, string>> = {
@@ -79,8 +66,8 @@ export function MachineSidebar(props: Props) {
   // header (MachineGroup), and its name, which no row then shows, is not searched
   const loneHost = props.machines.length === 1 && props.machines[0]!.kind === "local" ? props.machines[0]!.id : null;
   const unnamed = useMemo(() => new Set(loneHost === null ? [] : [loneHost]), [loneHost]);
-  const exitToPcs = useMemo(() => pcListExit({ nativeApp: inNativeApp(), relayShell: shellMode() === "relay", pathname: window.location.pathname }), []);
-  const leaveForPcs = () => { if (exitToPcs === "app") void changePc(); else window.location.assign("/"); };
+  // the phone app shows one PC of its list: back to the list in one tap
+  const exitToPcs = useMemo(() => inNativeApp(), []);
   const loneHostName = loneHost === null ? null : props.machines[0]!.name || null;
   const filter = useMemo(() => sidebarFilter(query, props.machines, { machineId: props.selectedMachineId, paneId: props.selectedPaneId }, t, branchLabels, unnamed), [query, props.machines, props.selectedMachineId, props.selectedPaneId, t, branchLabels, unnamed]);
   const filterView = useMemo(() => ({ filter, reportBranches }), [filter, reportBranches]);
@@ -266,8 +253,8 @@ export function MachineSidebar(props: Props) {
     <footer className="sidebar-footer">
       {/* one PC of the phone's several: which one, and back to the list in one tap, as a team switcher at a
           sidebar's foot does (Slack, Discord); Settings → Phone & devices keeps its Change PC row too */}
-      {exitToPcs !== null && (
-        <button type="button" className="btn btn-ghost sidebar-footer-action sidebar-footer-pc" onClick={leaveForPcs}>
+      {exitToPcs && (
+        <button type="button" className="btn btn-ghost sidebar-footer-action sidebar-footer-pc" onClick={() => void changePc()}>
           <Monitor aria-hidden="true" />
           <span className="sidebar-footer-pc-name">{loneHostName ?? t("Change PC")}</span>
           {loneHostName !== null && <span className="sidebar-footer-pc-action">{t("Change PC")}</span>}
@@ -307,7 +294,6 @@ export function manageActions(machine: Pick<Machine, "kind" | "herdr_profile_id"
   const reachable = machine.enabled && Boolean(machine.target);
   const actions: { id: ManageAction; disabled: boolean }[] = [];
   if (own) actions.push({ id: "rename", disabled: busy }, { id: "toggle", disabled: busy });
-  // a PC reached through the relay has no SSH setup and no bridge of ours to update
   if (machine.kind === "ssh") {
     if (machine.action_required !== "setup" && machine.action_required !== "connect") actions.push({ id: "setup", disabled: !reachable });
     if (machine.action_required !== "connect") actions.push({ id: "update", disabled: !reachable });
@@ -376,7 +362,7 @@ function MachineGroup({ machine, headerless = false, canHide, onHide, ...props }
   };
   // how the PC is reached follows its state word; a machine of herdr-core says where it is managed instead
   const stateWords = machine.action_required === "setup" ? t("Setup needed") : t(STATE_WORD[machine.state]);
-  const stateLine = machine.kind === "hc" ? stateWords : `${stateWords} · ${machine.kind === "relay" ? t("through the relay") : t("over SSH")}`;
+  const stateLine = machine.kind === "hc" ? stateWords : `${stateWords} · ${t("over SSH")}`;
   const manageNote = machine.kind === "hc" ? t("A machine of herdr-core. Add, rename or remove it with hc machine or in the Herdr app.") : machine.herdr_profile_id ? t("Managed by herdr. Rename, disable or remove it there.") : null;
   const manageItems = (): RowMenuItem[] => manageActions(machine, { busy, canHide }).map(({ id, disabled }): RowMenuItem => {
     switch (id) {
@@ -464,7 +450,7 @@ function MachineGroup({ machine, headerless = false, canHide, onHide, ...props }
       <span className="machine-menu-state">{stateLine}</span>
       {manageNote !== null && <span className="machine-menu-note">{manageNote}</span>}
     </span>} />}
-    {confirmRemove && <ConfirmDialog title={t("Remove PC {name}?", { name: machine.name })} body={t(machine.kind === "relay" ? "Removes this PC here. To end its access too, revoke it under Phone & devices on that PC." : "Removes this registration. Remote sessions keep running.")} confirmLabel={t("Remove PC")}
+    {confirmRemove && <ConfirmDialog title={t("Remove PC {name}?", { name: machine.name })} body={t("Removes this registration. Remote sessions keep running.")} confirmLabel={t("Remove PC")}
       onConfirm={async () => { await mutate("DELETE", undefined, true); setConfirmRemove(false); }} onClose={() => setConfirmRemove(false)} />}
     {error && <p className="machine-error" role="alert">{error}</p>}
     {/* under a filter a folded PC's roster is mounted, hidden, so the branches it reads can be found */}

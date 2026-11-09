@@ -29,7 +29,6 @@ import type {
   HealthAuth,
   IntegrationsResponse,
   LanExposure,
-  DirectExposure,
   SecuritySummary,
   InteractivePrompt,
   MoveTabRequest,
@@ -64,7 +63,6 @@ import type {
   PromptAnswer,
   PushKey,
   PushSubscriptionStatus,
-  RelayStatus,
   RemoteAccess,
   RemoveWorktreeRequest,
   ResizePaneRequest,
@@ -273,74 +271,6 @@ export async function cancelMove(): Promise<void> {
 export async function requestHerdrUpdate(): Promise<void> {
   const url = "/api/herdr/update";
   const response = await apiFetch(url, { method: "POST", headers: { "x-herdr-update": "1" } });
-  if (!response.ok) throw await errorFrom(url, response);
-}
-
-/** Settings → Phone & devices: the Ovis relay, through which paired phones reach this PC from anywhere. */
-export function fetchRelay(): Promise<RelayStatus> {
-  return getJson<RelayStatus>("/api/relay");
-}
-
-/** POST /api/relay/offer: a one-time pairing offer for the QR code, good until `expires_at`. */
-export interface RelayOffer {
-  readonly url: string;
-  readonly expires_at: string;
-}
-
-/**
- * The relay actions answer with the state they left the relay in, a refusal too: a start that
- * serve-only blocks is a 409 whose body is still the RelayStatus, so it is the answer, not an error.
- * Only a body without a phase (the origin gate, a watching device, an older server) is one.
- */
-export async function requestRelay(action: "start" | "stop" | "reset-identity"): Promise<RelayStatus> {
-  const url = `/api/relay/${action}`;
-  const response = await apiFetch(url, { method: "POST", headers: { "x-herdr-update": "1" } });
-  if (!response.ok) {
-    const body: unknown = await response.clone().json().catch(() => null);
-    if (body !== null && typeof body === "object" && "phase" in body) return body as RelayStatus;
-    throw await errorFrom(url, response);
-  }
-  return (await response.json()) as RelayStatus;
-}
-
-/** POST /api/relay/direct: whether paired phones may connect straight to this PC on its networks while the relay is on. */
-export function requestRelayDirect(on: boolean): Promise<RelayStatus> {
-  return getJson<RelayStatus>("/api/relay/direct", { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify({ on }) });
-}
-
-export function requestRelayOffer(): Promise<RelayOffer> {
-  return getJson<RelayOffer>("/api/relay/offer", { method: "POST", headers: { "x-herdr-update": "1" } });
-}
-
-/** POST /api/relay/code: a code to type on the device being paired, good until `expires_at`; it replaces any showing. */
-export interface RelayCode {
-  readonly code: string;
-  readonly expires_at: string;
-  readonly server_id: string;
-}
-
-export function requestRelayCode(): Promise<RelayCode> {
-  return getJson<RelayCode>("/api/relay/code", { method: "POST", headers: { "x-herdr-update": "1" } });
-}
-
-/** POST /api/relay/code/cancel: takes the code showing off the relay. */
-export function cancelRelayCode(): Promise<{ readonly ok: true }> {
-  return getJson<{ readonly ok: true }>("/api/relay/code/cancel", { method: "POST", headers: { "x-herdr-update": "1" } });
-}
-
-/**
- * POST /api/relay/link: a pairing link without a code; the phone that opens it compares six digits with this PC.
- * `localOnly`: this PC's screen waits to be added to an account, so what comes is approved on this PC only.
- */
-export function requestRelayLink(options: { localOnly?: boolean } = {}): Promise<{ readonly url: string }> {
-  return getJson<{ readonly url: string }>("/api/relay/link", { method: "POST", headers: { "x-herdr-update": "1", ...(options.localOnly ? { "x-ovis-local-only": "1" } : {}) } });
-}
-
-/** POST /api/relay/pairing: the owner's answer to a phone waiting with the same digits (`relay-pairings` events). */
-export async function decideRelayPairing(id: string, decision: "approve" | "decline", digits?: string): Promise<void> {
-  const url = "/api/relay/pairing";
-  // an account member approving through the relay names the digits it picked (docs/account.md, "Who may admit a device")
-  const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify({ id, decision, ...(digits === undefined ? {} : { digits }) }) });
   if (!response.ok) throw await errorFrom(url, response);
 }
 
@@ -879,8 +809,6 @@ export interface HealthInfo {
   auth?: HealthAuth;
   /** present only while this server is reachable beyond this PC with no token and nothing paired */
   lan_exposure?: LanExposure;
-  /** present only while lan_exposure is not: the relay's direct carrier listens on this PC's network, for relay-paired devices only */
-  direct_exposure?: DirectExposure;
   /** authenticated only; absent from an older server, which the summary shows as unavailable */
   security?: SecuritySummary;
   /** authenticated only; absent from an older server and until the server's first look for hc has ended */
@@ -915,9 +843,8 @@ export async function pairDevice(code: string, label: string): Promise<void> {
   resumeConnectionTraces();
 }
 
-/** `check`: the PC measures every connected device's round trip first (Check now), within a few seconds */
-export async function fetchDevices(check = false): Promise<PairedDevice[]> {
-  return (await getJson<{ devices: PairedDevice[] }>(check ? "/api/devices?check=1" : "/api/devices")).devices;
+export async function fetchDevices(): Promise<PairedDevice[]> {
+  return (await getJson<{ devices: PairedDevice[] }>("/api/devices")).devices;
 }
 
 export async function startPairing(): Promise<PairingCode> {

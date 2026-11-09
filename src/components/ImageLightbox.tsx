@@ -24,7 +24,6 @@ import { usePhoneSheetBack } from "../lib/sheetHistory.ts";
 import { useSheetSwipe } from "../lib/sheets.ts";
 import { nativeModalOver, useFocusTrap } from "../lib/useFocusTrap.ts";
 import { useResourceUrl } from "../lib/useResourceUrl.ts";
-import { getTransport } from "../lib/transport.ts";
 import { FIT, MAX_ZOOM, MIN_ZOOM, PAN_STEP, STEP, zoomAt, type View } from "./MermaidLightbox.tsx";
 
 export function ImageLightbox({ images, index, onClose }: { images: GalleryImage[]; index: number; onClose: () => void }) {
@@ -49,13 +48,11 @@ export function ImageLightbox({ images, index, onClose }: { images: GalleryImage
   const image = images[current];
   const src = useResourceUrl(image?.src ?? null);
   // where a download link would replace the app (the iOS app, a home-screen app), Download hands
-  // the shown picture to the share sheet instead: its own bytes keep their image type, which a
-  // relay download (application/octet-stream) would lose, and Save Image needs. The Android app
-  // saves those same bytes to Downloads
+  // the shown picture to the share sheet instead: its own bytes keep their image type, which Save
+  // Image needs. The Android app saves those same bytes to Downloads
   const [route] = useState(saveRoute);
   const viaShare = route !== "link";
-  const download = useResourceUrl(viaShare ? null : image?.src.startsWith("/api/") && getTransport().kind === "relay"
-    ? `${image.src}${image.src.includes("?") ? "&" : "?"}download=1` : image?.src ?? null);
+  const download = useResourceUrl(viaShare ? null : image?.src ?? null);
   const many = count > 1;
   const copyable = canCopyImage();
   // the sheet opens only within the tap, so the file is read once the picture has loaded, and

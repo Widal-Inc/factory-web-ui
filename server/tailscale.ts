@@ -128,7 +128,6 @@ export function parseNodeName(status: string | null): string | null {
   return parseJson<StatusJson>(status)?.Self?.DNSName?.replace(/\.$/, "") || null;
 }
 
-const ADDRESS_TTL_MS = 5 * 60_000;
 
 /** `tailscale status --json` from this PC's own CLI, or null when Tailscale is not here or does not answer in time */
 export const readTailscaleStatus = async (): Promise<string | null> => {
@@ -160,29 +159,4 @@ export function tailnetPeers(status: string | null): { name: string; dnsName: st
       // the machine name Tailscale's admin console shows and lets the person rename, not the OS hostname
       return { name: dnsName.split(".")[0]!.slice(0, 100), dnsName, ips: (peer.TailscaleIPs ?? []).filter((ip) => typeof ip === "string") };
     });
-}
-
-/**
- * This PC's IPv4 address on the tailnet, read through `readStatus` (`tailscale status --json`) and
- * kept five minutes. A stale value is answered at once and refreshed in the background, so no
- * caller waits on the tailscale CLI; the first answer is null until a read lands. A read that
- * fails keeps the last address.
- */
-export class TailnetAddressSource {
-  private cache: { ip: string | null; at: number } | null = null;
-  private reading: Promise<void> | null = null;
-
-  constructor(private readonly readStatus: () => Promise<string | null> = readTailscaleStatus) {}
-
-  private refresh(): void {
-    this.reading ??= this.readStatus()
-      .then((status) => { this.cache = { ip: status === null ? this.cache?.ip ?? null : parseTailscaleIp(status), at: Date.now() }; })
-      .catch(() => { this.cache = { ip: this.cache?.ip ?? null, at: Date.now() }; })
-      .finally(() => { this.reading = null; });
-  }
-
-  ip(): string | null {
-    if (this.cache === null || Date.now() - this.cache.at >= ADDRESS_TTL_MS) this.refresh();
-    return this.cache?.ip ?? null;
-  }
 }

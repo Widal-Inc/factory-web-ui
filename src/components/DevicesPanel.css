@@ -44,12 +44,6 @@
   vertical-align: middle;
 }
 
-/* Check now sits above the list's right edge, over the rows it refreshes */
-.devices-check {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .devices-actions,
 .devices-rename {
   display: flex;
@@ -139,7 +133,7 @@
   font-size: calc(var(--fs-pairing) * 1.25);
 }
 
-/* what a row is (PC, phone, browser): the same pill as `via relay`, in neutral tones */
+/* what a row is (PC, phone, browser): a pill in neutral tones */
 .devices-kind {
   display: inline-block;
   margin-left: var(--space-2);
@@ -155,12 +149,6 @@
 .devices-kind.is-self {
   background: var(--accent-tint);
   color: var(--accent);
-}
-
-/* this PC's relay ID, what a device that typed its code compares */
-.my-device-id {
-  font-family: var(--font-mono);
-  overflow-wrap: anywhere;
 }
 
 /* Connected to this PC: this PC, the phones and browsers (the one in use first), then the other PCs, as one list */

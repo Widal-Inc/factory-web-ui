@@ -9,24 +9,21 @@ import { handleMachineRequest } from "./machine-api.ts";
 import { MachineManager } from "./machines.ts";
 import type { PushService } from "./push.ts";
 
-// Changing what runs on this PC's PCs is the owner's, from any device he paired (relay included): never an open-LAN
+// Changing what runs on this PC's PCs is the owner's, from any device he paired: never an open-LAN
 // visitor's or a watching device's. Isolated state, port 0, no PC is reached.
 const base: AccessInput = { loopback: true, forwarded: false, forwardingHeaders: false, funnel: false, tokenMatched: false, device: null, tokenConfigured: false, gated: false };
 const drive = { id: "d1", label: "Phone", role: "drive" as const };
 
 describe("who may update every PC", () => {
   const owner = (input: Partial<AccessInput>) => ownerAccess(decideAccess({ ...base, ...input }));
-  it("is the owner from any device he paired: on this PC, its token, a device paired here or over the relay, that drives", () => {
+  it("is the owner from any device he paired: on this PC, its token, a device paired here, that drives", () => {
     expect(owner({})).toBe(true);
     expect(owner({ loopback: false, tokenMatched: true, tokenConfigured: true })).toBe(true);
     expect(owner({ loopback: false, device: drive, gated: true })).toBe(true);
-    // his phone over the relay, or another PC of his reaching this one through it
-    expect(owner({ relayPeer: { ...drive } as AccessInput["relayPeer"] })).toBe(true);
   });
   it("is never an open-LAN visitor (nothing paired), or a device that only watches", () => {
     expect(owner({ loopback: false })).toBe(false);
     expect(owner({ loopback: false, device: { ...drive, role: "watch" }, gated: true })).toBe(false);
-    expect(owner({ relayPeer: { ...drive, role: "watch" } as AccessInput["relayPeer"] })).toBe(false);
   });
 });
 
@@ -43,7 +40,7 @@ describe("the update routes", () => {
   };
   const ask = (pcs: MachineManager, path: string, owner: boolean, headers: Record<string, string> = { "x-herdr-update": "1" }, method = "POST") =>
     handleMachineRequest(new Request(`http://localhost:7317/api/machines/${path}`, { method, headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", ...headers } }),
-      pcs, undefined, undefined, false, undefined, undefined, undefined, undefined, owner);
+      pcs, undefined, undefined, false, undefined, undefined, undefined, owner);
   for (const path of ["update-all", "00000000-0000-4000-8000-000000000001/update"]) it(`refuses ${path} to anyone but the owner, and without its update header or with a query`, async () => {
     const pcs = manager();
     const refused = await ask(pcs, path, false);

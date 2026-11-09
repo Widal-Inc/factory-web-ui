@@ -20,8 +20,7 @@ export function answerCode(body: Uint8Array | null): string | null {
 /**
  * Whether a PC's answer to a move route says its Ovis predates moves from another PC: it knows no such
  * route (`not_found`, its answer to every unknown one; a herdr error on a known route is a 404 too), or,
- * over SSH, it does not take the bridge token there. A relay PC's 401 or 403 is that PC refusing this
- * server's device, which an update would not change.
+ * over SSH, it does not take the bridge token there.
  */
 export function tooOldToMove(kind: Machine["kind"] | undefined, status: number, code: string | null): boolean {
   return status === 404 ? code === "not_found" : kind === "ssh" && (status === 401 || status === 403);

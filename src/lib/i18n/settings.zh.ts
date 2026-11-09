@@ -290,13 +290,6 @@ export const SETTINGS_ZH: Record<string, string> = {
   "onboarding first run getting started welcome": "入门 首次运行 开始使用 欢迎",
   "Agent integrations": "代理集成",
   // the hosted relay shell's rows (lib/relay/shell.tsx)
-  "This page shows one PC. The front page lists every PC this phone is paired with.": "此页面只显示一台电脑。首页列出与此手机配对的所有电脑。",
-  "Deletes this phone's key for this PC. Pairing again takes a new QR code from the PC.": "删除此手机对应这台电脑的密钥。重新配对需要电脑上新的二维码。",
-  "Forget this PC?": "忘记这台电脑？",
-  "This phone's key for it is deleted here, and the PC keeps listing this phone until it is revoked there. Pairing again takes a new QR code from the PC.": "此手机上的对应密钥将被删除；在电脑上撤销之前，它仍会列出这部手机。重新配对需要电脑上新的二维码。",
-  "Forget": "忘记",
-  "Through the Ovis relay": "经由 Ovis 中继",
-  "This browser's request came from a phone paired through the Ovis relay, end-to-end encrypted: the relay could not read it.": "此浏览器的请求来自通过 Ovis 中继配对的手机，端到端加密：中继无法读取内容。",
   "Terminals": "终端",
   "The Herdr app's core (hc {version}) runs on this PC too. To show its terminals here instead, set {setting} and restart Ovis: in the .env file in the folder {command} prints when herdr's plugin starts Ovis, or in the environment of whatever else starts it.": "这台电脑上也在运行 Herdr 应用的核心 (hc {version})。要改为在这里显示它的终端，请设置 {setting} 并重启 Ovis：由 herdr 插件启动 Ovis 时，写在 {command} 输出的文件夹中的 .env 文件里；用其他方式启动时，写在其启动环境中。",
   "The Herdr app's core (hc {version}) is installed on this PC too. To show its terminals here instead, set {setting} and restart Ovis: in the .env file in the folder {command} prints when herdr's plugin starts Ovis, or in the environment of whatever else starts it.": "这台电脑上也安装了 Herdr 应用的核心 (hc {version})。要改为在这里显示它的终端，请设置 {setting} 并重启 Ovis：由 herdr 插件启动 Ovis 时，写在 {command} 输出的文件夹中的 .env 文件里；用其他方式启动时，写在其启动环境中。",

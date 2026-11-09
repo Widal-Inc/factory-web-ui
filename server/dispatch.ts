@@ -6,7 +6,7 @@ import type { RequestLog } from "./request-log.ts";
 import { handlePaneRequest } from "./pane-routes.ts";
 import { handleIntegrationsRequest } from "./integrations-routes.ts";
 import type { OrderSequence } from "./order-sequence.ts";
-import type { DevicePairedEvent, DeviceRemovedEvent, HealthAuth, RelayPairingsEvent, RemotePairingsEvent, SecuritySummary, SessionSnapshot } from "../shared/protocol.ts";
+import type { DevicePairedEvent, DeviceRemovedEvent, HealthAuth, SecuritySummary, SessionSnapshot } from "../shared/protocol.ts";
 import { DEFAULT_PORT } from "../shared/protocol.ts";
 import { authClient, deviceAuthorizationValue, deviceCookieValue, bearerMatches, handleAuthRequest, isAuthenticated, isSecureRequest, parseCookies, presentedToken, presentedTokenHeld, recordPresentedTokenFailure, requiresAuth, unauthorizedJson } from "./auth.ts";
 import { bindScope, cameThroughProxy, decideAccess, forwardingHeaders, isLoopbackAddress, lanExposed, observedIngress, ownerAccess } from "./access.ts";
@@ -43,12 +43,6 @@ import { attachableIdentity } from "./pty/sidecar.ts";
 import { runtime } from "./herdr-core/runtime.ts";
 import { handleUpdateRequest, updateRequestAllowed } from "./update-api.ts";
 import { handleHerdrUpdateRequest } from "./herdr-update.ts";
-import { handleRelayRequest } from "./relay/routes.ts";
-import { handleAccountRequest } from "./account/routes.ts";
-import type { AccountMailbox } from "./account/mailbox.ts";
-import type { AccountHolds } from "./account/holds.ts";
-import type { AccountIntroductions } from "./account/introductions.ts";
-import type { RelayService } from "./relay/service.ts";
 import { handleTelemetryRequest, visitSurface } from "./telemetry.ts";
 import type { TelemetryIngress } from "../shared/telemetry.ts";
 import { handleStatuslineRequest, handleUsageRequest } from "./usage.ts";
@@ -59,7 +53,7 @@ import type { UsageAccountList } from "./usage-account-list.ts";
 import { handleVoiceRequest } from "./voice.ts";
 import { BRIDGE_PROTOCOL } from "../shared/machines.ts";
 import { bridgeIdentity } from "./bridge.ts";
-import { handleMachineRequest, nonCanonicalPath, slowMachinePath, type EventStreamBudget } from "./machine-api.ts";
+import { handleMachineRequest, nonCanonicalPath, slowMachinePath } from "./machine-api.ts";
 import { handleSessionHistoryRequest, handleSessionResumeRequest, SESSION_HISTORY_PATH, SESSION_RESUME_PATH } from "./session-history-routes.ts";
 import type { PiSessionReader } from "./pi-session-metadata.ts";
 import type { HerdrSidebarConfig } from "./herdr-sidebar.ts";
@@ -77,7 +71,6 @@ import type { VoiceService } from "./voice.ts";
 export interface RequestServices {
   /** the move of herdr's session to herdr-core, where the runtime can be switched from here */
   readonly runtimeMove: MoveService | null;
-  readonly relay: RelayService;
   readonly relayReceiptIds: RelayReceiptIds;
   readonly options: NonNullable<Parameters<typeof createServer>[0]>;
   readonly hostname: string;
@@ -85,9 +78,6 @@ export interface RequestServices {
   readonly bridgeToken: string;
   readonly bootId: string;
   readonly devices: DeviceStore;
-  readonly accountMailbox: AccountMailbox;
-  readonly accountIntroductions: AccountIntroductions;
-  readonly accountHolds: AccountHolds;
   readonly preferences: PreferenceStore;
   readonly herdrSidebar: HerdrSidebarConfig;
   readonly shellAgents: ShellAgentLocator;
@@ -112,16 +102,13 @@ export interface RequestServices {
   readonly requestLog: RequestLog;
 }
 
-/** The transport operations a request needs; peer kinds are extended with relay authentication. */
+/** The transport operations a request needs. */
 export interface ServerContext {
   requestIP(request: Request): { address: string } | null;
   timeout(request: Request, seconds: number): void;
   upgrade(request: Request, options: { headers?: HeadersInit; data: SocketData }): boolean;
   readonly port: number | undefined;
-  /** `serverId`: the relay identity the device signed in to, which a `link` must name (docs/account.md). */
-  readonly peer: { kind: "socket" } | { kind: "relay"; device: DeviceMatch; sessionId: string; serverId: string; key: string };
   readonly services: RequestServices;
-  readonly relayBodyBudget?: EventStreamBudget;
   /**
    * The request came to the opt-in LAN HTTPS listener (server/lan-https.ts), from a private IPv4 peer:
    * it gets in only with the token or a paired device, never as an open install, by the bridge token,
@@ -141,8 +128,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   return compressResponse(request, await (async (): Promise<Response | undefined> => {
   const url = new URL(request.url);
   let { pathname } = url;
-  const relayPeer = ctx.peer.kind === "relay" ? ctx.peer.device : undefined;
-  const bridgeAuthorized = relayPeer === undefined && ctx.lanHttps !== true && isAuthenticated(request, bridgeToken);
+  const bridgeAuthorized = ctx.lanHttps !== true && isAuthenticated(request, bridgeToken);
   // the connection server that reaches this one as its PC reads its update status and asks for the
   // update on offer: an Ovis run on this PC by itself is updated through its own updater, never
   // replaced (server/machines.ts ownOffer). An install still names the offered revision and the
@@ -153,16 +139,16 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   // "On another PC"); each move route still asks for the app's own header and no query (updateRequestAllowed)
   const bridgeMovePath = RUNTIME_MOVE_ROUTE.test(pathname);
   const bridgePath = pathname === "/api/bridge" || pathname === "/api/session" || pathname === SESSION_HISTORY_PATH || pathname === SESSION_RESUME_PATH || pathname === "/api/agents" || pathname === "/api/agent-catalog" || pathname === INSTALL_PATH || pathname === SIGN_IN_PATH || pathname === "/api/agent/rename" || pathname === "/api/agent/commands" || pathname === "/api/integrations" || (pathname === "/api/system" && request.method === "GET") || pathname === "/api/usage/statusline" || pathname === "/api/plugins/actions" || pathname === "/api/plugin/action" || pathname.startsWith("/api/pane/") || pathname.startsWith("/api/workspace/") || pathname.startsWith("/api/worktree/") || pathname.startsWith("/api/tab/") || pathname === "/api/layout/ratio" || pathname.startsWith("/api/fs/") || pathname === "/ws" || bridgeUpdatePath || bridgeMovePath;
-  const ip = relayPeer === undefined ? ctx.requestIP(request) : null;
+  const ip = ctx.requestIP(request);
   const loopback = ip !== null && isLoopbackAddress(ip.address);
-  const forwarded = relayPeer === undefined && cameThroughProxy(request.headers);
-  const funnel = relayPeer === undefined && request.headers.has("tailscale-funnel-request");
-  const proxyHeaders = relayPeer === undefined && forwardingHeaders(request.headers);
+  const forwarded = cameThroughProxy(request.headers);
+  const funnel = request.headers.has("tailscale-funnel-request");
+  const proxyHeaders = forwardingHeaders(request.headers);
   const requestHost = request.headers.get("host");
   // the guessing budget of the address that asks (auth.ts): a token presented while it waits is not compared
   // on the LAN listener `via lan-https` puts every peer in one shared budget too (auth.ts sharedKey)
-  const client = relayPeer !== undefined ? `relay:${relayPeer.id}` : ctx.lanHttps === true && ip !== null ? `${ip.address} via lan-https` : authClient(ip?.address ?? null, request.headers);
-  const presented = relayPeer === undefined ? presentedToken(request, token, client) : null;
+  const client = ctx.lanHttps === true && ip !== null ? `${ip.address} via lan-https` : authClient(ip?.address ?? null, request.headers);
+  const presented = presentedToken(request, token, client);
   // counted at once, before any await below lets a concurrent guess pass the same check. Every
   // wrong token counts, a paired watch device's too (a right one would upgrade it to drive);
   // the connection server's own bridge token does not
@@ -171,14 +157,13 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   let pairedDevice: DeviceMatch | null;
   try {
     // a script's `Authorization: Device` header stands for the cookie a browser holds (#2744)
-    pairedDevice = relayPeer ?? devices.match(deviceAuthorizationValue(request) ?? deviceCookieValue(parseCookies(request.headers.get("cookie"))));
+    pairedDevice = devices.match(deviceAuthorizationValue(request) ?? deviceCookieValue(parseCookies(request.headers.get("cookie"))));
   } catch (error) {
     // First-cookie confirmation is an authorization write, not best-effort telemetry.
     return errorResponse(error);
   }
   const requestShape = { loopback, forwarded, funnel };
   const access = decideAccess({
-    relayPeer,
     ...requestShape,
     forwardingHeaders: proxyHeaders,
     tokenMatched,
@@ -241,9 +226,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   // a repository's checkouts are its folders' paths and branches, those not open in herdr too; the worktree
   // dialog that lists them is a drive feature, and the sidebar names a branch only for a driving device (#2250)
   const worktreeList = /^\/api\/(?:machines\/[^/]+\/)?worktree\/(?:list|inventory)$/.test(pathname);
-  // the digits of a waiting comparison are what approving it takes (docs/account.md, "Who may admit a device")
-  const pairingDigits = pathname === "/api/relay/pairings";
-  if (readOnly && (fileRead || directoryListing || repositoryDiff || pullRequest || sessionHistory || commandRows || paneFiles || pluginRun || worktreeList || pairingDigits || mutating && !ownPreferences)) {
+  if (readOnly && (fileRead || directoryListing || repositoryDiff || pullRequest || sessionHistory || commandRows || paneFiles || pluginRun || worktreeList || mutating && !ownPreferences)) {
     setRequestRoute("watch-refusal");
     return jsonResponse({ error: { code: "read_only", message: "this device can only watch" } }, 403);
   }
@@ -253,29 +236,12 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     setRequestRoute("drive-refusal");
     return jsonResponse({ error: { code: "drive_only", message: "Only a device that drives this PC can edit its files" } }, 403);
   }
-  // pairing without a code ends in an approval only a window that hears of it can give (relay-pairings below):
-  // an ungated LAN window never does, so it neither makes such a link nor answers one
-  // the account's members are standing access, like devices: never an open LAN window's
-  if (access.level === "full" && access.via === "open" && pathname.startsWith("/api/account/")) {
-    setRequestRoute("owner-refusal");
-    return jsonResponse({ error: { code: "owner_only", message: "Manage the account from this PC itself, or from a paired device." } }, 403);
-  }
-  // the list of waiting pairings shows their digits, so it goes only where the approval may come from
-  if (access.level === "full" && access.via === "open" && pathname === "/api/relay/pairings") {
-    setRequestRoute("owner-refusal");
-    return jsonResponse({ error: { code: "owner_only", message: "Approve pairings on this PC itself, or from a paired device." } }, 403);
-  }
-  if (access.level === "full" && access.via === "open" && request.method === "POST"
-    && (pathname === "/api/relay/link" || pathname === "/api/relay/pairing")) {
-    setRequestRoute("open-refusal");
-    return jsonResponse({ error: { code: "owner_only", message: "Pair without a code from this PC itself, or from a paired device: an open LAN window is not told when a phone waits for approval." } }, 403);
-  }
   // The SSH tab's list (hosts of this PC's ssh config with their user@hostname, and the PCs of its Tailscale) goes
   // only to clients that may drive this PC with full access: this PC itself, its access token, and a device paired
   // with it directly to drive. Each of those can already open a terminal here and read ~/.ssh/config, so the list
-  // tells them nothing new. An open LAN window and a device on the relay are refused here; a watching device is
+  // tells them nothing new. An open LAN window is refused here; a watching device is
   // refused in machine-api.ts (read_only).
-  if (pathname === "/api/machines/ssh-candidates" && access.level === "full" && (access.via === "open" || access.via === "relay")) {
+  if (pathname === "/api/machines/ssh-candidates" && access.level === "full" && access.via === "open") {
     setRequestRoute("owner-refusal");
     return jsonResponse({ error: { code: "owner_only", message: "See the PCs this PC knows on this PC itself, or from a device paired with it directly." } }, 403);
   }
@@ -325,22 +291,13 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
       // a stream that came in through the open LAN is told nothing: every enrollment follows the write
       // that closed the gate, so whoever holds it has no access left by the time there is news
       const openAccess = access.level === "full" && access.via === "open";
-      // a relay pairing waiting for approval reaches only a window that may approve it (server/relay/routes.ts):
-      // driving, and direct to this PC
-      const approver = access.level === "full" && access.role === "drive" && access.via !== "open" && access.via !== "relay";
-      // and through the relay to a drive account member, with three candidates instead of the digits (docs/account.md)
-      const remoteApprover = ctx.peer.kind === "relay" && devices.isAccountApproverSession(ctx.peer.device.id, ctx.peer.key);
-      const pairings = { subscribe: (listener: (event: DevicePairedEvent | DeviceRemovedEvent | RelayPairingsEvent | RemotePairingsEvent) => void) => {
+      const pairings = { subscribe: (listener: (event: DevicePairedEvent | DeviceRemovedEvent) => void) => {
         const stopPaired = devices.onPaired((event, origin) => { if (!openAccess && event.device_id !== deviceId && !sameBrowser(origin, keys)) listener(event); });
-        // removals go to streams that may drive, as the client lane's device list needs (docs/account.md)
+        // removals go to streams that may drive, as the client lane's device list needs
         const stopRemoved = !openAccess && access.level === "full" && access.role === "drive" ? devices.onRemoved(listener) : undefined;
-        // a window that may not approve is told the list is empty, so one that lost the right (drive to watch) drops its prompts
-        const stopRelay = approver ? ctx.services.relay.approvals.subscribe((list) => listener({ type: "relay-pairings", pairings: list }))
-          : remoteApprover ? ctx.services.relay.approvals.subscribeRemote((list) => listener({ type: "remote-pairings", pairings: list })) : undefined;
-        if (!approver) listener({ type: "relay-pairings", pairings: [] });
-        return () => { stopPaired(); stopRemoved?.(); stopRelay?.(); };
+        return () => { stopPaired(); stopRemoved?.(); };
       } };
-      const response = await handleMachineRequest(request, machines, deviceId ? (close) => devices.onRevoke(deviceId, close) : undefined, preferences, readOnly, herdrSidebar, seen, pairings, ctx.relayBodyBudget, ownerAccess(access));
+      const response = await handleMachineRequest(request, machines, deviceId ? (close) => devices.onRevoke(deviceId, close) : undefined, preferences, readOnly, herdrSidebar, seen, pairings, ownerAccess(access));
       response.headers.set("cache-control", "no-store");
       if (issuedKey !== null && response.ok) response.headers.append("set-cookie", streamCookie(issuedKey, isSecureRequest(request)));
       return response;
@@ -380,22 +337,14 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     const keys = issuedKey === null ? presentedKeys : [issuedKey];
     if (issuedKey !== null) headers.append("set-cookie", streamCookie(issuedKey, isSecureRequest(request)));
     const openAccess = access.level === "full" && access.via === "open";
-    // relay pairings waiting for approval reach only a window that may approve one, as on /api/machines/events
-    const approver = access.level === "full" && access.role === "drive" && access.via !== "open" && access.via !== "relay";
     const machineEvents = useMachineEvents ? {
       manager: machines, preferences, herdrSidebar, seen,
-      pairings: { subscribe: (listener: (event: DevicePairedEvent | DeviceRemovedEvent | RelayPairingsEvent | RemotePairingsEvent) => void) => {
+      pairings: { subscribe: (listener: (event: DevicePairedEvent | DeviceRemovedEvent) => void) => {
         const stopPaired = devices.onPaired((event, origin) => {
           if (!openAccess && event.device_id !== deviceId && !sameBrowser(origin, keys)) listener(event);
         });
         const stopRemoved = !openAccess && access.level === "full" && access.role === "drive" ? devices.onRemoved(listener) : undefined;
-        // and through the relay to a drive account member holding its row's current key, as on /api/machines/events
-        const remoteApprover = ctx.peer.kind === "relay" && devices.isAccountApproverSession(ctx.peer.device.id, ctx.peer.key);
-        // a window that may not approve is told the list is empty, so one that lost the right (drive to watch) drops its prompts
-        const stopRelay = approver ? ctx.services.relay.approvals.subscribe((list) => listener({ type: "relay-pairings", pairings: list }))
-          : remoteApprover ? ctx.services.relay.approvals.subscribeRemote((list) => listener({ type: "remote-pairings", pairings: list })) : undefined;
-        if (!approver) listener({ type: "relay-pairings", pairings: [] });
-        return () => { stopPaired(); stopRemoved?.(); stopRelay?.(); };
+        return () => { stopPaired(); stopRemoved?.(); };
       } },
     } : undefined;
     const upgraded = ctx.upgrade(request, { headers, data: connectionData({ machineEvents, deviceId, readOnly, bridge: bridgeAuthorized, ...(surface ? { surface } : {}), ...(surface === false ? {} : { ingress }) }) });
@@ -405,7 +354,6 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
 
   if (pathname === "/api/auth") {
     setRequestRoute(pathname);
-    if (relayPeer !== undefined) return jsonResponse({ error: { code: "device_key_required", message: "Relay access uses a paired device key" } }, 403);
     // signing out also ends the page media this browser was given (by its device, else by its address)
     // a browser can hold the token and a device cookie at once, and its renders are then the
     // client's: signing out ends both kinds
@@ -418,14 +366,14 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === "/api/devices" || pathname.startsWith("/api/devices/")) {
     try {
       // one device, or all of them: the registry names what was revoked, and the cleanup follows its ids
-      return await handleDeviceRequest(request, pathname, devices, access, ctx.peer.kind === "relay" ? ctx.peer.key : null, (revoked) => {
+      return await handleDeviceRequest(request, pathname, devices, access, (revoked) => {
         for (const id of revoked) {
           // The device registry is the delivery authority even if cleaning the push file fails.
           try { push.revokeDevice(id); } catch (error) { logPushError(error); }
           // and every page media address its renders were given
           forgetPageMedia({ device: id });
         }
-      }, ctx.lanHttps === true, { list: () => ctx.services.relay.connections(), check: (ms) => ctx.services.relay.checkConnections(ms) });
+      }, ctx.lanHttps === true);
     } catch (error) { return errorResponse(error); }
   }
 
@@ -446,10 +394,6 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     return handleUpdateRequest(request, pathname, options.updates, where);
   }
   if (pathname === "/api/herdr/update") { setRequestRoute(pathname); return handleHerdrUpdateRequest(request, options.herdrUpdate); }
-  if (pathname.startsWith("/api/account/")) return handleAccountRequest(request, pathname, ctx, access);
-  if (pathname === "/api/relay" || pathname.startsWith("/api/relay/")) {
-    return handleRelayRequest(request, pathname, ctx);
-  }
   if (pathname === "/api/connection-diagnostics") { setRequestRoute(pathname); return clientConnectionLog.handle(request, client ?? "unknown"); }
   if (pathname === "/api/telemetry") { setRequestRoute(pathname); return handleTelemetryRequest(request, options.telemetry); }
   // what every browser of this server shares; a watching device reads it and cannot change it (above)
@@ -502,17 +446,12 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     // this server is open to the network with no token and nothing paired, told to a client
     // that got in and to nobody else: naming it to an anonymous caller would be
     // reconnaissance, not help. Nothing here changes who is let in (server/access.ts).
-    const directCarriers = ctx.services.relay.status().direct?.carriers ?? [];
     const lan_exposure = access.level !== "full" ? undefined
       : lanExposed({ hostname, tokenConfigured: token !== "", gated: devices.gated }) ? { host: hostname } : undefined;
-    // the relay's direct carrier: on the network, but for devices paired through the relay only, and said in those
-    // words. A field of its own: a 0.4.x client takes any lan_exposure for an open server.
-    const direct_exposure = access.level !== "full" || lan_exposure || directCarriers.length === 0 ? undefined
-      : { host: new URL(directCarriers[0]!.replace(/^ws:/, "http:")).hostname };
-    const exposure = { ...(lan_exposure ? { lan_exposure } : {}), ...(direct_exposure ? { direct_exposure } : {}) };
+    const exposure = lan_exposure ? { lan_exposure } : {};
     // what protects this server, for a client that got in (a watching one too) and nobody else;
     // per request, so never stored. The ingress is this request's, proven or `unknown`.
-    const ingress = relayPeer !== undefined ? "relay" : observedIngress({ ...requestShape, peerKnown: ip !== null, forwardingHeaders: proxyHeaders });
+    const ingress = observedIngress({ ...requestShape, peerKnown: ip !== null, forwardingHeaders: proxyHeaders });
     const security: SecuritySummary | undefined = access.level === "full" ? {
       token_configured: token !== "",
       pairing_gate: devices.error !== null ? "unavailable" : devices.gated ? "closed" : "open",
@@ -521,9 +460,6 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
       public_exposure: ingress === "funnel" ? "observed" : "unknown",
     } : undefined;
     const securityHeaders: Record<string, string> = security ? { "cache-control": "no-store" } : {};
-    const relay = access.level === "full" ? { relay: ctx.services.relay.status() } : {};
-    // this PC's relay ID, for a PC that lists it over SSH: a device turns its alerts off by it (shared/machines.ts pcAlertKey)
-    const serverId = access.level === "full" && access.via !== "open" ? ctx.services.relay.serverId() : undefined;
     // what this PC has of the Herdr app's runtime, for Settings: never waited for, no path in it.
     // Only a driving owner is told: a session name can name a project, which a watching device or a
     // stranger on an open install has no need to read
@@ -532,17 +468,17 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     const herdr_runtime = owner || bridgeAuthorized ? options.runtimeService?.facts() : undefined;
     // the boot id lets the launcher know its own new bridge without waiting on herdr (server/supervisor.ts);
     // the runtime facts ride along, so Settings can switch back while herdr's TUI is stopped
-    if (url.searchParams.get("scope") === "bridge") return jsonResponse({ ok: true, auth, bridge_protocol: BRIDGE_PROTOCOL, ...relay, ...(security ? { security } : {}), web_ui: { boot_id: bootId }, runtime: runtime(), ...(options.launchAccepted ? { accepted: options.launchAccepted() } : {}), ...(herdr_runtime ? { herdr_runtime } : {}) }, 200, securityHeaders);
+    if (url.searchParams.get("scope") === "bridge") return jsonResponse({ ok: true, auth, bridge_protocol: BRIDGE_PROTOCOL, ...(security ? { security } : {}), web_ui: { boot_id: bootId }, runtime: runtime(), ...(options.launchAccepted ? { accepted: options.launchAccepted() } : {}), ...(herdr_runtime ? { herdr_runtime } : {}) }, 200, securityHeaders);
     const herdr_core = owner ? options.herdrCoreFacts?.() : undefined;
     try {
       const info = await ping();
       // a forced answer (tests) and a runtime without the PTY sidecar are told the way a Windows herdr's own would be
       const herdr = attachableIdentity(info, sidecar);
-      return jsonResponse({ ok: true, herdr, auth, ...relay, ...exposure, ...(security ? { security } : {}), ...(herdr_core ? { herdr_core } : {}), ...(herdr_runtime ? { herdr_runtime } : {}),
-        web_ui: { boot_id: bootId, revision: process.env["OVIS_REVISION"] ?? null, ...(serverId ? { server_id: serverId } : {}) } }, 200, securityHeaders);
+      return jsonResponse({ ok: true, herdr, auth, ...exposure, ...(security ? { security } : {}), ...(herdr_core ? { herdr_core } : {}), ...(herdr_runtime ? { herdr_runtime } : {}),
+        web_ui: { boot_id: bootId, revision: process.env["OVIS_REVISION"] ?? null } }, 200, securityHeaders);
     } catch (error) {
       const failed = errorResponse(error);
-      if (!lan_exposure && !direct_exposure) return failed;
+      if (!lan_exposure) return failed;
       // herdr away says nothing of this PC's network listeners: they are told all the same
       const body: unknown = await failed.json();
       return jsonResponse({ ...(body !== null && typeof body === "object" ? body : {}), ...exposure }, failed.status, { "cache-control": "no-store" });
@@ -566,8 +502,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   }
 
   // who may move this PC's runtime: a driving owner, or the connection server holding the bridge token,
-  // which already drives every pane here. A relay device that
-  // drives may: a connection server reaches a PC added through the relay as one
+  // which already drives every pane here.
   const moveDriver = bridgeAuthorized || access.level === "full" && access.role === "drive" && access.via !== "open";
 
   if (pathname === `${RUNTIME_MOVE_PATH}/install`) {
@@ -676,7 +611,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   if (pathname === "/api/access") {
     setRequestRoute(pathname);
     if (request.method !== "GET") return badRequest("method_not_allowed", "use GET");
-    return jsonResponse({ ...await remoteAccess(ctx.port ?? DEFAULT_PORT), relay: ctx.services.relay.status() }, 200, { "cache-control": "no-store" });
+    return jsonResponse(await remoteAccess(ctx.port ?? DEFAULT_PORT), 200, { "cache-control": "no-store" });
   }
 
   if (pathname === "/api/session") {

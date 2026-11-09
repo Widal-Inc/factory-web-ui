@@ -47,7 +47,7 @@ function fixture() {
   cleanups.push(() => { manager.stop(); Object.assign(SshConnection.prototype, real); reconnect.mockRestore(); rmSync(dir, { recursive: true, force: true }); });
   /** as this PC's owner from this app's own page, unless the test says otherwise */
   const call = (path: string, method = "POST", body?: unknown, readOnly = false, owner = !readOnly, headers: Record<string, string> = { "x-herdr-update": "1" }) => handleMachineRequest(new Request(`http://localhost:7317/api/machines/${path}`,
-    { method, headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "content-type": "application/json", ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), manager, undefined, undefined, readOnly, undefined, undefined, undefined, undefined, owner);
+    { method, headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "content-type": "application/json", ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), manager, undefined, undefined, readOnly, undefined, undefined, undefined, owner);
   /** an install job once it has ended, as the installer itself settles it */
   const ended = async (id: string) => { await (manager as unknown as { installer: { finished(id: string): Promise<void> } }).installer.finished(id); return manager.installJob(id)!; };
   return { manager, internals: manager as unknown as Internals, waiting, reached, call, ended };

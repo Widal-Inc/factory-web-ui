@@ -1,32 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 
 import "./DevicesPanel.css";
 
 import { ApiError, fetchDevices, renameDevice, revokeAllDevices, revokeDevice } from "../lib/api.ts";
-import { DEVICES_CHANGED_EVENT, PAIRING_CODE_EVENT } from "../lib/useRelay.ts";
+import { PAIRING_CODE_EVENT } from "../lib/pairingCode.ts";
 import type { HealthAuth, PairedDevice, PairingCode } from "../../shared/protocol.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
-import { ConnectionLine } from "./ConnectionLine.tsx";
 import { SettingsRow } from "./SettingsControls.tsx";
 import { useT } from "../lib/i18n.ts";
 import { lastSeen } from "../lib/lastSeen.ts";
-import { removeFromAccount } from "../lib/account/leave.ts";
-import { AccountService } from "../lib/account/service.ts";
-import { indexedAccountStore } from "../lib/account/store.ts";
-import { indexedDeviceStore } from "../lib/relay/device.ts";
-import { serverIdOfPath } from "../lib/shellMode.ts";
-import { useAccountSignedIn } from "../lib/account/useAccountSignedIn.ts";
-import { getTransport } from "../lib/transport.ts";
 import { pairThisBrowser, UnconfirmedPairing } from "../lib/pairing.ts";
 
 const POLL_MS = 3000;
-/** a device seen this recently is not called offline, whatever its sessions: it may be in by its cookie */
-const SEEN_LATELY_MS = 2 * 60_000;
-const seenLately = (at: string | null): boolean => at !== null && Date.now() - Date.parse(at) < SEEN_LATELY_MS;
-/** how often the open list is read again, for the round trips the PC measured since */
-const REFRESH_MS = 30_000;
 
 export interface DevicesPanelProps {
   /** a device appeared while a code was out: the code did its work, and the dialog showing it can go */
@@ -39,8 +26,6 @@ export interface DevicesPanelProps {
   onRevokedAll?: () => void;
   /** what each row is (a phone, a browser), shown beside its name; null where that is not known */
   kindOf?: (label: string) => string | null;
-  /** an action for this device's own row (Use the relay); without such a row, a row of its own */
-  currentAction?: ReactNode;
   /**
    * More settings' place for what is not the list itself (how this browser got in, what pairing means,
    * revoking every device): drawn there, kept here with the list it acts on. Without one, under the list.
@@ -51,28 +36,16 @@ export interface DevicesPanelProps {
 export const VIA: Record<NonNullable<HealthAuth["via"]>, string> = {
   local: "You are on the PC itself.",
   device: "This is a paired device.",
-  relay: "This is a paired device, reaching the PC through the Ovis relay.",
   token: "You are in with the access token.",
   open: "This browser is in only because nothing is paired yet: from anywhere that can reach this address, so would anyone.",
 };
 
-/**
- * Whether `row` can be disconnected from every PC from here: another device of the account, and a
- * `remove` signed with this client's account key would be applied, as the PC takes one only from a
- * drive member of the account (server/account/records.ts). A browser signed in on the PC's own address,
- * paired by cookie, holds a key no row has, and every PC would refuse it (`signer_not_member`).
- */
-export function offersAccountRemove(devices: readonly PairedDevice[], row: PairedDevice, account: string, key: string | null): boolean {
-  return key !== null && !row.current && row.account === account && row.account_key !== undefined && row.account_key !== key
-    && devices.some((d) => d.account === account && d.account_key === key && d.role === "drive");
-}
-
 /** Settings → Devices and PCs → My devices: the paired phones and browsers; Connect a device above it pairs one more. */
-export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kindOf, currentAction = null, more = null }: DevicesPanelProps) {
+export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kindOf, more = null }: DevicesPanelProps) {
   const t = useT();
   const [devices, setDevices] = useState<PairedDevice[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** the pending code the Connect a phone dialog or the relay started: while it lasts, the list is read again to catch the device it lets in */
+  /** the pending code the Connect a phone dialog started: while it lasts, the list is read again to catch the device it lets in */
   const [code, setCode] = useState<PairingCode | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; label: string } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -89,21 +62,17 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
   const pairingSelfLock = useRef(false);
   /** reads in the order they started: one answering after a newer one has landed answers for an older list */
   const reads = useRef({ started: 0, landed: 0 });
-  /** reads on their way, whatever their answer: the periodic refresh starts none over them */
-  const inFlight = useRef(0);
 
-  /** `quiet`: a read the page did not ask for, which leaves the warning on screen and, should it fail, the list as it was */
-  const load = useCallback(async ({ quiet = false, check = false } = {}) => {
+  const load = useCallback(async () => {
     const started = generation.current;
     const read = ++reads.current.started;
     const stale = () => started !== generation.current || read < reads.current.landed;
-    inFlight.current++;
     try {
-      const list = await fetchDevices(check);
+      const list = await fetchDevices();
       if (stale()) return;
       reads.current.landed = read;
       setDevices(list);
-      if (!quiet) setError(null);
+      setError(null);
       // a device that appeared while a code was out just paired with it
       const fresh = list.filter((d) => !known.current.has(d.id));
       if (loaded.current && fresh.length > 0) {
@@ -113,34 +82,14 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
       known.current = new Set(list.map((d) => d.id));
       loaded.current = true;
     } catch (e) {
-      if (quiet || stale()) return;
+      if (stale()) return;
       reads.current.landed = read;
       setDevices([]);
       setError(e instanceof ApiError && e.status === 404 ? t("Devices are managed on a real server.") : e instanceof Error ? e.message : String(e));
-    } finally {
-      inFlight.current--;
     }
   }, [t, onDevicePaired]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    // never over a read still on its way: a later quiet read landing first would make a Check now's answer stale
-    const timer = setInterval(() => { if (inFlight.current === 0) void load({ quiet: true }); }, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [load]);
-  const [checking, setChecking] = useState(false);
-  const checkNow = async (): Promise<void> => {
-    setChecking(true);
-    try { await load({ check: true }); } finally { setChecking(false); }
-  };
-
-  // this client's pairing joined the account behind the app (relay/shell.tsx): the list read before that lists it as no member yet
-  useEffect(() => {
-    const onChanged = () => void load({ quiet: true });
-    window.addEventListener(DEVICES_CHANGED_EVENT, onChanged);
-    return () => window.removeEventListener(DEVICES_CHANGED_EVENT, onChanged);
-  }, [load]);
-
-  // a code started anywhere on this page (the dialog's pairing code, the relay's New code): the server keeps one pending code
+  // a code started anywhere on this page (the dialog's pairing code): the server keeps one pending code
   useEffect(() => {
     const onCode = (event: Event) => {
       setJustPaired(null);
@@ -190,38 +139,6 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
   const rename = async () => {
     if (!renaming) return;
     try { await renameDevice(renaming.id, renaming.label); setRenaming(null); await load(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  };
-  const signedIn = useAccountSignedIn();
-  /** this client's account key, read only once it is signed in (reading it makes one) */
-  const [accountKey, setAccountKey] = useState<string | null>(null);
-  useEffect(() => {
-    if (signedIn === null) return;
-    let live = true;
-    indexedAccountStore.key().then((key) => { if (live) setAccountKey(key.public_spki); }, () => undefined);
-    return () => { live = false; };
-  }, [signedIn]);
-  const [disconnecting, setDisconnecting] = useState<string | null>(null);
-  /** A device of the account, gone from every PC of it: at once here, from the mailbox on the others. */
-  const disconnect = async (id: string, key: string, account: string) => {
-    // fixed wait: the second tap must come within 4 seconds, as Revoke's does
-    if (disconnecting !== id) { setDisconnecting(id); window.setTimeout(() => setDisconnecting((c) => (c === id ? null : c)), 4000); return; }
-    setDisconnecting(null);
-    const transport = getTransport();
-    try {
-      const service = new AccountService({ store: indexedAccountStore });
-      const { unconfirmed, queued = [] } = await removeFromAccount({ service, accountStore: indexedAccountStore, relayStore: indexedDeviceStore, key, account,
-        here: (path, init) => transport.fetch(path, init), ...(serverIdOfPath(window.location.pathname) ? { hereId: serverIdOfPath(window.location.pathname)! } : {}) });
-      await load();
-      if (unconfirmed.length > 0 || queued.length > 0) {
-        // only this PC answered: the others are named, rather than claimed (one may have revoked this device and refuse it)
-        const names = new Map((await service.listPcs()).map((pc) => [pc.server_id, pc.label]));
-        const named = (ids: readonly string[]) => ids.map((id) => names.get(id) ?? id.slice(0, 8)).join(", ");
-        setError([
-          unconfirmed.length > 0 ? t("Not removed yet on: {pcs}. Disconnect it from a device that is in the account there.", { pcs: named(unconfirmed) }) : "",
-          queued.length > 0 ? t("Sent to {pcs}: each removes it when it next comes online. If it still shows there, disconnect it from another device in the account.", { pcs: named(queued) }) : "",
-        ].filter(Boolean).join(" "));
-      }
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   const revoke = async (id: string) => {
     if (confirming !== id) { setConfirming(id); window.setTimeout(() => setConfirming((c) => (c === id ? null : c)), 4000); return; }
@@ -290,14 +207,9 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
         <p className="settings-hint">{t("No devices paired yet.")}</p>
       ) : (
         <>
-        {devices.some((d) => d.via_relay) && !watching && (
-          <div className="devices-check">
-            <button type="button" className="btn" onClick={() => void checkNow()} disabled={checking}>{checking ? t("Checking…") : t("Check now")}</button>
-          </div>
-        )}
         <ul className="devices-list">
           {[...devices].sort((a, b) => Number(b.current) - Number(a.current)).map((d) => (
-            <li key={d.id} className={!d.connection && d.via_relay && !watching && !seenLately(d.last_seen_at) ? "devices-row is-away" : "devices-row"}>
+            <li key={d.id} className="devices-row">
               {renaming?.id === d.id ? (
                 <form className="devices-rename" onSubmit={(e) => { e.preventDefault(); void rename(); }}>
                   <input className="input" value={renaming.label} maxLength={48} autoFocus aria-label={t("Device name")} onChange={(e) => setRenaming({ id: d.id, label: e.target.value })} />
@@ -308,24 +220,11 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
                 <>
                   <div className="devices-name">
                     <span className="settings-label">{d.label}{kindOf?.(d.label) != null && <span className="devices-kind">{kindOf(d.label)}</span>}{d.current && <span className="devices-current">{t("This device now")}</span>}</span>
-                    {d.connection
-                      ? <ConnectionLine state={{ kind: "connected", route: d.connection.route, ...(d.connection.relay === undefined ? {} : { relay: d.connection.relay }), rttMs: d.connection.rtt_ms }} />
-                      // a device with a relay key connects through an encrypted session, which the PC sees come and go; a browser's cookie does not
-                      // a device that watches is not told how the others are connected: for them no row says offline
-                      // nor one seen in the last minutes, which may be reaching this PC another way (its browser cookie)
-                      : d.via_relay && !watching && !seenLately(d.last_seen_at)
-                        ? <ConnectionLine state={{ kind: "offline", text: t("Offline · last seen {when}", { when: lastSeen(d.last_seen_at) }) }} reason={t("The app is closed, or its network is off.")} />
-                        : <span className="settings-description">{t("Last seen {when}", { when: lastSeen(d.last_seen_at) })}</span>}
+                    <span className="settings-description">{t("Last seen {when}", { when: lastSeen(d.last_seen_at) })}</span>
                   </div>
-                  {d.current && currentAction}
                   {(
                     <div className="devices-actions">
                       <button type="button" className="icon-button" aria-label={t("Rename {name}", { name: d.label })} onClick={() => setRenaming({ id: d.id, label: d.label })}><Pencil /></button>
-                      {signedIn !== null && offersAccountRemove(devices, d, signedIn, accountKey) && (
-                        <button type="button" className={disconnecting === d.id ? "btn btn-danger" : "btn"} onClick={() => void disconnect(d.id, d.account_key!, signedIn!)}>
-                          {disconnecting === d.id ? t("Disconnect everywhere?") : t("Disconnect from all PCs")}
-                        </button>
-                      )}
                       {/* one element across both steps, so focus stays on it when it asks to confirm */}
                       <button type="button" className={confirming === d.id ? "btn btn-danger" : "icon-button"} aria-label={confirming === d.id ? undefined : t("Revoke {name}", { name: d.label })} onClick={() => void revoke(d.id)}>
                         <Trash2 aria-hidden="true" />{confirming === d.id && t("Revoke?")}
@@ -340,12 +239,6 @@ export function DevicesPanel({ onDevicePaired, auth, onPaired, onRevokedAll, kin
         </>
       )}
       {justPaired !== null && <p className="settings-hint" role="status">{t("Paired: {name}.", { name: justPaired })}</p>}
-      {currentAction !== null && devices !== null && !devices.some((d) => d.current) && (
-        <div className="devices-row devices-self">
-          <div className="devices-name"><span className="settings-label">{t("This device")}</span></div>
-          {currentAction}
-        </div>
-      )}
       {/* an open gate is a warning about this page itself: it stays beside the list, with its fix */}
       {auth?.via === "open" && <>
         <p className="settings-hint devices-open">{t(VIA.open)}</p>

@@ -18,7 +18,7 @@ export function downloadLeavesApp(): boolean {
 
 /**
  * The picture `src` as a file named `name`. A PC path is read through the transport, as the page's
- * CSP lets no fetch reach a blob: or data: URL (a relay PC's pictures are blob: URLs once shown);
+ * CSP lets no fetch reach a blob: or data: URL (a custom transport's pictures can be blob: URLs once shown);
  * any other picture is the decoded `shown` one, encoded as PNG.
  */
 export async function imageFile(src: string, name: string, shown: HTMLImageElement | null, signal?: AbortSignal): Promise<File> {

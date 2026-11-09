@@ -102,7 +102,7 @@ export type SessionSnapshot = Omit<HerdrSnapshot, "panes"> & {
 };
 export type { WorkspaceMoved } from "./workspace-lifecycle.ts";
 
-export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairingRequest, RelayPairingsEvent, RemotePairingRequest, RemotePairingsEvent, Machine, MachineEvent, MachineRoster, PaneTarget, SetupJob, SetupRequest, SetupAction, BridgeIdentity, BridgeHealth } from "./machines.ts";
+export type { DevicePairedEvent, DeviceRemovedEvent, Machine, MachineEvent, MachineRoster, PaneTarget, SetupJob, SetupRequest, SetupAction, BridgeIdentity, BridgeHealth } from "./machines.ts";
 
 /** Machine API (same token gate; mutations require X-Herdr-Machine: 1 + same origin)
  * GET /api/health?scope=bridge -> BridgeHealth, never waits for herdr (a driving owner is told herdr_runtime too)
@@ -132,8 +132,7 @@ export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairing
  *  GET    /api/health                    -> { ok: true, herdr: HerdrIdentity (shared/machines.ts; terminal_attach false on a
  *                                          Windows herdr and on a bridge that cannot run the PTY sidecar; terminal_mirror: its
  *                                          terminal lens is the pane's screen, repainted; /api/bridge tells the same herdr), auth: HealthAuth,
- *                                          web_ui: { boot_id: string, revision: string | null, server_id?: string (its relay ID,
- *                                          authenticated only, where it has one: Machine.server_id) },
+ *                                          web_ui: { boot_id: string, revision: string | null },
  *                                          security?: SecuritySummary (authenticated only, no-store),
  *                                          herdr_core?: HerdrCoreFacts (shared/machines.ts; authenticated only, absent until
  *                                          the server's first look for hc has ended), herdr_runtime?: HerdrRuntimeFacts (a driving owner
@@ -148,23 +147,6 @@ export type { DevicePairedEvent, DeviceRemovedEvent, PairingIntent, RelayPairing
  *         [keys] prefix bindings, for local and remote panes alike), no-store
  *  GET    /api/access                    -> RemoteAccess (how a phone can reach this server: what
  *         Tailscale on this PC already serves, or the command to run), no-store
- *  GET    /api/relay                     -> RelayStatus, no-store; also included in authenticated
- *         /api/health and /api/access answers.
- *  POST   /api/relay/start               -> RelayStatus; closes an ungated tokenless device gate first
- *  POST   /api/relay/stop                -> RelayStatus; closes sessions with shutdown and WS 1001
- *  POST   /api/relay/offer               -> { url, expires_at }; an offer carrying the active one-time pairing code
- *         (the one Devices shows, else a new one); 409 relay_off while off, relay_offline in error
- *  POST   /api/relay/link                -> { url }; a pairing link without a code, for pairing by comparing
- *         digits (docs/relay.md); 409 relay_off while off
- *  POST   /api/relay/pairing             -> { ok: true }; JSON { id, decision: "approve" | "decline" } for a phone
- *         waiting with the same digits (`relay-pairings` on /api/machines/events); 400 invalid_relay_pairing,
- *         404 relay_pairing_gone once it left, was decided or ran out of time
- *  POST   /api/relay/direct              -> RelayStatus; JSON { on: boolean }: direct connections on this PC's
- *         networks while the relay is on (on unless turned off; off ends every direct session); 400 invalid_relay_direct, 409 direct_unavailable on a server without them
- *  POST   /api/relay/reset-identity      -> RelayStatus; revokes relay devices and reconnects if enabled
- *         Relay mutations require drive role, same origin and X-Herdr-Update: 1, and a direct connection
- *         (403 local_required over the relay).
- *         Serve-only installs refuse relay start.
  *  GET    /api/updates                   -> UpdateStatus (shared/update.ts), no-store; to the bridge
  *         token (which cannot read /api/access) also `port` and `serving_url`, where it answers
  *  POST   /api/updates/check             -> 202 { accepted: true }
@@ -500,9 +482,8 @@ export type { UsageProviderId, UsageWindow, UsageResets, UsageCredits, UsageProb
 
 export type { CLIProxyStatus, CLIProxyProvider, CLIProxyLogin, CLIProxyLoginStatus } from "./cliproxy.ts";
 
-export type { AccessVia, AccessRefusal, DeviceRole, HealthAuth, LanExposure, DirectExposure, BindScope, ObservedIngress, SecuritySummary, PairedDevice, DeviceConnection, DeviceRoute, PairingCode, TailscaleAccess } from "./access.ts";
-/** Older servers and the Tailscale-only builder omit relay state. */
-export type RemoteAccess = import("./access.ts").RemoteAccess & { readonly relay?: RelayStatus };
+export type { AccessVia, AccessRefusal, DeviceRole, HealthAuth, LanExposure, BindScope, ObservedIngress, SecuritySummary, PairedDevice, PairingCode, TailscaleAccess } from "./access.ts";
+export type { RemoteAccess } from "./access.ts";
 
 /**
  * Browser stream keys: how the server tells one browser from another without a credential, so a
@@ -529,54 +510,6 @@ export type RemoteAccess = import("./access.ts").RemoteAccess & { readonly relay
  *   PC or a paired device).
  */
 export const STREAM_COOKIE_PREFIX = "ovis_stream_";
-
-/**
- * Why the relay is not online, as a fixed code a client puts in its own words (RelayStatus.error_code;
- * docs/relay.md, "Why it is not online"). Each says whether the PC tries again by itself:
- * - `start_failed`: the relay did not start; starting it again may work.
- * - `identity_unreadable`: this PC's relay identity cannot be read (`blocked` says so too); nothing retries.
- * - `relay_unreachable`: the relay did not answer or the connection dropped; the PC tries again.
- * - `server_key_refused`: the relay refused this PC's key for good; the PC does not try again.
- * - `pass_required`: an Ovis relay needs a relay pass and no account names this PC: sign in on it and add it.
- * - `pass_not_listed`: the account this PC names does not list it: add it to that account.
- * - `pass_limit`: that account has as many PCs on the Ovis relay as it may: remove one from it.
- * - `pass_unavailable`: the relay needs a pass the account service has not given yet; the PC keeps asking.
- * - `pass_refused`: the relay refused the pass this PC holds (a key it does not trust, a PC it revoked); the PC asks
- *   for another now and then.
- * - `pass_unsupported`: the relay needs a pass and this PC asks no account service for one (turned off or
- *   unusable, or a relay that is not Ovis's): waiting brings none; use the same Wi-Fi, Tailscale or another relay.
- */
-export type RelayErrorCode = "start_failed" | "identity_unreadable" | "relay_unreachable" | "server_key_refused"
-  | "pass_required" | "pass_not_listed" | "pass_limit" | "pass_unavailable" | "pass_refused" | "pass_unsupported";
-
-/** GET /api/relay; relay and app are configured secure origins, never pairing credentials. */
-export interface RelayStatus {
-  readonly phase: "off" | "connecting" | "online" | "error";
-  readonly relay: string;
-  readonly app: string;
-  readonly sessions: number;
-  readonly blocked: null | "identity_unreadable";
-  readonly error: string | null;
-  /** why, as a fixed code, whenever `error` says something (null otherwise); absent from an older server */
-  readonly error_code?: RelayErrorCode | null;
-  /**
-   * Direct connections on this PC's networks (docs/relay.md): whether they are on, and the carriers
-   * listened on now (none while the relay is off). Absent from a server without them.
-   */
-  readonly direct?: { readonly on: boolean; readonly carriers: readonly string[] };
-  /**
-   * This PC's relay pass, on Ovis's own relays only (docs/relay.md, "Relay pass"): `state` is where
-   * getting one stands (server/relay/pass.ts), `relay` what the relay last said of it (null before it
-   * said anything, or on a relay that asks for none) and `enforce_at` from when it will be needed.
-   */
-  readonly pass?: {
-    readonly state: "ok" | "no_account" | "not_listed" | "limit" | "unavailable";
-    readonly relay: "ok" | "missing" | "invalid" | "expired" | null;
-    readonly enforce_at: string | null;
-    /** the relay refused this PC for its pass (4402) and it has not been let in since */
-    readonly refused: boolean;
-  };
-}
 
 /** POST /api/devices/pair's answer to a request that accepts JSON: the device's own credential. */
 export interface DevicePairToken {

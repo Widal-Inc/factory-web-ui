@@ -2,15 +2,14 @@
  * The fonts this PC serves from its state folder's `fonts/` (shared/user-fonts.ts), added to the page
  * for the families a font field in Settings names, so a phone draws a font it does not have as the PC
  * does (#412). While no field names a font nothing is asked, and a family no served file has is left
- * to the fonts installed on the device. Each file comes through the API, so it reaches the page over
- * the relay as well, and is kept in the browser's cache storage where there is one.
+ * to the fonts installed on the device. Each file comes through the API and is kept in the
+ * browser's cache storage where there is one.
  */
 
 import { USER_FONTS_PATH, type UserFont, type UserFontList } from "../../shared/user-fonts.ts";
 import { apiFetch } from "./api-request-id.ts";
 import { faceArrived } from "./fontFaces.ts";
 import { sanitizeFontFamily } from "./fontFamily.ts";
-import { serverIdOfPath, serverScopePath } from "./shellMode.ts";
 
 // public/sw.js's FILES, the one cache its keepShell never retires: a cache of another name is deleted on the next open
 const CACHE = "ovis-files-v1";
@@ -37,12 +36,8 @@ async function fetchList(): Promise<readonly UserFont[]> {
 async function bytesOf(font: UserFont): Promise<ArrayBuffer> {
   const path = `${USER_FONTS_PATH}/${encodeURIComponent(font.file)}`;
   const url = `${path}?v=${encodeURIComponent(font.version)}`;
-  // every PC's app shares the hosted shell's origin: its files are kept under its own scope
-  const serverId = typeof location === "undefined" ? null : serverIdOfPath(location.pathname);
-  const keptPath = serverId === null ? path : `${serverScopePath(serverId).slice(0, -1)}${path}`;
-  const keptUrl = `${keptPath}?v=${encodeURIComponent(font.version)}`;
   const cache = typeof caches === "undefined" ? null : await caches.open(CACHE).catch(() => null);
-  const kept = await cache?.match(keptUrl).catch(() => undefined);
+  const kept = await cache?.match(url).catch(() => undefined);
   if (kept) return kept.arrayBuffer();
   const response = await apiFetch(url, { signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`${path} answered ${response.status}`);
@@ -50,8 +45,8 @@ async function bytesOf(font: UserFont): Promise<ArrayBuffer> {
   if (cache) {
     try {
       // the file's older versions go, so a replaced font does not stay on the phone
-      for (const old of await cache.keys()) if (new URL(old.url).pathname === keptPath) await cache.delete(old);
-      await cache.put(keptUrl, new Response(bytes));
+      for (const old of await cache.keys()) if (new URL(old.url).pathname === path) await cache.delete(old);
+      await cache.put(url, new Response(bytes));
     } catch (error) {
       // a full store keeps nothing, and the font is drawn all the same
       console.warn(`The font ${font.file} could not be kept for the next load`, error);

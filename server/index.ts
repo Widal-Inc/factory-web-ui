@@ -1,6 +1,5 @@
 import type { SshCandidatesOptions } from "./ssh-candidates.ts";
 import "./adopt-legacy-env.ts";
-import type { RelaySocket } from "../shared/relay-channel.ts";
 import { createCore, type SocketData } from "./core/index.ts";
 import { ClientConnectionLog } from "./client-connection-log.ts";
 import { RequestLog } from "./request-log.ts";
@@ -13,13 +12,12 @@ import { dirname, join } from "node:path";
 import type { PendingMessage, SessionSnapshot } from "../shared/protocol.ts";
 import { DEFAULT_PORT } from "../shared/protocol.ts";
 import { isLoopbackBind, lanExposed } from "./access.ts";
-import { DeviceStore, mergeAccountTombstones } from "./devices.ts";
+import { DeviceStore } from "./devices.ts";
 import { PreferenceStore } from "./preferences.ts";
 import { readOmpHeldFilesSetting } from "./omp.ts";
 import { SeenStore } from "./seen.ts";
 import type { SeenFinish } from "../shared/seen.ts";
 import { SHELL_AGENTS, ShellAgentLocator } from "./shell-agent.ts";
-import { TailnetAddressSource } from "./tailscale.ts";
 import { AgentDetector, catalogLocator, defaultLoginProbe } from "./agent-catalog-detect.ts";
 import { InstalledLookup } from "./installed-lookup.ts";
 import { agentCatalogFor } from "./agent-catalog-routes.ts";
@@ -43,10 +41,6 @@ import { sweepSshDirs } from "./ssh.ts";
 import { OpenCodePromptState } from "./prompt.ts";
 import { connectUpdater, type UpdateService } from "./update-api.ts";
 import { HerdrUpdater } from "./herdr-update.ts";
-import { RelayService } from "./relay/service.ts";
-import { AccountMailbox, accountServiceUrl, passAccountService } from "./account/mailbox.ts";
-import { AccountHolds } from "./account/holds.ts";
-import { AccountIntroductions } from "./account/introductions.ts";
 import { Telemetry } from "./telemetry.ts";
 import { UsageService } from "./usage.ts";
 import { createSystemSampler, type SystemSampler } from "./system-stats.ts";
@@ -179,10 +173,6 @@ export function createServer(
     herdrCoreInstaller?: HcInstaller;
     /** whether the launcher took this bridge as its own after its startup check (server/supervisor.ts); unset, nothing is told */
     launchAccepted?: () => boolean;
-    /** Relay opt-in and identity persist in stateDir; tests can supply a local physical transport. */
-    relay?: RelayService;
-    /** Where this PC collects account records left for it (server/account/mailbox.ts); tests pass the in-memory service. */
-    accountService?: { url: string; fetch?: (request: Request) => Promise<Response> };
     /** anonymous install and update counts (server/telemetry.ts); unset, the server sends none and answers 404. Only the real entrypoint passes one. */
     telemetry?: Telemetry;
     /** plan limits of the AI subscriptions signed in here; tests pass one without real sign-ins */
@@ -196,10 +186,6 @@ export function createServer(
     /** voice input's key, provider and models; tests pass one with their own env and fetch */
     voice?: VoiceService;
     machines?: boolean;
-    /** how PCs added through the relay reach it (server/relay-pc.ts); tests point it at a local relay */
-    relayPcSocket?: (url: string) => RelaySocket;
-    /** how they dial those PCs' direct carriers; tests point it at a local listener */
-    relayPcDirectSocket?: (url: string) => RelaySocket;
     /** how often another PC's own update is looked at while it runs; tests shorten it */
     pcUpdateTimings?: { pollMs?: number; startMs?: number; checkMs?: number; offerMs?: number };
     /** where Add a connection → SSH reads its list from; tests point it at a fixture */
@@ -271,15 +257,8 @@ export function createServer(
   const token = options.token ?? process.env["OVIS_TOKEN"] ?? "";
   // resolved once: a merge can give the old dir files of its own, after which resolving again could name the other dir
   const stateDir = options.stateDir ?? defaultStateDir();
-  const ovisRelay = options.relay ?? new RelayService({ stateDir, accountService: passAccountService(options.accountService?.url), ...(options.accountService?.fetch ? { accountFetch: options.accountService.fetch } : {}) });
   const merge = options.siblingStateDir ? mergeSiblingState(stateDir, options.siblingStateDir) : null;
-  let accountBlocked: string | null = null;
-  if (options.siblingStateDir) {
-    try { accountBlocked = mergeAccountTombstones(stateDir, options.siblingStateDir); }
-    catch (error) { accountBlocked = `cannot merge the account tombstones of ${options.siblingStateDir}: ${error instanceof Error ? error.message : String(error)}`; }
-    if (accountBlocked !== null) console.error(accountBlocked);
-  }
-  const devices = new DeviceStore(stateDir, merge?.devicesBlocked ?? null, accountBlocked);
+  const devices = new DeviceStore(stateDir, merge?.devicesBlocked ?? null);
   const preferences = new PreferenceStore(stateDir);
   // Settings -> Experimental -> OMP on macOS herdr-core: chat from the session it holds open
   readOmpHeldFilesSetting(() => preferences.get().settings.ompHeldFiles === true);
@@ -359,7 +338,7 @@ export function createServer(
   // A bridge this app starts on a PC (`bridgeOnly`, server/remote-entry.ts) serves only its connection server, with
   // the credential it registered as its token: that server applies its own rows, so it gets every snapshot whole.
   const browserSnapshot = <S extends SessionSnapshot>(snapshot: S): S => options.bridgeOnly ? snapshot : snapshotWithoutHiddenTokens(herdrSidebar.get(), snapshot);
-  const core = createCore({ options: { ...options, stateDir, openCodeState, orderSequence, serverId: () => ovisRelay.serverId(), seenMoved: (from, to, renumber) => seen.moved(LOCAL_MACHINE, from, to, renumber) }, devices, preferences, usage, usageLogin, browserSnapshot, TYPED_SETTLE_MS, KEY_SETTLE_MS, SUBMIT_DEADLINE_MS, SUBMIT_DELAY_MS, DRAFT_CLEAR_WAIT_MS, DRAFT_CLEAR_POLL_MS });
+  const core = createCore({ options: { ...options, stateDir, openCodeState, orderSequence, seenMoved: (from, to, renumber) => seen.moved(LOCAL_MACHINE, from, to, renumber) }, devices, preferences, usage, usageLogin, browserSnapshot, TYPED_SETTLE_MS, KEY_SETTLE_MS, SUBMIT_DEADLINE_MS, SUBMIT_DELAY_MS, DRAFT_CLEAR_WAIT_MS, DRAFT_CLEAR_POLL_MS });
   const { machines, collector, queueFirstMessage, push } = core;
   // read finishes are kept until this server knows their herdr run ended
   const seen = new SeenStore(stateDir, (pc, epoch) => machines?.finishEnded(pc, epoch) ?? false);
@@ -396,7 +375,6 @@ export function createServer(
     timeout: (request, seconds) => { bunServer.timeout(request, seconds); },
     upgrade: (request, options) => bunServer.upgrade(request, options),
     get port() { return bunServer.port; },
-    peer: { kind: "socket" },
     services,
   });
   const server = Bun.serve<SocketData>({
@@ -427,12 +405,6 @@ export function createServer(
   }
 
   const requestLog = new RequestLog(stateDir);
-  const accountHolds = new AccountHolds({ enrollingPath: join(stateDir, "account-enrolling.json"), heldPath: join(stateDir, "account-held.json") });
-  const accountMailbox = new AccountMailbox({
-    pendingPath: join(stateDir, "account-pending.json"), holds: accountHolds,
-    devices, identity: () => ovisRelay.currentIdentity(),
-    service: (() => { try { return accountServiceUrl(options.accountService?.url); } catch (error) { return error instanceof Error ? error : new Error(String(error)); } })(), ...(options.accountService?.fetch ? { fetch: options.accountService.fetch } : {}),
-  });
   const services: RequestServices = {
     runtimeMove: options.runtimeService ? moveService({
       stateDir, port: server.port ?? DEFAULT_PORT, serving: runtime, facts: () => options.runtimeService?.facts(),
@@ -447,10 +419,8 @@ export function createServer(
       switchRuntime: () => { const answer = options.runtimeService!.request("herdr-core"); return answer.ok ? null : answer.message; },
       ...(options.herdrCoreInstaller ? { installer: options.herdrCoreInstaller } : {}),
     }) : null,
-    options, relay: ovisRelay, relayReceiptIds: new RelayReceiptIds(), hostname, token, bridgeToken, bootId, devices, accountMailbox, accountIntroductions: new AccountIntroductions(Date.now, join(stateDir, "account-introductions.json")), accountHolds, preferences, herdrSidebar, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, usageAccounts, systemSampler, fontsDir: join(stateDir, "fonts"), voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog,
+    options, relayReceiptIds: new RelayReceiptIds(), hostname, token, bridgeToken, bootId, devices, preferences, herdrSidebar, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, usageAccounts, systemSampler, fontsDir: join(stateDir, "fonts"), voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog,
   };
-  ovisRelay.resume(services, server.port ?? DEFAULT_PORT);
-  accountMailbox.start();
 
   // one listener per address on one port, all or none: a half-bound set would answer where nobody asked it to
   const lanListeners: Bun.Server<SocketData>[] = [];
@@ -511,8 +481,6 @@ export function createServer(
     },
     stop: () => {
       services.runtimeMove?.stop();
-      accountMailbox.stop();
-      void ovisRelay.shutdown();
       core.stop(() => {
         clearInterval(draftTimer);
         openCodeState.clear();
@@ -579,9 +547,6 @@ if (import.meta.main) {
   const updates = connectUpdater();
   const version = (JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string }).version;
   const telemetry = new Telemetry({ stateDir, version, env: process.env, fetch, previousVersion: () => updates.installed().previous_version, runtime: herdrCore === null ? "herdr" : "herdr-core" });
-  // the direct carrier on this PC's private and Tailscale addresses, which the phone apps' OvisDirect plugin opens (docs/relay.md)
-  const tailnet = new TailnetAddressSource();
-  const relay = new RelayService({ stateDir, direct: { tailnetIp: () => tailnet.ip() }, accountService: passAccountService() });
   const lanConfig = lanHttpsConfig(process.env);
   if (lanConfig !== null && "error" in lanConfig) console.error(`LAN HTTPS is off: ${lanConfig.error}.`);
   let instance: ReturnType<typeof createServer>;
@@ -589,7 +554,7 @@ if (import.meta.main) {
     instance = createServer({ updates, herdrUpdate: new HerdrUpdater(), herdrCoreFacts, herdrCoreInstaller: herdrCoreInstaller(),
       launchAccepted: () => launchAccepted,
       runtimeService: runtimeService({ stateDir, port: Number(startEnv["PORT"] || DEFAULT_PORT), serving: choice.runtime, source: choice.source, ...(fallback ? { fallback } : {}), env: startEnv, core: herdrCoreFacts, accepted: () => launchAccepted, restart: (id) => process.send?.({ type: "runtime-restart", id }) }),
-      relay, telemetry, registerBridge: true, herdrProfiles: readHerdrProfiles, shellAgents: new ShellAgentLocator(), agentDetector: new AgentDetector({ locate: catalogLocator({ probe: defaultLoginProbe() }) }), stateDir, siblingStateDir: siblingStateDir(stateDir),
+      telemetry, registerBridge: true, herdrProfiles: readHerdrProfiles, shellAgents: new ShellAgentLocator(), agentDetector: new AgentDetector({ locate: catalogLocator({ probe: defaultLoginProbe() }) }), stateDir, siblingStateDir: siblingStateDir(stateDir),
       desktopActivity: process.env["OVIS_DESKTOP_APP"] === "1",
       ...(lanConfig !== null && !("error" in lanConfig) ? { lanHttps: lanConfig } : {}) });
     instance.warmAgentCatalog();
@@ -617,7 +582,7 @@ if (import.meta.main) {
     instance.stop();
     // Attach sidecars need ~1.2s to release herdr's exclusive client slot
     // herdr-core's adapter answers what the stopping server still asks meanwhile
-    void Promise.all([Bun.sleep(2000), relay.shutdown()]).then(() => {
+    void Bun.sleep(2000).then(() => {
       herdrCore?.stop();
       process.exit(0);
     });

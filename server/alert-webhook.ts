@@ -22,7 +22,6 @@ import { type AlertKind, type AlertPrefs, alertKindAllowed, DEFAULT_ALERTS, pars
 import { isLoopbackHost } from "./access.ts";
 import { badRequest, jsonResponse, setRequestRoute } from "./http.ts";
 import { writePrivateState } from "./private-state.ts";
-import { RELAY_ORIGIN } from "./relay/session.ts";
 
 const FILE = "alert-webhook.json";
 const TIMEOUT_MS = 10_000;
@@ -322,9 +321,8 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
         secret = typed || !same ? checkUrl(input.preset, input.url, options.loopbackHttp) : same.secret;
       }
       let base = same?.link_base ?? before?.link_base;
-      // a relay request names no address the app opens at (relay/session.ts RELAY_ORIGIN), and this PC's own loopback
-      // address opens nothing on a phone: a saved base another device can reach stays
-      if (linkBase && linkBase !== RELAY_ORIGIN) {
+      // this PC's own loopback address opens nothing on a phone: a saved base another device can reach stays
+      if (linkBase) {
         try {
           const origin = new URL(linkBase).origin;
           if (reachable(origin) || !reachable(base)) base = origin;

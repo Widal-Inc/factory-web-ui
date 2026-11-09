@@ -21,20 +21,8 @@ export interface Machine {
   id: string;
   name: string;
   /** hc: another machine of this PC's herdr-core (`hc machine add`), reached through that core */
-  kind: "local" | "ssh" | "relay" | "hc";
+  kind: "local" | "ssh" | "hc";
   target?: SshTarget;
-  /** a PC added through the Ovis relay (no SSH): its relay ID and the relay it is reached through */
-  relay?: { server_id: string; relay: string };
-  /**
-   * How a connected relay PC is reached now: on one of its direct carriers (its own network, or Tailscale), or
-   * through the relay. Absent while it is not connected, and for other kinds of PC.
-   */
-  route?: "relay" | "direct";
-  /**
-   * The PC's relay ID (server/relay/identity.ts) as its own server has it: the local PC's own, an SSH PC's
-   * from its /api/health. Absent where that server has none, or is older. What a device turns its alerts off by.
-   */
-  server_id?: string;
   enabled: boolean;
   state: MachineState;
   error: string | null;
@@ -68,7 +56,7 @@ export interface Machine {
   /** why this PC's last update from here failed, in plain words; cleared when another one starts or it succeeds */
   update_error?: string | null;
   /**
-   * A connected SSH or relay PC's move to herdr-core (docs/runtime-move.md, "On another PC"), as its own
+   * A connected SSH PC's move to herdr-core (docs/runtime-move.md, "On another PC"), as its own
    * GET /api/runtime/move tells it. Null when that PC cannot tell (an older Ovis, or a bridge with no
    * runtime to switch); absent while it is not connected, not read yet, and for this PC and hc machines.
    */
@@ -77,7 +65,7 @@ export interface Machine {
 /**
  * An update a PC can take from here.
  * - `bridge`: this app's bridge on an SSH PC is of another version; the bridge update replaces it (approved setup).
- * - `own`: the PC runs its own Ovis (a relay PC, direct or through the relay, or an SSH PC's own server) and its own
+ * - `own`: an SSH PC runs its own Ovis and its own
  *   updater offers a newer release, which it installs by revision when asked from here.
  * - `install`: an SSH PC's own Ovis cannot update itself from here (started by hand, or a supervisor too old to
  *   install by revision): this app does it over SSH (PcInstallJob), as `steps` says, then updates it.
@@ -202,14 +190,6 @@ export interface RemoteOvis {
  * Any other error beside that offer says why its last update failed, and the card shows it.
  */
 export const OWN_UPDATE_OFFER = "This PC runs its own Ovis";
-/**
- * What a device's `pcs_off` (shared/notify-policy.ts) lists this PC by: its relay ID, which its own
- * server and every roster that lists it know alike, else its name.
- */
-export function pcAlertKey(machine: Pick<Machine, "name" | "relay" | "server_id">): string {
-  return machine.relay?.server_id ?? machine.server_id ?? machine.name;
-}
-
 /** GET /api/machines: with ?verify_source_boot=<id>, also that PC's freshly proved boot id */
 export interface MachineRoster { machines: Machine[]; verified_source_boot?: { machine_id: string; boot_id: string } }
 /**
@@ -350,17 +330,14 @@ export type SetupAction = { action: "answer"; challenge_id: string; answer: stri
  * own; `event_id` is what a browser deduplicates by. Carries nothing a credential could be
  * made from: the label is the normalized one (at most 48 characters), the id the public one.
  */
-/**
- * A device lost its access (docs/account.md, "On the PC"): revoked on this PC (`by` "pc", or the device that
- * revoked it), or removed by an account record (`by` the member that signed it). Told to driving streams only.
- */
+/** A device lost its access: revoked on this PC (`by` "pc", or the device that revoked it). Told to driving streams only. */
 export interface DeviceRemovedEvent {
   type: "device-removed";
   event_id: string;
   device_id: string;
   label: string;
   removed_at: string;
-  by?: { device_id: string; label: string } | "pc";
+  by: { device_id: string; label: string } | "pc";
 }
 export interface DevicePairedEvent {
   type: "device-paired";
@@ -368,39 +345,7 @@ export interface DevicePairedEvent {
   device_id: string;
   label: string;
   enrolled_at: string;
-  /** the account member that approved it from another device (docs/account.md, "Who may admit a device"); absent when approved on this PC or by a code */
-  approved_by?: { device_id: string; label: string };
 }
-/** What a comparison asks for (docs/account.md, "Negotiation"): pairing this PC only, or joining the account. */
-export type PairingIntent = "pc" | "account";
-/** `preferences`: what every browser of this server shares changed (shared/preferences.ts) */
-/**
- * A phone asking to pair through the relay by comparing digits (docs/relay.md): the six digits its
- * screen shows too, waiting for the owner to approve it until `expires_at`.
- */
-export interface RelayPairingRequest {
-  id: string;
-  label: string;
-  digits: string;
-  expires_at: string;
-  /** absent from an older server: `pc` */
-  intent?: PairingIntent;
-}
-/**
- * The same request as an account member connected through the relay sees it: three candidates
- * instead of the digits, one of them the new device's, which the approver must pick
- * (`POST /api/relay/pairing` with `digits`).
- */
-export interface RemotePairingRequest {
-  id: string;
-  label: string;
-  intent: PairingIntent;
-  choices: [string, string, string];
-  expires_at: string;
-  /** the new device's key (P-256 SPKI, base64url) from PAIR_REQUEST, bound by its commitment and the digits: what the approver signs an `add` for */
-  key: string;
-}
-
 export type MachineEvent = { type: "machines"; machines: Machine[] } | { type: "machine-message"; machine_id: string; message: ServerMessage }
   | { type: "preferences"; preferences: SharedPreferences }
   /** the `$name` tokens herdr's `[ui.sidebar.agents]` rows draw on this server's PC, for every PC's agent rows (server/herdr-sidebar.ts) */
@@ -408,13 +353,7 @@ export type MachineEvent = { type: "machines"; machines: Machine[] } | { type: "
   /** finishes a browser of this server presented (shared/seen.ts): every record when the stream opens, then each change */
   | { type: "seen"; finishes: SeenFinish[] }
   | DevicePairedEvent
-  | DeviceRemovedEvent
-  | RelayPairingsEvent
-  | RemotePairingsEvent;
-/** every relay pairing waiting for approval, after each change; only to the PC's own windows that may approve one */
-export interface RelayPairingsEvent { type: "relay-pairings"; pairings: RelayPairingRequest[] }
-/** every relay pairing waiting for approval, after each change; only to drive account members connected through the relay */
-export interface RemotePairingsEvent { type: "remote-pairings"; pairings: RemotePairingRequest[] }
+  | DeviceRemovedEvent;
 /** `security`: authenticated requests only, absent from an older server (shared/protocol.ts SecuritySummary) */
 /**
  * `web_ui.boot_id`: this server lifetime's id, as in the full health answer. `runtime`: the runtime it

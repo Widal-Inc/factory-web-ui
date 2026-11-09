@@ -8,7 +8,6 @@
  * Register and fixed terms follow ../i18n.ko.ts; a key another feature also uses goes there.
  */
 export const FILES_KO: Record<string, string> = {
-  "Too large to open on the phone - download on the PC": "휴대폰에서 열기에는 너무 큽니다. PC에서 다운로드하세요.",
   "Show source": "소스 보기",
   "Resize file panel": "파일 패널 너비 조절",
   "Show beside the pane": "창 옆에 표시",
@@ -215,4 +214,5 @@ export const FILES_KO: Record<string, string> = {
   "Diff layout": "비교 보기 방식",
   "Unified": "한 열",
   "Split": "나란히",
+  "Reset": "재설정",
 };

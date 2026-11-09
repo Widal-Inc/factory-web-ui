@@ -251,20 +251,13 @@ describe.skipIf(process.platform !== "linux")("editing a text file (#771)", () =
     expect(readFileSync(note, "utf8")).toBe("win\n");
   });
 
-  it("is for a driving device only, over the relay and on the LAN too", async () => {
-    const note = file("relay.md", "relay\n");
-    const request = (method: string) => new Request(`https://relay.ovis.invalid/api/fs/text?pane_id=w1:p1&path=${q(note)}`, { method, headers: { origin: "https://relay.ovis.invalid", "content-type": "application/json" }, ...(method === "PUT" ? { body: JSON.stringify({ pane_id: "w1:p1", path: note, revision: sha("relay\n"), text: "x\n" }) } : {}) });
-    const through = (role: "watch" | "drive"): ServerContext => ({
-      ...server.context, peer: { kind: "relay", device: { id: "0123456789abcdef", label: "Phone", role }, sessionId: "s", serverId: "0123456789abcdef0123456789abcdef", key: "" },
-      requestIP: () => null, timeout: () => {}, upgrade: () => false,
-    });
-    for (const method of ["GET", "PUT"]) expect(await error((await handleRequest(request(method), through("watch")))!)).toEqual([403, "read_only"]);
-    expect((await handleRequest(request("GET"), through("drive")))?.status).toBe(200);
+  it("is not for an open LAN window", async () => {
+    const note = file("lan.md", "lan\n");
     // an open LAN install's window signed in as nobody
     const lan: ServerContext = { ...server.context, requestIP: () => ({ address: "192.168.1.20" }), timeout: () => {}, upgrade: () => false };
     const fromLan = new Request(`http://192.168.1.10:${server.port}/api/fs/text?pane_id=w1:p1&path=${q(note)}`, { headers: { host: `192.168.1.10:${server.port}` } });
     expect(await error((await handleRequest(fromLan, lan))!)).toEqual([403, "drive_only"]);
-    expect(readFileSync(note, "utf8")).toBe("relay\n");
+    expect(readFileSync(note, "utf8")).toBe("lan\n");
   });
 });
 
@@ -275,7 +268,6 @@ describe("who may edit a file", () => {
     ["a paired driving device", full("device", "drive"), false, false, true],
     ["the access token", full("token", "drive"), false, false, true],
     ["this PC's own browser", full("local", "drive"), false, false, true],
-    ["a driving phone over the relay", full("relay", "drive"), false, false, true],
     ["a driving device, for another PC", full("device", "drive"), false, true, true],
     ["a watching device", full("device", "watch"), false, false, false],
     ["an open LAN window", full("open", "drive"), false, false, false],

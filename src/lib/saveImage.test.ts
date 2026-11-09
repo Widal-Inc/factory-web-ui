@@ -97,16 +97,16 @@ describe("downloadLeavesApp", () => {
 
 describe("imageFile", () => {
   test("reads a PC's picture through the transport, keeping its image type", async () => {
-    // Given a relay PC, whose pictures the page shows from blob: URLs its CSP lets no fetch read
+    // Given a transport whose pictures the page shows from blob: URLs its CSP lets no fetch read
     const asked: string[] = [];
-    const relay: Transport = { ...nativeTransport, kind: "relay", fetch: async (input) => {
+    const custom: Transport = { ...nativeTransport, kind: "custom", fetch: async (input) => {
       asked.push(String(input));
       return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } });
     } };
-    setTransport(relay);
+    setTransport(custom);
     // When the viewer reads the picture for the share sheet
     const file = await imageFile("/api/fs/file?path=%2Fshot.png", "shot.png", null);
-    // Then it asked the relay for the PC's path, and the file is the picture under its name
+    // Then it asked the transport for the PC's path, and the file is the picture under its name
     expect(asked).toEqual(["/api/fs/file?path=%2Fshot.png"]);
     expect([file.name, file.type, file.size]).toEqual(["shot.png", "image/png", 4]);
   });

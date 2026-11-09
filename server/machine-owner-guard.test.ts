@@ -19,10 +19,8 @@ const KINDS: [string, Partial<AccessInput>, boolean][] = [
   ["a sign-in on this PC", {}, true],
   ["this PC's token", { loopback: false, tokenMatched: true, tokenConfigured: true }, true],
   ["a driving device paired here", { loopback: false, device: drive, gated: true }, true],
-  ["a driving device paired over the relay", { relayPeer: drive as AccessInput["relayPeer"] }, true],
   ["an open-LAN visitor with nothing paired", { loopback: false }, false],
   ["a watching device paired here", { loopback: false, device: watch, gated: true }, false],
-  ["a watching device over the relay", { relayPeer: watch as AccessInput["relayPeer"] }, false],
 ];
 const PC = "00000000-0000-4000-8000-000000000001";
 const ROUTES: [string, string, unknown][] = [
@@ -37,8 +35,6 @@ const ROUTES: [string, string, unknown][] = [
   ["DELETE", `${PC}/update`, undefined],
   ["POST", "update-all", undefined],
   ["POST", `${PC}/update-bridge`, undefined],
-  ["POST", "relay", { link: "x" }],
-  ["POST", "relay/code", { code: "x" }],
   ["POST", "tailnet", { url: "x" }],
   ["POST", "install", { destination: "me@pc.invalid" }],
   ["DELETE", "install/no-such-job", undefined],
@@ -65,7 +61,7 @@ describe("every change to this PC's PCs", () => {
     for (const [method, path, body] of ROUTES) for (const header of [true, false]) {
       const response = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${path}`, { method,
         headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "content-type": "application/json", ...(header ? { "x-herdr-update": "1" } : {}) },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), pcs, undefined, undefined, readOnly, undefined, undefined, undefined, undefined, owner);
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), pcs, undefined, undefined, readOnly, undefined, undefined, undefined, owner);
       const refused = response.status === 403;
       // the owner gets past the guard only from this app's own page (the update header); the PC or job need not exist
       expect({ who, method, path, header, refused }).toEqual({ who, method, path, header, refused: !(allowed && header) });

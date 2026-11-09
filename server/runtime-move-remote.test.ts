@@ -61,11 +61,3 @@ it("tells the runtime facts to the bridge token in the bridge's own health answe
   expect(health.herdr_runtime).toEqual(facts);
 });
 
-it("lets a relay device that drives this PC read its move, and refuses one that watches", async () => {
-  for (const role of ["drive", "watch"] as const) {
-    const ctx: ServerContext = { ...app.context, peer: { kind: "relay", device: { id: "0123456789abcdef", label: "Ovis on another PC", role }, sessionId: `s-${role}`, serverId: "0123456789abcdef0123456789abcdef", key: "" }, requestIP: () => null, timeout: () => {} };
-    const response = await handleRequest(new Request("https://relay.ovis.invalid/api/runtime/move"), ctx);
-    expect([role, response?.status]).toEqual([role, role === "drive" ? 200 : 403]);
-  }
-});
-

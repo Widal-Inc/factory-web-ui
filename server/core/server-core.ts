@@ -133,8 +133,6 @@ export function createCore({ options, devices, preferences, usage, usageLogin, b
       if (agent !== "claude") return null;
       try { return claudeInputEmpty(...await claudeBoxReads(paneId)); } catch { return false; }
     },
-    // The relay uses these same handlers with a SocketLike; websocket above remains Bun's boundary.
-    socketHandlers,
     /** once the server listens */
     start(): void {
       // ACKs can stop arriving entirely (a suspended tab). Bound the pause even then.

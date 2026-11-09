@@ -194,7 +194,7 @@ export interface PushService {
    */
   devicePaired(event: DevicePairedEvent, origin?: readonly string[]): Promise<void>;
   /** The collector's view of every pane: status baselines and the titles notifications use. */
-  seed(panes: readonly HerdrPane[], machineId?: string, machineName?: string, serverId?: string): void;
+  seed(panes: readonly HerdrPane[], machineId?: string, machineName?: string): void;
   /**
    * After status events were lost, `panes` (every pane on the PC) are the baseline for all
    * but the `newer` ones, which had an event since this snapshot was asked for. A pane
@@ -231,8 +231,6 @@ export interface PushServiceOptions {
   canAnswer?: (deviceId: string | null | undefined) => boolean;
   /** This PC's name, as the roster gives it to devices (server/machines.ts): what an older `pcs_off` names it by */
   localName?: string;
-  /** This PC's relay ID, where it has one (server/relay/service.ts serverId): what `pcs_off` names it by (shared/machines.ts pcAlertKey) */
-  serverId?: () => string | undefined;
   timing?: Partial<AlertTiming>;
   now?: () => number;
   canDeliver?: (deviceId: string | null | undefined) => boolean;
@@ -411,12 +409,9 @@ export function createPushService(options: PushServiceOptions): PushService {
   const workspaces = new Map<string, string>();
   // what a blocked pane last said it waits for (herdr-core's agent_kind), for a PC whose pane is not looked up
   const kinds = new Map<string, string>();
-  // each PC's name and relay ID, either of which a device's `pcs_off` lists (shared/machines.ts pcAlertKey)
+  // each PC's name, which a device's `pcs_off` lists
   const pcNames = new Map<string, string>();
-  const pcIds = new Map<string, string>();
-  const pcKeys = (machineId: string): [string, string | undefined] => machineId === "local"
-    ? [options.localName ?? hostname(), options.serverId?.()]
-    : [pcNames.get(machineId) ?? machineId, pcIds.get(machineId)];
+  const pcName = (machineId: string): string => machineId === "local" ? options.localName ?? hostname() : pcNames.get(machineId) ?? machineId;
   const retiredPath = join(options.stateDir, "push-retired.json");
   /**
    * sha256 of each endpoint a push service retired -> when, and the owner it was registered for (absent for a
@@ -804,7 +799,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       kind: message.kind ?? "input", title: message.title, body: message.body, pane_id: paneId,
       // a retry is news only while the pane is as it was, unmuted, and no window of the app is in use
       current: () => (epochs.get(key) ?? 0) === at && !muted(machineId, paneId) && options.inUse?.() !== true,
-      ...(machineId === "local" ? { pc: pcKeys(machineId)[0] } : { machine_id: machineId }),
+      ...(machineId === "local" ? { pc: pcName(machineId) } : { machine_id: machineId }),
       ...(workspace ? { workspace_id: workspace } : {}),
       ...(generation === undefined ? {} : { generation }),
     });
@@ -830,7 +825,7 @@ export function createPushService(options: PushServiceOptions): PushService {
   /** whether the subscription, as it is now, wants this kind of alert from this PC: asked again as an alert goes out */
   const wants = (subscription: PushSubscriptionRecord, kind: AlertKind, machineId: string): boolean => {
     const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-    return alertKindAllowed(prefs, kind) && alertPcAllowed(prefs, ...pcKeys(machineId));
+    return alertKindAllowed(prefs, kind) && alertPcAllowed(prefs, pcName(machineId));
   };
 
   /** How long a device waits before this alert reaches it, or null: it does not want it. */
@@ -954,9 +949,8 @@ export function createPushService(options: PushServiceOptions): PushService {
       await broadcast({ pane_id: null, title: "Ovis", body: `New device paired: ${event.label}`, tag: `herdr-device-paired-${event.event_id}` }, "high", others);
     },
 
-    seed(panes, machineId = "local", machineName, serverId) {
+    seed(panes, machineId = "local", machineName) {
       if (machineName) pcNames.set(machineId, machineName);
-      if (serverId) pcIds.set(machineId, serverId);
       for (const pane of panes) {
         // only fill gaps: an event already seen is newer than any snapshot
         const key = paneStorageId(machineId, pane.pane_id);
@@ -1021,7 +1015,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       const groups = new Map<number, PushSubscriptionRecord[]>();
       for (const subscription of store().values()) {
         const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-        if (!alertPcAllowed(prefs, ...pcKeys(machineId))) continue;
+        if (!alertPcAllowed(prefs, pcName(machineId))) continue;
         const delay = delayFor(prefs, status, worked);
         if (delay !== null) groups.set(delay, [...(groups.get(delay) ?? []), subscription]);
       }
@@ -1071,7 +1065,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       if (at === "working" || at === "blocked" || muted(machineId, paneId)) return;
       const to = [...store().values()].filter((subscription) => {
         const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-        return alertKindAllowed(prefs, "error") && alertPcAllowed(prefs, ...pcKeys(machineId));
+        return alertKindAllowed(prefs, "error") && alertPcAllowed(prefs, pcName(machineId));
       });
       const hooked = options.webhook?.wants("error") === true;
       if (to.length === 0 && !hooked) return;
@@ -1103,7 +1097,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       // an ended terminal is a finish of its own: a device that wants none hears none
       const to = [...store().values()].filter((subscription) => {
         const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-        return alertKindAllowed(prefs, "ended") && alertPcAllowed(prefs, ...pcKeys(machineId));
+        return alertKindAllowed(prefs, "ended") && alertPcAllowed(prefs, pcName(machineId));
       });
       const hook = options.webhook?.wants("ended") === true;
       if ((to.length === 0 && !hook) || options.inUse?.()) return;

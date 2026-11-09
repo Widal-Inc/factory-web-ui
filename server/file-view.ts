@@ -228,10 +228,8 @@ export function fileInfo(path: string): FileInfo | null {
  * The one exception is a video or sound too large to put into it, which plays from
  * `mediaSource` (`PAGE_MEDIA_PATH`): that path answers only the addresses this render gave out,
  * and only to the client that rendered it.
- * The hosted shell's render host (`/s/<id>/~render`, scripts/shell-build.ts) carries this same
- * policy with no media source, as its Pages `_headers`; no hash or nonce is ever added to it,
- * since a hash in `script-src` would make browsers ignore `'unsafe-inline'` and block the page's
- * own inline scripts.
+ * No hash or nonce is ever added to the policy, since a hash in `script-src` would make browsers
+ * ignore `'unsafe-inline'` and block the page's own inline scripts.
  */
 export const pagePolicy = (mediaSource: string | null): string => [
   "sandbox allow-scripts",
@@ -988,7 +986,7 @@ const askCollection = () => {
   Bun.gc(false);
 };
 
-export async function fileResponse(info: FileInfo, download: boolean, render = false, media: PageMedia | null = null, request: Request | null = null, watched?: ReturnType<typeof watchPageMedia>, within: string | null = null, stream = false): Promise<Response> {
+export async function fileResponse(info: FileInfo, download: boolean, render = false, media: PageMedia | null = null, request: Request | null = null, watched?: ReturnType<typeof watchPageMedia>, within: string | null = null): Promise<Response> {
   const name = encodeURIComponent(info.name);
   const headers = new Headers({
     "content-disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${name}`,
@@ -1023,10 +1021,7 @@ export async function fileResponse(info: FileInfo, download: boolean, render = f
   const head = request?.method === "HEAD";
   // RFC 9110 defines a range for GET alone: a HEAD describes the whole file
   const get = head ? null : { range: request?.method === "GET" ? request.headers.get("range") : null, ifRange: request?.headers.has("if-range") ?? false };
-  // A Bun file body is sized/chunked by Bun.serve, which relay dispatch never enters. Its JS
-  // reader may return the entire file at once, overflowing the mux's per-session buffer.
-  // Keep the descriptor and use bounded reads for relay files, including their Content-Length.
-  const opened = await fileTask<OpenedFile | null>({ op: "open", path: info.path, get, within, fastDiskMs: stream ? 0 : pageFileHooks.fastDiskMs }, request?.signal);
+  const opened = await fileTask<OpenedFile | null>({ op: "open", path: info.path, get, within, fastDiskMs: pageFileHooks.fastDiskMs }, request?.signal);
   if (opened === null) return gone();
   headers.set("content-type", type);
   headers.set("accept-ranges", "bytes");

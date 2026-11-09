@@ -115,19 +115,10 @@ describe("alert webhook presets", () => {
     expect(webhook().view()).toMatchObject({ configured: true, preset: "discord", alerts: { input: false, done: "always" } });
   });
 
-  it("keeps the link base a relay request cannot give", async () => {
-    const hook = webhook();
-    hook.save({ preset: "json", url: destination.url() }, "https://pc.example:7421");
-    hook.save({ preset: "json", alerts: { input: true, done: "always" } }, "https://relay.ovis.invalid");
-    hook.send(alert);
-    await hook.settled();
-    expect(JSON.parse(destination.received[0]!.body).url).toBe("https://pc.example:7421/?pane=w1%3Ap1&view=chat");
-  });
-
   it("keeps a reachable link base when this PC's own loopback address saves, and says when none is known", async () => {
     const hook = webhook();
-    // a first save over the relay knows no address a phone opens
-    expect(hook.save({ preset: "json", url: destination.url() }, "https://relay.ovis.invalid").reachable_link).toBe(false);
+    // a first save from this PC's own loopback address knows no address a phone opens
+    expect(hook.save({ preset: "json", url: destination.url() }, "http://127.0.0.1:7317").reachable_link).toBe(false);
     expect(hook.save({ preset: "json" }, "http://127.0.0.1:7317").reachable_link).toBe(false);
     expect(hook.save({ preset: "json" }, "https://pc.tailnet.example").reachable_link).toBe(true);
     expect(hook.save({ preset: "json", alerts: { input: true, done: "always" } }, "http://127.0.0.1:7317").reachable_link).toBe(true);

@@ -1,11 +1,10 @@
 import { subscribeMachineEvents } from "./machine-events.ts";
-import type { DevicePairedEvent, DeviceRemovedEvent, MachineRoster, PcInstallJob, PcInstallRequest, PcUpdateAll, PcUpdateStarted, RelayPairingsEvent, RemotePairingsEvent, SetupAction, SetupRequest } from "../shared/machines.ts";
+import type { DevicePairedEvent, DeviceRemovedEvent, MachineRoster, PcInstallJob, PcInstallRequest, PcUpdateAll, PcUpdateStarted, SetupAction, SetupRequest } from "../shared/machines.ts";
 import type { AgentRowTokens } from "../shared/pane-tokens.ts";
 import type { SharedPreferences } from "../shared/preferences.ts";
 import type { PanePromptResponse, SessionSnapshot } from "../shared/protocol.ts";
 import type { SeenFinish } from "../shared/seen.ts";
 import { MachineActionRequired, MachineManager, PcUpdateRefused } from "./machines.ts";
-import { TypedCodeError, type TypedCodeFailure } from "../shared/relay-code-offer.ts";
 import { canSendSecret, sameOrigin } from "./machine-security.ts";
 import { isJsonObject, jsonResponse, setRequestRoute } from "./http.ts";
 import { updateRequestAllowed } from "./update-api.ts";
@@ -22,17 +21,6 @@ const fail = (code: string, message: string, status: number) => jsonResponse({ e
 const OWNER_ONLY = "Only the owner's own signed-in or paired devices can change this PC's PCs, from this app's own page.";
 const MOVE_OWNER_ONLY = "Only the owner, from a device signed in or paired to drive this PC, can move another PC";
 const MOVE_FROM_PAGE = "A move must come from this app's own page";
-
-/** POST /api/machines/relay/code: why a typed code found no PC, as `typed_code_<failure>` (the app words each one). */
-const CODE_FAILURES: Record<TypedCodeFailure, [string, number]> = {
-  "not-a-code": ["A code has ten letters and digits", 400],
-  "no-pc": ["No PC shows this code", 404],
-  wrong: ["That code did not work", 400],
-  expired: ["That code ran out", 410],
-  busy: ["Another device is trying this code", 409],
-  unreachable: ["The relay could not be reached", 502],
-  forged: ["The answer did not come from a PC this app can pair with", 502],
-};
 
 /**
  * How far one browser's machine events may fall behind before its stream is ended (it reconnects and
@@ -63,12 +51,6 @@ export const machineEventsClock = {
   now: (): number => performance.now(),
   heartbeat: (send: () => void): ReturnType<typeof setInterval> => setInterval(send, 15_000),
 };
-
-/** Relay source queues share the channel's bounded payload budget, without the large-roster exception. */
-export interface EventStreamBudget {
-  reserve(bytes: number): boolean;
-  release(bytes: number): void;
-}
 
 /**
  * `told`: what the stream held when it was last written to; a queue only shrinks between writes, so it
@@ -140,9 +122,8 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
   preferences?: { get(): SharedPreferences; subscribe(listener: (preferences: SharedPreferences) => void): () => void }, readOnly = false,
   herdrSidebar?: { get(): AgentRowTokens | null; subscribe(listener: (agents: AgentRowTokens | null) => void): () => void },
   seen?: { list(): SeenFinish[]; subscribe(listener: (finish: SeenFinish) => void): () => void },
-  /** durable device enrollments (server/devices.ts), already without the ones this stream's own device made, and relay pairings waiting for approval */
-  pairings?: { subscribe(listener: (event: DevicePairedEvent | DeviceRemovedEvent | RelayPairingsEvent | RemotePairingsEvent) => void): () => void },
-  relayBudget?: EventStreamBudget,
+  /** durable device enrollments (server/devices.ts), already without the ones this stream's own device made */
+  pairings?: { subscribe(listener: (event: DevicePairedEvent | DeviceRemovedEvent) => void): () => void },
   /** this PC's owner (access.ts ownerAccess): only they may start or stop updates of its PCs */
   owner = false): Promise<Response> {
   const url = new URL(request.url);
@@ -189,16 +170,12 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
       let close = () => {};
       let drop = () => {};
       let queue: EventsQueue | undefined;
-      let charged = 0;
-      let accountTaken = () => {};
       // the browser went away: what still waits for it is dropped, not kept for a reader that is gone
       const aborted = () => drop();
       const cleanup = () => {
         stop?.(); unwatchDevice?.(); clearInterval(heartbeat);
         request.signal.removeEventListener("abort", aborted);
         if (queue) forgetQueue(queue);
-        relayBudget?.release(charged);
-        charged = 0;
       };
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
@@ -211,12 +188,6 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
           unwatchDevice = onRevoke?.(() => { if ((queue?.queued() ?? 0) > 0) drop(); else close(); });
           if (closed) return;
           const queued = () => MACHINE_EVENTS_QUEUE_BYTES - (controller.desiredSize ?? MACHINE_EVENTS_QUEUE_BYTES);
-          accountTaken = () => {
-            if (!relayBudget || closed) return;
-            const remaining = Math.max(0, queued());
-            relayBudget.release(charged - remaining);
-            charged = remaining;
-          };
           // frames larger than the bound, by where they end in the stream: each counts only until it has left the queue
           let written = 0;
           const large: { end: number; bytes: number }[] = [];
@@ -232,12 +203,6 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
           const stalled = (other: EventsQueue, now: number): boolean => other.told > 0 && now - other.movedAt >= MACHINE_EVENTS_STALL_MS;
           const send = (text: string) => {
             if (closed) return;
-            accountTaken();
-            if (relayBudget) {
-              const size = Buffer.byteLength(text);
-              if (!relayBudget.reserve(size)) { drop(); return; }
-              charged += size;
-            }
             const bytes = encoder.encode(text);
             const now = machineEventsClock.now();
             retell();
@@ -273,31 +238,9 @@ export async function handleMachineRequest(request: Request, manager: MachineMan
           request.signal.addEventListener("abort", aborted, { once: true });
           if (request.signal.aborted) aborted();
         },
-        pull() { accountTaken(); },
         cancel() { close(); },
       }, new ByteLengthQueuingStrategy({ highWaterMark: MACHINE_EVENTS_QUEUE_BYTES }));
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-store", "x-accel-buffering": "no" } });
-    }
-    if (parts[0] === "relay" && parts.length === 1 && request.method === "POST") {
-      setRequestRoute("/api/machines/relay");
-      // the link holds a one-time pairing code, a secret like an SSH password
-      if (!canSendSecret(request)) return fail("https_required", "A pairing link requires HTTPS or localhost", 403);
-      const body: unknown = await request.json().catch(() => null);
-      if (!isJsonObject(body)) return fail("invalid_body", "Expected a pairing link", 400);
-      return jsonResponse({ machine: await manager.addRelay(body.link, body.name, body.found) }, 201);
-    }
-    if (parts[0] === "relay" && parts[1] === "code" && parts.length === 2 && request.method === "POST") {
-      setRequestRoute("/api/machines/relay/code");
-      // the code is a secret, and what it finds holds the other PC's one-time pairing code, which stays on this server
-      if (!canSendSecret(request)) return fail("https_required", "A pairing code requires HTTPS or localhost", 403);
-      const body: unknown = await request.json().catch(() => null);
-      if (!isJsonObject(body)) return fail("invalid_body", "Expected a pairing code", 400);
-      try { return jsonResponse(await manager.relayFoundByCode(body.code, request.signal)); }
-      catch (error) {
-        if (!(error instanceof TypedCodeError)) throw error;
-        const [message, status] = CODE_FAILURES[error.failure];
-        return fail(`typed_code_${error.failure}`, message, status);
-      }
     }
     if (parts[0] === "ssh-candidates" && parts.length === 1) {
       setRequestRoute("/api/machines/ssh-candidates");
