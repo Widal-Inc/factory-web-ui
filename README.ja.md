@@ -64,7 +64,7 @@ irm https://ovis.sh/install.ps1 | iex
 - **Android:** Google Play のベータ版、[ovis.sh/ja/beta](https://ovis.sh/ja/beta/) から。
 - **ブラウザー:** アプリなしで、ページをホーム画面に追加します。
 
-スマートフォンをつなぐには、**Settings → Phone & devices** でエンドツーエンド暗号化の **Ovis リレー**をオンにし、QR コードを読み取ります。[仕組み →](docs/guide.md#through-the-ovis-relay)
+スマートフォンをつなぐには、Tailscale 経由でアプリを開き、**Settings → Phone & devices** の QR コードを読み取ります。[仕組み →](docs/guide.md#on-your-phone)
 
 ## できること
 
@@ -76,9 +76,9 @@ irm https://ovis.sh/install.ps1 | iex
 
 [すべての機能 →](docs/guide.md#features)
 
-**制約：** 自分のコンピューターが動いていて、届く必要があります（Ovis リレー、Tailscale、VPN、SSH トンネル）。Herdr デスクトップアプリのターミナルは Linux と macOS のみ対応です。
+**制約：** 自分のコンピューターが動いていて、届く必要があります（Tailscale、VPN、SSH トンネル）。Herdr デスクトップアプリのターミナルは Linux と macOS のみ対応です。
 
-**プライバシー：** セッションは自分のコンピューターに残り、アカウントはありません。任意のリレーは内容を読めません（[信頼モデル](docs/relay.md#trust-model)）。匿名の使用状況の集計はデフォルトで有効で、**Settings → About** か `OVIS_TELEMETRY=0` でオフにできます（[送信される内容](docs/guide.md#anonymous-usage-counts)）。
+**プライバシー：** セッションは自分のコンピューターに残り、アカウントはありません。匿名の使用状況の集計はデフォルトで有効で、**Settings → About** か `OVIS_TELEMETRY=0` でオフにできます（[送信される内容](docs/guide.md#anonymous-usage-counts)）。
 
 <a id="docs"></a>
 

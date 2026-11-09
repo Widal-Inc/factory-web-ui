@@ -67,70 +67,13 @@ stop for that failure; signing in alone does not fix it.
 An existing herdr server is always reused. Signing in later does not move an already-running
 headless server into the desktop session, and Ovis never restarts it or its panes automatically.
 An initial connection can be cancelled while waiting; already-started work stays running.
-## Through the relay
-
-Add a connection no longer offers adding a PC through the relay: the relay is used through the Ovis
-account ([relay.md](relay.md)), and a PC on your Tailscale is added over SSH (above). A PC added through
-the relay before keeps working as described here. Such a PC was added with no SSH and no open port: both PCs only connect out to the [Ovis relay](relay.md). On the other PC, open
-**Settings → Devices and PCs → Connect** (with the relay on) and type the ten-character code it shows
-beside its QR code here (an older Ovis names it **Show a code to type**; its pairing link works too):
-this PC's server finds that PC through the relay as a phone does ([Pairing with a typed code](relay.md)),
-keeps what it found, and shows that PC's ID. Choose **It matches** only if every group matches the ID
-at the top of **My devices** on that PC's screen (under the code on an older Ovis). This PC's server then pairs with that one exactly as a phone does: the same one-time code, the same
-end-to-end encryption and the same device key, kept on this server in
-`<stateDir>/relay-pcs/<pc id>.json` (mode `0600`). The other PC lists it under Devices as
-`Ovis on <this PC's name>`, with the access any paired device has. The PC itself is saved in
-`<stateDir>/relay-pcs.json`, apart from `machines.json`, so going back to an older release still starts.
-
-Its workspaces then join the sidebar as an SSH PC's do. Nothing is installed on that PC: it runs
-its own Ovis, which updates itself, so it has no bridge controls; its update can still be started
-from here ([Updating PCs from here](#updating-pcs-from-here)). Its connection carries the PC's
-status, its API routes and its terminals as streams of one relay session, which holds at most 8
-WebSockets, so about 7 of its terminals can be open at once. A dropped connection comes back with
-the same backoff as an SSH PC's and signs in with the saved key; nothing typed is sent again.
-
-The connection takes the best route it can, as the phone apps do ([Direct on the same
-network](relay.md#direct-on-the-same-network)): that PC's direct carriers first (addresses on its own
-network before Tailscale ones), then the relay. The carriers come from that PC inside the encrypted
-channel on each sign-in (this server always offers `direct-tailnet`, so a Tailscale address is named
-too) and are kept with the key, so they follow it to another network. This server dials only those on
-a private network or Tailscale's, on the direct listener's port 7319: never link-local or another port,
-whatever that PC names (a PC whose listener had to take another port is reached through the relay). A sign-in
-tries them within 1.5 s, then the relay. A try through the relay that found none answering, at a sign-in or a
-check, holds the next one back for that PC across reconnects until the check is due again (5 minutes,
-longer after a carrier that answered but could not carry a session), unless this PC is on another
-network or slept meanwhile. A route that works (Tailscale, say, while the PC's own network does not
-answer from here) is always tried first. While a later route carries it, this server checks the
-earlier ones (a Noise handshake to the pinned key, no session) after each sign-in, then at most every
-5 minutes, and at once when its own addresses change or a read comes a minute or more late (it slept);
-it reads its addresses every 30 s and sends nothing for that. Once one proves to be that PC and no request or terminal input
-is under way for 3 s, it signs in there first and only then closes the old session: requests that
-start meanwhile wait for it and go on the new route, and input on an open terminal in that window
-keeps the old session for a later try. The PC stays connected (unless that PC already holds as many
-sessions of this key as it allows, when letting the new one in can end the old one first and the PC
-shows `reconnecting` for a moment), its status socket reopens on the new route, and open terminals
-reconnect as after any drop. `GET /api/machines` names the route of a connected relay PC as `route`:
-`direct` or `relay`.
-
-**Revoke** under Phone & devices on the other PC ends this PC's access: the PC turns to an error
-that says so and is not tried again. **Remove PC** here forgets the PC and its key; revoke it on
-the other PC as well to remove it there. To add it again, paste a new link or type a new code.
-
-`POST /api/machines/relay` with `{ "link": "<pairing link>", "name"?: "<PC name>" }` adds one
-(201 `{ machine }`, with `kind: "relay"`), under the same guards as every PC change. With a typed
-code, `POST /api/machines/relay/code` with `{ "code": "<code>" }` runs one exchange and answers
-`{ ticket, server_id, name }` (the one-time pairing code it found stays on this server for up to
-10 minutes, under that random ticket), or `typed_code_<failure>` (`not-a-code`, `no-pc`, `wrong`, `expired`, `busy`,
-`unreachable`, `forged`); then `POST /api/machines/relay` with `{ "found": "<ticket>" }` adds
-that PC, once.
-
 ## Updating PCs from here
 
-Every PC added here, through the relay (direct or relayed) or over SSH, is updated from the PC in
+Every PC added here over SSH is updated from the PC in
 use, without going to it. Each PC in `GET /api/machines` (and the machine events) carries
 `ovis_update` when it has an update it can take from here, unasked:
 
-- `how: "own"`: the PC runs its own Ovis (a relay PC, or an SSH PC's own server) and its updater
+- `how: "own"`: an SSH PC runs its own Ovis and its updater
   offers a newer release. A connected PC is asked through its connection (`GET /api/updates`
   there) when it connects and every 5 minutes; an SSH PC whose own Ovis is older than this app
   says so on its connect.
@@ -170,7 +113,7 @@ once its `steps` are read). Up-to-date PCs are not listed. At most four PCs' own
 
 One rule covers every change to this PC's PCs: every `POST`, `PATCH` and `DELETE` under
 `/api/machines/` except a PC's own routes (its panes, workspaces and files, which are driven as this
-PC's are). That covers adding a PC (SSH setup, relay, Tailscale), answering, approving or cancelling a
+PC's are). That covers adding a PC (SSH setup, Tailscale), answering, approving or cancelling a
 setup, its settings, renaming, turning on or off and removing a PC, and every update
 (`/:id/update`, `update-all`, `/:id/update-bridge`, which takes `{ "revision" }` and otherwise uses
 the release its card shows). The same rule covers installing an update on this PC itself:
@@ -180,7 +123,7 @@ server's bridge token, which asks for its own install by revision.
 | May | Who |
 |---|---|
 | Yes | a driving sign-in on this PC, its token |
-| Yes | a driving device paired with this install, directly or over the relay (the owner's phone, his other PCs) |
+| Yes | a driving device paired with this install (the owner's phone, his other PCs) |
 | No | a visitor of an open install, with nothing paired |
 | No | any device that only watches |
 
@@ -292,7 +235,7 @@ The current server keeps one status-only WebSocket per remote PC without attachi
 | `PATCH /api/machines/:id` | Rename or change `enabled` |
 | `DELETE /api/machines/:id` | Forget the PC and remove its local private key |
 | `/api/machines/:id/{session,agents,pane/*,workspace/*}` | Allowlisted target API routes |
-| `GET/POST/DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/{stop,stop-all,install}` | That PC's move to herdr-core, for the owner only: this PC, the token, a paired or relay device that drives; never an open LAN visitor or a device that watches ([runtime-move.md](runtime-move.md#on-another-pc)); 409 `pc_update_required` from an Ovis too old for it |
+| `GET/POST/DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/{stop,stop-all,install}` | That PC's move to herdr-core, for the owner only: this PC, the token, a paired device that drives; never an open LAN visitor or a device that watches ([runtime-move.md](runtime-move.md#on-another-pc)); 409 `pc_update_required` from an Ovis too old for it |
 | `POST /api/machines/runtime/move-all` | Starts every previewed PC's move at once, for the owner only (as above): 202 `{ started, refused, unknown }` |
 | `/ws?machine_id=…` | Immutable terminal destination |
 

@@ -134,7 +134,7 @@ workspace you have open, and one whose agent asks a question, stay in sight, and
 the pinned card.
 
 
-**3. Take it with you.** Scan the installer's QR code with a phone signed in to the same Tailscale account, then install the app from the browser. No Tailscale? Turn on the [Ovis relay](#through-the-ovis-relay) and scan its QR code instead. See [On your phone](#on-your-phone).
+**3. Take it with you.** Scan the installer's QR code with a phone signed in to the same Tailscale account, then install the app from the browser. See [On your phone](#on-your-phone).
 
 ### In a terminal
 
@@ -148,7 +148,7 @@ bun "$root/scripts/plugin.ts" pair   # plugin install
 bun scripts/plugin.ts pair           # from a checkout
 ```
 
-`pair` prints the code, the address the phone opens when Tailscale serves one, and that address as a QR code. Neither is a herdr action: herdr keeps an action's output in its log, and a pairing code belongs on the screen. While the [Ovis relay](#through-the-ovis-relay) is online, `pair` also prints the relay's pairing link and its QR code; while it's off, it says where to turn it on. To link the PC through the relay from its terminal, `link` signs it in to your account and approves the device that adds it, and `link --code` shows a code to type and the relay QR code, or the QR code alone when the relay mints no code ([A PC with no screen](relay.md#a-pc-with-no-screen)). A plugin checkout from before `link` needs a plugin reinstall first, since in-app updates do not replace the checkout. The actions start, stop and report on the server:
+`pair` prints the code, the address the phone opens when Tailscale serves one, and that address as a QR code. Neither is a herdr action: herdr keeps an action's output in its log, and a pairing code belongs on the screen. The actions start, stop and report on the server:
 
 ```bash
 herdr plugin action invoke devswha.ovis.start    # leaves a running server alone
@@ -451,90 +451,9 @@ Turn it on in **Settings → Voice input**, then tap the mic beside Attach (chat
 
 ## On your phone
 
-A phone reaches the app on this PC in one of two ways. The **Ovis relay** needs nothing set up on the phone or your network: turn it on and scan a QR code. **Tailscale** keeps everything inside your own network, with an HTTPS address for this PC. Either way the app installs on the phone's home screen and gets push alerts. With the relay on, the iPhone and Android apps also connect straight to this PC on the same Wi-Fi or over Tailscale, and use the relay only when neither answers ([Which way the app connects](#which-way-the-app-connects)).
+A phone reaches the app on this PC through **Tailscale**, which keeps everything inside your own network, with an HTTPS address for this PC. The app installs on the phone's home screen and gets push alerts.
 
 On an iPhone or iPad the app needs iOS 16 or later (Safari 16 or later on a Mac), and push alerts need iOS 16.4 or later.
-
-### Through the Ovis relay
-
-The Ovis relay lets your phone reach this PC from anywhere, with no Tailscale, no account and nothing to set up on the phone. It's off until you turn it on. While it's on, the PC and the phone each connect out to a relay that Ovis runs at `relay.ovis.sh`, which passes their traffic between them. Everything they send is end-to-end encrypted between the phone and the PC, so the relay can't read it. To turn it on, open **Settings → Phone & devices** on the PC, switch on **Ovis relay**, then point the phone's camera at the QR code that shows up. On a fresh install, the setup guide's **Connect your phone** offers it first: choose **Turn on the Ovis relay** and its QR code shows right there. **Use Tailscale or Wi-Fi instead**, under it, shows this page's own address and pairing QR code, or sends you to **Settings → Phone & devices** when the page is open on the PC itself.
-
-Step by step:
-
-1. On the PC, open **Settings → Devices and PCs**, choose **Connect** next to **Connect a device**, and turn on the **Ovis relay** switch. Once it is online, a QR code shows with a code to type beside it. Both work for ten minutes, and **Refresh** makes new ones. Signed in to your Ovis account, the dialog asks the new device to sign in instead, and you approve it once on a device already in the account; **Connect with a code (no sign-in)** still shows the QR code. The relay's switch and **Reset relay identity** are also under **More settings** on that page.
-2. Scan the QR code with the phone's camera. Ovis opens in the phone's browser at `app.ovis.sh` and asks whether to pair with this PC: tap **Pair**.
-3. Install it: in Safari, choose **Share → Add to Home Screen**; in Chrome, choose **Install app** or **Add to Home screen** from its menu. Then open the **⋯** menu at the top right and tap **Alerts** to get alerts on this phone. iPhone needs iOS 16.4+ and the home-screen app.
-
-If the relay cannot start before its link exists, the switch stays off and shows
-**The relay did not start: …** with the reason. Fix the cause, then press **Try again**.
-A link that already exists stays on while retrying a connection error.
-
-The phone pairs once. It makes a key of its own for this PC, which never leaves the phone, and proves itself with it on every connection, so there's no token or password to type. The PC lists the phone under **Devices and PCs → My devices**, marked **via relay**, and **Revoke** there removes it and closes its connections at once. Opened again later, the app connects by itself. Each PC is an app of its own: pair another PC from its own QR code, and `app.ovis.sh` lists every PC the phone is paired with.
-
-**On an iPhone or iPad, add it to the Home Screen to stay paired.** In a Safari tab, the phone's key for a PC can be cleared after a week without a visit, and the phone then has to pair again. The home-screen app keeps it, and the app reminds you of this in Safari.
-
-**What the relay sees.** It sees which PC a phone connects to, from which address, when and for how long, and how much goes each way, down to the timing of the keys you type in a terminal. What you type, what the PC shows and your files stay hidden from it, and it can't change any of them. The app at `app.ovis.sh` is the part you have to trust: it's the code that runs on your phone and holds its key. [The relay's trust model](relay.md#trust-model) has the details.
-
-**Limits.** In a browser, the app's service worker streams files through the relay, so pictures, PDFs and videos load as they arrive and a video can skip ahead. The worker opens each file with its scripts turned off, so a file from one PC can't reach the app or your other PCs. Without that service worker, text, source and Markdown files still show in the file viewer as usual. For other files, only pictures, videos, sounds and PDFs open in the app; any other file, SVG pictures included, downloads instead. Such a file loads whole before it shows, and only up to 64 MiB: for a larger one the file viewer says it's too large to open on the phone, so download it on the PC. Rendered HTML pages open with their scripts running, but their own large videos and sounds don't play ([how files load](relay.md#files)). Up to 8 open apps or tabs can use the relay to one PC at a time.
-
-**It's a best effort.** The maintainer runs `relay.ovis.sh` with no promise that it's always up. A relay update drops every connection for a moment; the PC and the app reconnect by themselves, and nothing you typed is sent again: it waits as a draft, as after any disconnect. When that matters, [run your own relay](#running-your-own-relay).
-
-Good to know:
-
-- Relay controls require drive access and a direct connection to this PC. Relay changes answer `403 read_only` for a watching device. Open Ovis on the PC or at its direct address, using the owner's access token or a paired device with drive access instead.
-  The hosted shell offers no relay at all; changes over the relay answer `403 local_required`.
-- Turning the relay on closes the device gate when no device has paired yet and no token is set. From then on a new browser needs a pairing code or the token ([Access and safety](#access-and-safety)).
-- Only a phone paired through the relay gets in through it. The token and device cookies don't work there.
-- Turning the relay off closes every connection through it, and the PC then makes no connection to the relay at all.
-- **Reset relay identity**, below the switch, gives this PC a new identity on the relay and removes every phone paired through it; each then needs a new QR code. Use it when a QR code or pairing link may have been seen by someone else.
-- On a PC with no browser of its own, `pair` in a terminal also prints the relay's QR code while the relay is online ([In a terminal](#in-a-terminal)).
-
-#### Which way the app connects
-
-While the relay is on, this PC also takes connections straight from the iPhone and Android apps: on its home network addresses and, when Tailscale runs on it, on its Tailscale address. Each time the app opens the PC, it has three ways in:
-
-- **Same Wi-Fi**: the PC's home network address.
-- **Tailscale**: the PC's Tailscale address, when the phone has Tailscale on.
-- **The relay**, which always works.
-
-It does not wait for one to fail before trying the next: it tries both direct ways at once, opens the relay too when neither is up within 300 ms, and keeps whichever connects first (a firewall that blocks the PC's direct port leaves it on the relay). So a phone at home connects straight, and a phone away from home is not held up by an address that leads nowhere. While the relay carries it, the app checks the direct addresses again now and then (after it connects, at most every five minutes, when the phone is back online and when the app comes back to the front) and moves back to one once nothing is under way. The PC tells the app these addresses inside the encrypted connection, so they follow the PC to another network. A browser, including the home-screen app from `app.ovis.sh`, always uses the relay.
-
-Nothing new is trusted. Only a device already paired through the relay can sign in on those addresses, with the same key and the same end-to-end encryption, and nothing pairs there. **Settings → Devices and PCs → My devices** shows **Same Wi-Fi direct connection on** (and says when it is on Tailscale too), with one switch that turns both off. On an iPhone the app asks for Local Network access once; declining it keeps the app on the relay. On Windows the PC shows Windows' firewall prompt the first time; declining it leaves the relay as the only way in. [Direct on the same network](relay.md#direct-on-the-same-network) has the details.
-
-**How each device is connected.** **Settings → Devices and PCs → My devices** says how a device paired through the relay reaches this PC right now while it is connected: **Same Wi-Fi, direct**, **Tailscale, direct**, **Seoul relay** or **Through the relay**, with its round trip in milliseconds once one was measured. A device that is not connected shows when it was last seen (with a short reason once it has been gone a while). **Check now** measures them all again. On the phone, **Your PCs** shows the same line for each saved PC (the way it answers on and how fast, or why it is offline), with **Check now** above the list, and the header of the app always says how this device reaches Ovis.
-
-#### Running your own relay
-
-The relay is part of this repository ([`relay/`](../relay/README.md)) and runs anywhere Bun does. From a checkout:
-
-```bash
-bun relay/bun.ts --port 8787 --hostname 127.0.0.1
-```
-
-It listens on plain HTTP, so put it behind a TLS proxy (Caddy, nginx, `tailscale serve`): the PC and phones connect to it only over `wss://`. Then set `OVIS_RELAY_URL` on the PC to its `wss://` address (see [Configuration](#configuration)) and restart Ovis. Out of the box it takes 120 new connections a minute from one address and 600 in all; behind a proxy every connection comes from the proxy's address, so raise those limits for it ([the relay's limits](relay.md#operations)). The app at `app.ovis.sh` works with it as is, since it connects to whichever relay the QR code names. A phone keeps the relay it paired through, so on a phone paired before the change, choose **Forget this PC** in the app's Settings and scan a new QR code, then revoke its old entry under **Phone & devices** on the PC. [relay/README.md](../relay/README.md#running-your-own) also covers running the relay as a Cloudflare Worker on your own account.
-
-The Bun relay also caps open sockets at 64 per address, including sockets waiting, connected or
-still upgrading. Set `--max-sockets-per-address` or `RELAY_MAX_SOCKETS_PER_ADDRESS` to size that
-cap for your deployment; behind a local TLS proxy all users share it. A new socket past the cap
-gets `429` and `Retry-After: 60`, without closing sockets already open.
-
-To stop trusting `app.ovis.sh` too, host the app yourself. `bun run build:shell` builds it into `dist-shell/`. Serve that folder over HTTPS from a host that follows its `_redirects` and `_headers` files, as Cloudflare Pages does (another host needs the same rewrites and headers), and set `OVIS_RELAY_APP_URL` on the PC to its address: the PC's QR codes then open your copy. Build it from the same release as the PC's Ovis.
-
-### Through an account
-
-Signing in links your devices once instead of pairing each phone with each PC. It's optional: a QR code and a pairing code work as before, with or without an account.
-
-1. Sign in with **Continue with GitHub** or **Continue with Google** where the app offers it: in the desktop app, or on a PC's own page (**Settings → Devices and PCs → Account**). The public `app.ovis.sh` shows no sign-in at the moment; a phone pairs there with a QR code, and a hosted app built with `OVIS_ACCOUNT_SERVICE_URL` offers it. **Your PCs** lists the PCs of your account and the ones this phone is already paired with.
-2. A phone already paired by QR code needs nothing more: the next time it opens each PC, it moves that pairing into the account by itself. Until then the PC's row says **Ready · not in the account yet**, since removing the phone through the account would not reach it.
-3. A PC marked **Needs approval** has not let this device in yet. Tap it: this device and the PC show the same six digits, as with a link without a code. The first device of an account is approved on the PC itself. After that, any device already in the account can approve: it asks whether to add the new device and shows three numbers, and you pick the one the new device shows. One approval adds the device to every PC of the account: the approving device signs a record that adds it to each PC, and a PC that was off picks that record up when it comes back.
-
-**Signing in a PC.** The desktop app signs in through your browser. A PC's own page (a browser at the PC's address) and a PC with no screen (`link`, see [A PC with no screen](relay.md#a-pc-with-no-screen)) show one code instead, with a QR code that fills it in: open `account.ovis.sh/link` on any device, check the code, choose **Continue with GitHub** or **Continue with Google**, sign in and confirm. The page says which PC asked, its system and roughly where from ("Asked by Desk (Linux), near Seoul, South Korea"): continue only if you started it on your own PC just now. Signing in only lists the PC in your account: on a device already in the account, tap the PC's card, type the six digits the PC shows, and approve on the PC (`link` asks y/N in its terminal).
-
-**Approving a device.** The approval card on your other devices says what is asking: the system it runs and roughly where its request came from (country and city, as Cloudflare saw it, never the address), or **Location unknown**. Approve only if you started it yourself just now; if you didn't, deny it.
-
-**Ways to sign in.** **Settings → Devices and PCs → Account** lists your account's sign-in methods. In the desktop app, **Add Google** (or **Add GitHub**) adds one on purpose, and **Remove** takes one away, except the one this device signed in with. An account is never joined to another because their email addresses match.
-
-Who gets into a PC is still decided by that PC alone, in **Settings → Devices and PCs**, where **Revoke** always works. The account service at `account.ovis.sh` lists your PCs and carries signed messages between your devices; it can't read your sessions or add a device by itself ([how it works](account.md)). It keeps no email, name or username. [The privacy policy](https://ovis.sh/privacy/) says what it stores and for how long.
 
 ### Through Tailscale
 
@@ -572,7 +491,7 @@ about (the command or the file): a tap answers it without opening the app, and t
 everywhere. If the question changed or was answered on another device meanwhile, nothing is sent
 and a new alert says so; tap it to open the pane. Questions with more or longer options, a command
 too long to show whole, typed answers and forms of several questions open the pane, as do alerts
-on iOS, in the relay app, and on a device paired to watch only.
+on iOS, and on a device paired to watch only.
 
 To get the same alerts in a chat app, choose a destination under **Settings → Alerts → Also send
 to**: an ntfy topic, a Slack or Discord webhook, a Telegram bot (its token and a chat id), or
@@ -630,7 +549,7 @@ A workspace row's **⋯** menu offers **New worktree** and **Open worktree…**,
 
 Open Settings → Remote PCs and choose **Add PC** (the command palette has it too), then enter an SSH alias or `user@host` for a Linux or macOS computer. The setup dialog walks you through the host fingerprint, the password or key passphrase, and an explicit install approval. The PC's workspaces then join the sidebar, and chat, files, terminal input and alerts all follow the PC you pick.
 
-**Settings → Devices and PCs → Add a connection** opens on its **SSH** tab, which lists the PCs saved in herdr, the hosts of this PC's ssh config and the other PCs of your own Tailscale login; **Add** opens the same setup dialog with the address filled in ([Remote PCs over SSH](remote-pcs.md)). A Tailscale PC is reached over SSH, never through the relay. The **Phones and devices** tab holds what a phone or browser opens this PC with (its Tailscale address and a pairing code), and the **Ovis relay** tab signs in to the Ovis account, through which the relay is used. PCs added through the relay before keep working ([Through the relay](remote-pcs.md#through-the-relay)).
+**Settings → Devices and PCs → Add a connection** opens on its **SSH** tab, which lists the PCs saved in herdr, the hosts of this PC's ssh config and the other PCs of your own Tailscale login; **Add** opens the same setup dialog with the address filled in ([Remote PCs over SSH](remote-pcs.md)). A Tailscale PC is reached over SSH. The **Phones and devices** tab holds what a phone or browser opens this PC with (its Tailscale address and a pairing code).
 
 - **SSH runs on the server**, as the web server's account, with its OpenSSH configuration and agent. The browser never opens SSH itself.
 - **The remote side gets a private runtime bundle** and a loopback-only bridge, reached through an SSH forward.
@@ -674,11 +593,10 @@ Then there is one app to update: each release is downloaded and built once, the 
 
 ## Access and safety
 
-Anyone who can reach the server can type into your terminals, so what matters is who gets in. It listens on `127.0.0.1` by default, which means only this computer. From anywhere else, a request gets in in one of three ways:
+Anyone who can reach the server can type into your terminals, so what matters is who gets in. It listens on `127.0.0.1` by default, which means only this computer. From anywhere else, a request gets in in one of two ways:
 
 - **It is a paired device.** **Settings → Phone & devices**, on the PC (or on a device already paired), shows a six-digit code that lives ten minutes and a QR code that carries it. On a headless PC, the `pair` command prints the same in its terminal (see [In a terminal](#in-a-terminal)); Devices also shows the pairing link as text, to send to the other device. The other device enters it once and keeps its own credential in an HttpOnly cookie; the list shows it, and **Revoke** immediately closes its terminal connections and roster stream and refuses subsequent requests. A script or CLI pairs with `POST /api/devices/pair` and `{"code": "<code>", "label": "<name>"}` (with `X-Herdr-Machine: 1` and `Content-Type: application/json`), sending `Accept: application/json` to get its credential back as `{"token": "..."}`. It then sends `Authorization: Device <token>` with every request instead of a cookie, under the same role, last-seen time and **Revoke** as any paired device. Unlike the shared token, each such script can be revoked by itself.
 - **It holds the token.** `OVIS_TOKEN`, for scripts and proxies, as a cookie after sign-in or as `Authorization: Bearer <token>`. When a token is set, everything else needs it, this computer included: enter it once on each device, and that browser stays signed in for a year. A paired device still gets in without it.
-- **It comes through the Ovis relay from a phone paired there.** The relay is off by default ([Through the Ovis relay](#through-the-ovis-relay)). A phone pairs once by scanning the relay's QR code under **Settings → Phone & devices**, which gives it a key of its own for this PC, and proves itself with that key on every connection. Through the relay only that key counts, never the token or a device cookie. **Revoke** closes its connections at once, as for any paired device.
 
 A request that came through a proxy or Tailscale Funnel (it carries a forwarding header, `X-Forwarded-For` and the like, or Funnel's own) is refused until it holds the token or a paired device's cookie. `tailscale serve` states a login in a header, but this app does not read it, and a proxy's word about who is behind it is worth nothing here.
 
@@ -690,9 +608,7 @@ A request that came through a proxy or Tailscale Funnel (it carries a forwarding
 | Your LAN (`HOST=0.0.0.0` or a LAN address) | Pair each device, or set a token |
 | Your LAN over HTTPS (`OVIS_LAN_HTTPS_PORT`, see [On your LAN over HTTPS](#on-your-lan-over-https)) | Pair each device, or the token. Never open, even before the first pairing |
 | A public domain or reverse proxy | Set a token, with HTTPS, and set the proxy up as in [Behind a reverse proxy](#behind-a-reverse-proxy). Never `tailscale funnel` it |
-| The Ovis relay | Paired devices only: pair each phone once by scanning the relay's QR code. No token needed, see below |
 
-The relay needs no token where a public proxy does, because it has no open address. A proxy puts the app itself on the internet: anyone who finds the address reaches it, so it needs the token (a proxy that forwards headers is refused without one, and one that forwards none looks like this computer). Through the relay, a request reaches this PC only inside an encrypted connection that a phone opens with the PC's public key from the QR code, and the PC then admits it only with a valid pairing code or the key of a phone it paired before. Turning the relay on also closes the device gate when it was still open.
 
 Until the first device is paired, and with no token set, a LAN address is open to anyone who reaches it directly, as it always was: the server warns on startup. A request that came through a proxy or Funnel is refused from the start. The first pairing closes access only after the browser returns its new device cookie. If the cookie is blocked or the pairing response is lost, the unconfirmed pairing does not restrict access; retry after checking browser and proxy cookie settings. A script that pairs for its token in JSON closes access at once, since it may store the token and use it later. Once confirmed, the gate stays closed: revoking every device does not reopen it. This app-level restriction also applies behind a proxy with its own authentication; other browsers need their own pairing or the app's token. Without a token, this computer itself stays in whatever happens, so you can never lock yourself out: revoke everything and pair again from `http://localhost:7317`. With a token set, this computer signs in with the token.
 
@@ -705,7 +621,7 @@ The pairing code is a one-time secret: five wrong tries spend it.
 A phone on the same network as the PC can reach Ovis directly over HTTPS, beside the address it uses today (a tunnel, `tailscale serve`, loopback). It is off unless you set `OVIS_LAN_HTTPS_PORT` (for example `7318`) where Ovis starts, as with `HOST` and `PORT` ([Configuration](#configuration)).
 
 - **Where it listens.** On that port of each private IPv4 address the PC has (`10.x`, `172.16-31.x`, `192.168.x`, `169.254.x`), never on every address. `OVIS_LAN_HTTPS_HOST=<address>` binds one address instead (`0.0.0.0` only when you write it). The main listener stays as it is. The addresses are read when Ovis starts: restart it after the PC joins another network.
-- **Who gets in.** Only clients on a private IPv4 network, and only with the token or a paired device: never "this computer", the bridge token or an open install, even before the first device is paired. Pair a device with a code shown on the PC (Settings → Phone & devices): a code started through the relay is not taken here. A code has five tries of its own here, so wrong tries here never spend it for a phone pairing another way. Twenty wrong codes within ten minutes pause pairing here for ten minutes, and wrong tokens from every address here share one budget.
+- **Who gets in.** Only clients on a private IPv4 network, and only with the token or a paired device: never "this computer", the bridge token or an open install, even before the first device is paired. Pair a device with a code shown on the PC (Settings → Phone & devices): a code has five tries of its own here, so wrong tries here never spend it for a phone pairing another way. Twenty wrong codes within ten minutes pause pairing here for ten minutes, and wrong tokens from every address here share one budget.
 - **Its certificate.** Unless you give one, Ovis makes a self-signed certificate on first start and keeps it in the state folder (`lan-https/`, the key readable only by you). It names the PC's addresses, and a new one is made when they change or it runs out (after 825 days). Startup prints each address with the certificate's SHA-256 fingerprint.
 - **Your own certificate.** Set `OVIS_LAN_HTTPS_CERT` and `OVIS_LAN_HTTPS_KEY` to PEM files, for example from a local CA made with [mkcert](https://github.com/FiloSottile/mkcert) (`mkcert -install`, then `mkcert 192.168.1.20` with the PC's address).
 
@@ -983,7 +899,7 @@ macOS). See [INSTALL.md](../INSTALL.md#2-choose-the-install-method).
   and the folder picker are refused for it. A folder typed for a new workspace there is passed to
   that machine as written (empty: its home). Pins and "seen" are not shared with the Herdr app
   there. Temporary machines (`hc machine add --temp`) are not shown, and
-  PCs added over SSH or through the relay keep working beside them.
+  PCs added over SSH keep working beside them.
 
 ## Configuration
 
@@ -1000,9 +916,7 @@ Each `OVIS_*` variable was called `HERDR_WEB_*` before Ovis took its name (`OVIS
 | `OVIS_LAN_HTTPS_CERT`, `OVIS_LAN_HTTPS_KEY` | unset (self-signed, kept in the state dir) | PEM files of your own certificate and key for that listener, for example from a local CA; set both or neither |
 | `OVIS_CSP` | unset (enforced) | `report-only` sends the policy as `Content-Security-Policy-Report-Only`: the browser reports what it would block and the app keeps working. Used to measure the policy after a change |
 | `OVIS_TAILSCALE_HTTPS_PORT` | unset (first free of 443, 8443, 7317, 17317) | The HTTPS port the installer publishes the app on with `tailscale serve`, and the one **Settings → Phone & devices** suggests. When another service already uses it, the installer stops and says so instead of taking another port, since an app installed on a phone stays on the address it came from. An address that already serves the app is kept |
-| `OVIS_RELAY_URL` | `wss://relay.ovis.sh` | The [Ovis relay](#through-the-ovis-relay) this PC connects to while the relay is on: a `wss://` address with no path, such as [your own](#running-your-own-relay). Unset, the PC uses `relay.ovis.sh` and, when a [regional relay](relay.md#regional-relays) answers much faster, that one too. Read when the server starts; a value that is not such an address keeps the server from starting |
-| `OVIS_RELAY_APP_URL` | `https://app.ovis.sh` | The address the relay's QR codes open on a phone: an `https://` address with no path. Set it when you [host the app yourself](#running-your-own-relay). A value that is not such an address keeps the server from starting |
-| `OVIS_STATE_DIR` | `~/.config/ovis` | Push keys, device subscriptions, PC registrations, update builds, the app's relay identity |
+| `OVIS_STATE_DIR` | `~/.config/ovis` | Push keys, device subscriptions, PC registrations, update builds |
 | `OVIS_OPENAI_API_KEY` | unset | OpenAI API key for [voice input](#voice-input). Set here, it cannot be changed from the app |
 | `OVIS_OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API root for voice input |
 | `OVIS_AUTO_UPDATE` | `0` | `1` installs new releases without asking |
@@ -1191,7 +1105,6 @@ A React client talks to a Bun HTTP/WebSocket server.
 - **Status:** the server reads workspaces and agent status from herdr's Unix socket.
 - **Terminal:** it streams the real `herdr terminal attach` output through a PTY host: the Rust one (`crates/pty-sidecar`) on Linux and macOS, or the Node sidecar where that cannot run (`OVIS_PTY_SIDECAR=node` asks for it). Browsers watching one pane share one attach, with a bounded replay and backpressure ([terminal flow control](terminal-flow-control.md)).
 - **Chat:** it reads the agents' own session files, and sending types into the same live pane.
-- **Relay (optional):** while it's on, the server also keeps a WebSocket open to the [Ovis relay](relay.md), and a paired phone's requests come in through it, end-to-end encrypted, to the same handlers as a browser's.
 
 herdr owns the processes and the scrollback.
 
@@ -1212,7 +1125,6 @@ No. Both attach to the same terminals at the same time. Use the TUI at your desk
 
 No, but a phone needs two things Tailscale gives at once: a way to reach the PC from outside your network, and HTTPS, which installing the app and push alerts both require. Without it:
 
-- **The Ovis relay**, built in and off by default: turn it on under **Settings → Phone & devices** and scan its QR code. The phone needs nothing else, and what passes through the relay is end-to-end encrypted ([Through the Ovis relay](#through-the-ovis-relay)).
 - **An SSH tunnel from the phone** (Termux, Blink): `ssh -L 7317:127.0.0.1:7317 <pc>`, then open `http://localhost:7317` on the phone. Browsers treat localhost as secure, so installing and alerts should work while the tunnel is up (not verified on iOS yet). The phone still has to reach the PC over SSH.
 - **A VPN into your home** (WireGuard, ZeroTier, a router VPN): the LAN address works in the browser, but a plain `http://` address can neither install the app nor receive alerts.
 - **A reverse proxy with a real certificate** on a domain you own, with a token set and the proxy sending `X-Forwarded-For`: [Behind a reverse proxy](#behind-a-reverse-proxy) has Caddy, nginx and Cloudflare Tunnel examples to copy. This exposes the server to the internet, so read [Access and safety](#access-and-safety) first.
@@ -1221,7 +1133,7 @@ No, but a phone needs two things Tailscale gives at once: a way to reach the PC 
 <details>
 <summary><b>Does my code or conversation leave my machine?</b></summary>
 
-Session files stay on the PC running each agent, and their contents are sent to browsers connected to the app. Signing in to the account service is optional (see [Through an account](#through-an-account)), and the relay is off unless you turn it on. The agents' own connections to model providers depend on their configuration.
+Session files stay on the PC running each agent, and their contents are sent to browsers connected to the app. The agents' own connections to model providers depend on their configuration.
 
 Optional features can send data off the PC:
 - [Voice input](#voice-input) sends recordings to the configured transcription provider; polishing also sends the transcribed text. Without a configured API key, browser speech recognition may use the browser vendor's service.
@@ -1229,7 +1141,6 @@ Optional features can send data off the PC:
 - Updates and remote-PC setup fetch releases or configured runtime bundles over the network; remote panes are reached over SSH.
 - Enabled push alerts go through the browser vendor's push service as encrypted notifications.
 - A destination under **Settings → Alerts → Also send to** gets each alert it chose in plain text: the PC's and the pane's names (a pane's is its terminal title, which an agent may take from your task), what happened and a link to the pane.
-- The [Ovis relay](#through-the-ovis-relay), while it's on, carries everything between a paired phone and this PC through `relay.ovis.sh`, end-to-end encrypted: the relay sees connection addresses, timing and sizes, down to the timing of keystrokes, but none of the content. The app on the phone comes from `app.ovis.sh`, which itself sees only requests for the app's files, whose path names the PC. You have to trust whoever serves that app, since it's the code that holds the phone's key and shows you the PC ([trust model](relay.md#trust-model)).
 
 See [Access and safety](#access-and-safety) for who can connect to the app.
 </details>
@@ -1251,7 +1162,7 @@ Samsung Internet has a forced dark mode that repaints every page, including one 
 
 All three are in the herdr plugin marketplace too, and each does something this app does not. [collie](https://github.com/AltanS/collie) is a mobile terminal for herdr, tmux and zellij, with a status dashboard, a key pad, quick replies and voice input, served over Tailscale by its own bridge. [roamgate](https://github.com/powerfooI/roamgate) is a browser client for herdr with a file explorer and diff annotations, installed by its own script. [herdr-remote](https://github.com/dcolinmorgan/herdr-remote) is a macOS menu-bar app with a phone dashboard and a Telegram bot behind a relay and a free tunnel.
 
-Ovis reads the agent's own transcript, so Claude Code, Codex, omp, omo, gjc, pi, OpenCode and identifiable Devin CLI panes are a chat with the work folded per turn. Supported prompt cards are checked against the live menu before an answer is typed; Devin prompts use Terminal. The terminal is the same live pane as your TUI, other PCs join over SSH from the sidebar, and it installs and updates as a herdr plugin, with no account of its own. You reach it over Tailscale, SSH, your own HTTPS proxy, or the Ovis relay, which is end-to-end encrypted and off until you turn it on. If you want tmux or zellij, diffs or to answer agents from Telegram, one of the others is the better fit.
+Ovis reads the agent's own transcript, so Claude Code, Codex, omp, omo, gjc, pi, OpenCode and identifiable Devin CLI panes are a chat with the work folded per turn. Supported prompt cards are checked against the live menu before an answer is typed; Devin prompts use Terminal. The terminal is the same live pane as your TUI, other PCs join over SSH from the sidebar, and it installs and updates as a herdr plugin, with no account of its own. You reach it over Tailscale, SSH or your own HTTPS proxy. If you want tmux or zellij, diffs or to answer agents from Telegram, one of the others is the better fit.
 </details>
 
 <details>

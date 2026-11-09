@@ -64,7 +64,7 @@ irm https://ovis.sh/install.ps1 | iex
 - **Android：** Google Play 公测版，见 [ovis.sh/zh/beta](https://ovis.sh/zh/beta/)。
 - **浏览器：** 无需应用，把页面添加到主屏幕即可。
 
-要连接手机，在 **Settings → Phone & devices** 中打开端到端加密的 **Ovis 中继**，然后扫描二维码。[工作原理 →](docs/guide.md#through-the-ovis-relay)
+要连接手机，通过 Tailscale 打开应用，扫描 **Settings → Phone & devices** 中的二维码。[工作原理 →](docs/guide.md#on-your-phone)
 
 ## 能做什么
 
@@ -76,9 +76,9 @@ irm https://ovis.sh/install.ps1 | iex
 
 [全部功能 →](docs/guide.md#features)
 
-**限制：** 你的电脑需要开着并且能被访问（Ovis 中继、Tailscale、VPN 或 SSH 隧道）。Herdr 桌面应用的终端仅支持 Linux 和 macOS。
+**限制：** 你的电脑需要开着并且能被访问（Tailscale、VPN 或 SSH 隧道）。Herdr 桌面应用的终端仅支持 Linux 和 macOS。
 
-**隐私：** 会话留在你的电脑上，没有账号。可选的中继无法读取内容（[信任模型](docs/relay.md#trust-model)）。匿名使用计数默认启用，可在 **Settings → About** 或用 `OVIS_TELEMETRY=0` 关闭（[发送哪些内容](docs/guide.md#anonymous-usage-counts)）。
+**隐私：** 会话留在你的电脑上，没有账号。匿名使用计数默认启用，可在 **Settings → About** 或用 `OVIS_TELEMETRY=0` 关闭（[发送哪些内容](docs/guide.md#anonymous-usage-counts)）。
 
 <a id="docs"></a>
 

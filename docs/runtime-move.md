@@ -103,12 +103,11 @@ user's or that anybody may write in, or another kind of file at that name, is re
 
 ## On another PC
 
-A PC connected over SSH or through the relay is moved from the PC in front of you, with the same
+A PC connected over SSH is moved from the PC in front of you, with the same
 plan, wait and stops. This server forwards that PC's own routes under the PC:
 `GET|POST|DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/stop`,
 `.../runtime/move/stop-all` and `.../runtime/move/install`, with the same requests and answers as
-here. They go with that PC's credential (an SSH PC's bridge token, or this server's device on a relay
-PC) and the header the move asks for; the browser's cookies and credentials never cross. They are the
+here. They go with that PC's credential (an SSH PC's bridge token) and the header the move asks for; the browser's cookies and credentials never cross. They are the
 owner's alone, from any device the owner signed in or paired to drive this PC; the plan too, which names
 every pane's folder and conversation:
 
@@ -117,9 +116,8 @@ every pane's folder and conversation:
 | The owner on this PC itself | Yes |
 | The owner with the app's token | Yes |
 | A device the owner paired that drives | Yes |
-| A device paired through the relay that drives (the owner's phone, another of the owner's PCs) | Yes |
 | An open LAN visitor (nothing paired, no token) | No |
-| A device that only watches, paired directly or through the relay | No |
+| A device that only watches | No |
 
 Anyone else is answered 403. A change (anything but the plan's `GET`) also needs `x-herdr-update: 1`
 from this app's own page.
@@ -144,7 +142,7 @@ guards of every PC change (`X-Herdr-Machine: 1`, the same origin) and the owner'
 with `x-herdr-update: 1` and no query.
 
 **The badge**: `GET /api/machines` and the `machines` event carry `runtime_move` on each connected
-SSH or relay PC: `{ serving, offered, reason, status }`, read from that PC's own
+SSH PC: `{ serving, offered, reason, status }`, read from that PC's own
 `GET /api/runtime/move` when it connects, then every minute, every 5 s while its move waits or runs
 (each read has that PC build its whole plan), and at once after a start, cancel or stop sent from here.
 `serving: "herdr"` with `offered` is the "not moved yet" badge (`offered` with

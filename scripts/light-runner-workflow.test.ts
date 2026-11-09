@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseWorkflow, root, type Job } from "./shell-workflow-rules.ts";
+import { parseWorkflow, root, type Job } from "./workflow-yaml.ts";
 
 // Light jobs (Detect changes, the PR title check, ...) take the self-hosted pool so they do not wait
 // in GitHub's hosted queue, but a fork pull request's job must never reach that pool: the guard comes

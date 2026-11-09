@@ -96,7 +96,7 @@ it("tells an Ovis too old to be moved from here as an update to make first", asy
   expect(await code(await call("pc/runtime/move/stop", { method: "POST", body: { pane_id: "gone" } }))).toEqual([404, "pane_not_found"]);
   // a query that PC would refuse is not sent, so it is never taken for an old Ovis
   expect(await code(await call("pc/runtime/move?x=1"))).toEqual([400, "invalid_query"]);
-  expect(asked.map((request) => request.pc)).toEqual(["old", "refusing", "refusing", "pc"]);
+  expect(asked.map((request) => request.pc)).toEqual(["old", "refusing", "pc"]);
 });
 
 it("starts every previewed PC's move at once and says in plain words why each other one did not start", async () => {
@@ -113,7 +113,7 @@ it("starts every previewed PC's move at once and says in plain words why each ot
   ]);
   for (const refused of answer.refused) expect(refused.message.length).toBeGreaterThan(0);
   expect(asked.filter((request) => request.method === "POST").map(({ pc, body, update, authorization }) => [pc, JSON.parse(body).revision, update, authorization]).sort()).toEqual([
-    ["old", "shown", "1", "Bearer old-token"], ["pc", "shown", "1", "Bearer pc-token"], ["newer", "older", "1", "Bearer newer-token"],
+    ["newer", "older", "1", "Bearer newer-token"], ["old", "shown", "1", "Bearer old-token"], ["pc", "shown", "1", "Bearer pc-token"],
   ]);
   expect(answer.unknown).toEqual([]);
   expect(soon).toEqual(["pc"]);

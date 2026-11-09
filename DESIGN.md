@@ -1692,8 +1692,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   on touch. Connected is the dot alone; every other state is also written under the name, with the server's
   error clamped to two lines and complete in the tooltip.
 - Manage PC opens a row menu (`RowMenu`): a popover under the button on a desktop, a bottom sheet on a phone, as a
-  workspace's and an agent's ⋯ do. Its head names the PC, with its state word and "over SSH" (a PC added through the relay:
-  "through the relay") under the name. The items
+  workspace's and an agent's ⋯ do. Its head names the PC, with its state word and "over SSH" under the name. The items
   are **Rename…**, **Disconnect** (**Connect** while the PC is disabled), **Reconnect / setup**, **Update bridge…**,
   **Hide on this device** and, after a rule, **Remove PC…** in the danger colour. Rename… swaps the name in the header
   for a field (up to 100 characters, its text selected): Enter saves, and Escape or a click away keeps the old name;
@@ -1702,8 +1701,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   follows Show in sidebar's rules: the last PC shown has no such item, and the focus goes to the PC list's first row
   that takes it, not the page. A PC herdr manages keeps herdr's limits: no Rename…, Disconnect or Remove PC…, and
   the head says to do those in herdr. A machine of herdr-core (`kind: "hc"`) offers only Hide on this device, and its
-  head says to add, rename or remove it with `hc machine` or in the Herdr app. A PC added through the relay has no Reconnect / setup or Update bridge…, and its
-  Remove PC… dialog says to revoke its access under Phone & devices on that PC too. Reconnect / setup is left out while the PC's own notice offers setup or
+  head says to add, rename or remove it with `hc machine` or in the Herdr app. Reconnect / setup is left out while the PC's own notice offers setup or
   Connect, Update bridge… while it offers Connect, and both wait while the PC is disabled or has no address. Rename…,
   Connect or Disconnect and Remove PC… wait while one of them runs. The inline panel this replaces pushed the
   workspaces down, one button per line. Ovis's own `RowMenu` for workspace and agent rows is the precedent, and the
@@ -1725,8 +1723,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   so a footer row kept showing in every browser tab and in browsers that never prompt. Settings →
   Phone & devices → Install offers it when the browser can install, and the steps otherwise,
   as the Claude web app keeps getting its apps in the account menu rather than a sidebar row.
-- Above that row, only where the page is one PC of a phone's list (a PC's page on the hosted
-  relay shell, or the phone app), one full-width row (`.sidebar-footer-pc`) names the PC, the lone
+- Above that row, only where the page is one PC of a phone's list (the phone app), one full-width row (`.sidebar-footer-pc`) names the PC, the lone
   Host's name its header no longer shows, then **Change PC** in `--text-dim` and a switch glyph: a
   tap goes back to the list of PCs (the shell's front page, or the app's list), as the Claude app's
   sidebar foot names whose account it is and switches it in one tap. Settings → Phone & devices
@@ -2412,15 +2409,14 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   output, which retries nothing, gets no line: the chip says disconnected. The return sends nothing: a draft stays a draft.
 - In More's header, one quiet mark says how this device reaches Ovis (`.conn-route`,
   `components/ConnectionRouteMark.tsx`, `lib/connectionRoute.ts`): a 14px glyph and one short
-  `--text-dim` word, **relay** (the hosted shell), **Tailscale** (a tailnet address; a MagicDNS name alone says "Via Tailscale, or Funnel
+  `--text-dim` word, **Tailscale** (a tailnet address; a MagicDNS name alone says "Via Tailscale, or Funnel
   from the internet", since the name serves both), **LAN** (a private address or a local-only name), **direct** (any other
   address, a bare machine name and a request the server saw come through Funnel included) or
   **local** (loopback: this PC, or a tunnel to another, which nothing can tell apart). The route,
   not the connection's state, is its title and accessible text ("Via Tailscale"); the chip tells the
   state. It is read from what the page owns and the server's own word on the request
   (`observed_ingress`), never guessed. It is not a button and never wraps. The phone app's demo
-  shows none. It
-  follows Paseo's app, which says beside a host whether it is reached directly or through its relay.
+  shows none.
 - The header draws no session counts: the sidebar and each tab's mark say every session's state, and
   the status bar (from `769px` with a fine pointer) its waiting count. Its "N waiting for you" button
   (`lib/headerSessions.ts` `nextWaitingPane`) opens the next waiting session after the selected one in
@@ -3612,8 +3608,8 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   **Alerts** (the test, sound and other destinations; which alerts come is the **Alert me when**
   group of its More settings, as almost every install keeps them), **Agents**, **Shortcuts** (the
   platform-resolved global bindings), **Devices and PCs**
-  (**Account**; **My devices**: Connect a device, this PC with its ID, the other PCs and the paired
-  phones and browsers in one list; its More settings: This device, Ovis relay, Show in sidebar,
+  (**My devices**: Connect a device, this PC, the other PCs and the paired
+  phones and browsers in one list; its More settings: This device, Show in sidebar,
   Access, the PCs' bridge updates and load line), **About** (Updates,
   herdr, the repository links). Each page's other rows are in its folds (above). Voice input was a
   page and is Chat's group (its dictation language, speech recognition, tidying and OpenAI key in
@@ -3674,23 +3670,19 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   held modifiers. Restore defaults returns the original row. The keyboard mode control stays first.
 - A font family is a text field saved when it is left, on Enter or when the dialog closes, not
   per keystroke.
-- Devices and PCs follows WhatsApp's **Linked devices**: the account on top, then one list of
+- Devices and PCs follows WhatsApp's **Linked devices**: one list of
   everything connected (**My devices**) under one **Connect a device** row whose **Connect** button
   opens every way in, as Tailscale's admin **Add device** does. Devices and other PCs are one list
   because to the person they are one thing: something connected to this PC. Rows are as short as
   the page allows; what pairing means is one folded sentence, and what few people change is in
   More settings. Old links to the Phone and Remote PCs groups land on My devices.
 - My devices (`MyPcRows` in SettingsDialog.tsx, then `components/DevicesPanel.tsx`): this PC
-  first (its name, a **This PC** pill in the accent and its relay ID in `--font-mono` under it: the
-  ID a device that typed this PC's code compares, so it is shown here and not in the dialog), then
-  the PCs this app shows (a neutral **PC** pill and their state; one that is not connected is
-  dimmed, and one this app added over SSH or the relay carries a **Remove PC** trash button that asks
-  once, as the sidebar's PC menu does), then signed in the account's other PCs (their
-  account state, dimmed unless ready, no action), then the paired phones and browsers with a neutral kind pill (Phone,
-  Tablet or Browser, read from the name the app first gave the device), Rename and Revoke as
-  before, then **Revoke every device**. On a touch phone on this PC's own address, with the relay
-  online, the phone's own row carries **Use the relay** (its own offer opens there). **Sign out of
-  this PC** (the browser's own pairing) and the account's **Sign out of GitHub** are named apart.
+  first (its name and a **This PC** pill in the accent), then the PCs this app shows (a neutral **PC**
+  pill and their state; one that is not connected is dimmed, and one this app added over SSH carries a
+  **Remove PC** trash button that asks once, as the sidebar's PC menu does), then the paired phones and
+  browsers with a neutral kind pill (Phone, Tablet or Browser, read from the name the app first gave the
+  device), Rename and Revoke as before, then **Revoke every device**. **Sign out of this PC** (the
+  browser's own pairing) is named apart.
 - Add a connection (`components/ConnectPhoneDialog.tsx`, a `.modal`, a bottom sheet on a phone) follows
   herdr's own **Add a machine** sheet: one tab per way across the top (the `.segmented` primitive,
   as FilesDialog's tabs), and under each the things that way found, each with one action, then a
@@ -3700,47 +3692,17 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   (herdr, ssh config, Tailscale), then **Add** or a quiet **Added** in the done green; **Add** and the
   typed address close Settings and open the PC setup dialog with the address filled in. **Phones and
   devices** stacks, under a hairline each, the Tailscale address and QR code, the six-digit pairing
-  code (`components/CompactPair.tsx`, started when the tab first opens). **Ovis relay** is the account's: signed out one sentence and **Sign in to Ovis** (which
-  opens the account's sign-in in More settings), signed in how a new device joins, or the relay's
-  switch and **Open the account** while this PC cannot admit one yet. Relay pairing without the
-  account and a code from another PC are gone from it. A phone
+  code (`components/CompactPair.tsx`, started when the tab first opens). A phone
   opens on Phones and devices, a PC's window on SSH; a tab once opened stays mounted, so its code
   is not minted again. The dialog closes by itself once My devices sees the device a code let in.
-- The Ovis relay's own group in More settings: its state as the row's sentence with the switch,
-  then **Reset relay identity** (confirmed in the shared `ConfirmDialog`). Not shown in the hosted shell or to a read-only device.
 - Install (a row of More settings' This device, shown only when the browser can install) offers it;
   About links the repository.
-- In the hosted relay shell (app.ovis.sh, `<meta name="ovis-shell">`, lib/shellMode.ts) the page
-  opens with a **This app** group of two rows the native build never shows: **Change PC** (a neutral button to the
-  shell's front page, which lists every paired PC, the same row the iOS app gets for its own list)
-  and **Forget this PC** (a neutral button that asks once in a `ConfirmDialog`, **Forget**, then
-  deletes this phone's key for the PC and leaves for the front page). Neither is destructive on the
-  PC, which keeps listing the phone until it is revoked there, so neither is a `.btn-danger`.
-- The Ovis relay's state and pairing offer (`components/RelayPanel.tsx`: `statusText`,
-  `RelayPairing`; `lib/useRelay.ts`), shown where the server answers `/api/relay`: the state in
-  words is one step above a row's sentence (`--fs-sm`) and never above its label. While the relay
-  is online the pairing offer is Connect a device's QR code beside the code to type (`.compact-pair`),
-  with **Refresh**; the setup guide keeps the longer `.relay-pairing` with its countdown and **New code**. The server keeps one
-  pending pairing code, which this offer and the dialog's pairing code both carry, so the offer is
-  asked for when the dialog opens with the relay online, when the pairing code route starts a
-  code (`PAIRING_CODE_EVENT`, lib/useRelay.ts: both then show the same code), when its countdown
-  runs out, and on **New code**, which starts a new code first and tells the pairing code route;
-  never on a timer or a render. An offer that arrives already expired (the PC's clock and this one
-  apart) says so and waits for **New code** rather than asking again and again. The hosted shell (a page
-  carrying `<meta name="ovis-shell" content="relay">`) offers no relay at all, since every relay
-  mutation requires a direct connection (`403 local_required` over the relay).
-  In Devices, a device paired through the relay wears
-  the **via relay** pill, the `this device` pill in neutral tones (`.devices-via-relay`: a
-  category, not this device's own mark). The precedent is Paseo's relay pairing (the daemon's
-  key and relay in a QR `#offer=` fragment the phone confirms, shown while the relay is up); this
-  differs in keeping the state a sentence in the switch's row rather than a status badge, and in
-  sharing one pending code with the pairing code route instead of a code of its own.
 - Access, a group of Devices and PCs' More settings, is read-only: one row per fact the server reports
   (`security` on `/api/health`), each a label, its dim sentence and the value in place of a
   control (`.settings-fact`: `--fs-md`, `--fw-medium`, `--text-strong`, end-aligned, at most 45%
   of the line). Access token Set or Not set; Pairing gate Not yet closed, Closed or Unavailable;
   Listens on Loopback, Tailscale address or Other address; This connection No proxy seen (with a line saying a proxy that adds nothing looks the same), Through a proxy,
-  Through Tailscale Funnel, Through the Ovis relay or Unknown; Public internet Reachable (only seen on a
+  Through Tailscale Funnel or Unknown; Public internet Reachable (only seen on a
   Funnel request) or Unknown. No colour, icon or summary line carries a meaning, and nothing reads
   "safe", "secure" or "local only": a proxy or router in front can expose any bind, and only this
   request's own path is known. Before the server answers the group is one Loading line; a server
@@ -4263,19 +4225,7 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   the agent asks for its own when it first starts. On a first run, plan usage turns on by itself for
   accounts already signed in; the guide opened again from Settings changes no setting (nor says it
   will).
-- "Start with …" and beside it a plain "Connect your phone", which opens a `--bg-panel` box under them.
-  On a first run on the PC itself (the desktop app, or a browser on its loopback) the box is open from
-  the start, as a phone is the next device to add; it leads with the relay only, so where the relay
-  cannot lead it stays closed instead of sending the page to Settings → Phone untapped. The relay stays
-  off until "Turn on the Ovis relay", as Paseo keeps its relay off until Enable relay; unlike Paseo,
-  which leaves pairing in Settings, the first run shows it.
-  Where the Ovis relay can lead (offered here, nothing blocks it, not a watching device), the box leads with it (off until the user turns it on, then a QR code): one line on what it does, the device-gate note when turning
-  it on closes the gate, and "Turn on the Ovis relay" as the primary button (the tap is the consent).
-  A browser in only because nothing is paired yet pairs itself first, as the relay closes the gate.
-  Then the relay's state while it connects, a failed start with Try again, and once online the same
-  pairing QR code Settings shows (`RelayPairing`), which gives way to Paired and New code once a
-  new device is listed, since its code is single-use. A quiet "Use Tailscale or Wi-Fi instead" link under
-  it, and the whole box where the relay cannot lead, shows the other way: a QR code that opens the app on the phone with a fresh pairing code filled in, the address and the
+- "Start with …" and beside it a plain "Connect your phone", which opens a `--bg-panel` box under them on a tap. It shows a QR code that opens the app on the phone with a fresh pairing code filled in, the address and the
   code. The code is asked for when the box opens and never renewed behind the user's back (it would
   replace one Settings shows); once a phone pairs ("Paired: …") or it runs out, New code asks again.
   A browser in only because nothing is paired yet pairs itself first, as Settings → Phone's Pair this
@@ -4297,64 +4247,6 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
 - A centered password card replaces the entire shell while authentication is required. It has a real
   label, autofocused field, primary Unlock button and linked alert text.
 - Success mounts the shell; Lock unsubscribes push, deletes auth and returns to the gate.
-
-### Relay shell (`.relay-shell*`)
-- The hosted shell's screens before the app (components/RelayShell.tsx, lib/relay/shell.tsx): the
-  token gate's card, one sidebar wide on `--bg`, the sheep mark, a `--fs-lg` title that says what
-  is happening and one `--text-dim` sentence that says what to do, then the actions stacked full
-  width (`.btn`, the one primary action `.btn-primary`). No entrance motion; the connecting
-  state's `.boot-spinner` is the only thing that moves. Every screen names itself in
-  `data-relay-state` on the `<main>` (`list`, `empty`, `confirm`, `connecting`, `pc-offline`,
-  `pc-unresponsive`, `relay-unreachable`, `needs-update`, `revoked`, `identity-changed`,
-  `forgotten`, `code-expired`, `bad-offer`) for the browser scripts. Which of the three silences a stalled
-  connection is comes from the channel's phase (lib/relay/channel.ts): the relay that never
-  assigned the connection (10 s) is unreachable, the PC that never answered once it had (15 s) is
-  offline, and the PC that answered but never finished admitting the phone (10 s) is unresponsive;
-  the last offers Try again and names restarting Ovis on the PC, never "start Ovis".
-- Brief. Primary action: on a pairing link **Pair** (a new PC is confirmed first, "Pair with
-  {name}?", as paseo confirms a new host); after a failure **Try again**, or **Forget this PC**
-  (`.btn-danger`, since it discards a key) when the PC's identity changed. Forget only forgets:
-  the link whose key failed the check is never paired with, and the `forgotten` screen says to
-  scan a new QR code on the PC itself (otherwise the same bad link would be pinned in two taps). A
-  link whose key is not the one its PC's id is derived from is forged: it gets the same
-  `identity-changed` warning in its own words, every time it is opened, with only **Back** (no
-  key of its was saved, so there is nothing to forget); on the front page the
-  saved PCs themselves, one `--touch-target` row each with a chevron, the whole row the link to
-  the PC's own scope (`/s/<server_id>/`). Priorities: the PC's name, what is happening, what to do
-  next. Left out on purpose: a status badge, a stat tile, an illustration, a subtitle under the
-  title, the relay's address, and any Retry on a screen a retry cannot change (a used code, a
-  revoked phone, a damaged link offer only **Back**). Required content: the PC's name on every
-  scoped screen, the sentence per state, **Back** to the front page on a PC's page and nowhere
-  else, the iPhone browser tab's line "Add to Home Screen to stay paired" (a `--fs-sm` dim line
-  over a hairline at the card's foot, only there: the installed app's storage is not cleared).
-- Layout: `centred card`; the document is the one scroller; the saved-PC list is a plain column
-  inside the card, never a scroller of its own.
-- Precedent: paseo's hosted web app (confirm a new host, remember hosts, one list to pick from)
-  for the flow; the states and their words are this app's, in the token gate's own frame, so a
-  phone that pairs through the relay and one that pairs with a code see the same room. Neither
-  the Codex nor the Claude app has a hosted relay shell to follow.
-- Account part (components/AccountPcs.tsx, lib/account/), only on the front page and only when
-  the page names an account service (`<meta name="ovis-account-service">`, account.ovis.sh unless
-  the build names another) and, in a browser, it is app.ovis.sh, the one page a sign-in comes back
-  to; otherwise the front page is the saved-PC list above, unchanged. Signed out: **Continue with GitHub** and **Continue
-  with Apple**, two equal neutral `.btn`s (App Review 4.8 wants Apple wherever another provider
-  is, and neither is the one to pick), a `--fs-xs` dim line on what the account service learns,
-  then the QR route under a hairline (an `h2`, the page keeps one `h1`). With saved PCs the list
-  comes first and the sign-in follows it. Signed in: **Your PCs** with "Signed in with GitHub"
-  under it, one row per PC of the account merged with the PCs this device is paired with: the
-  name, and under it a `--fs-sm` dim line in words (Paired; This device is not approved on it
-  yet; Offline, last seen 3 h ago; Its Ovis needs an update to join the account), no badge. Only
-  a paired PC is a link with a chevron; the others are plain rows. The `<main>` adds
-  `data-account-state` (`signed-out`, `signing-in`, `signed-in`) for scripts; each row
-  `data-pc-state`. Precedent: Tailscale's admin machine list (every machine of the account, its
-  state in words) for the list, and Signal's linked devices for keeping trust on devices already
-  linked rather than on the sign-in.
-- Relay files keep the existing file viewer and its Paseo-style file bar, rather than adding a
-  separate remote-files screen. A client without a resource-capable service worker shows the
-  usual file note as an alert when the 64 MiB limit is exceeded. Copy link and new-tab actions
-  name the paired PC's reader, which opens its own channel; active file content is never a
-  navigated blob. Rendered HTML uses the opaque sandbox's own render host and policy, so its
-  inline scripts work without access to the shell's origin or device keys.
 
 ### Role (no control surface)
 - `interact` types and resizes; `observe` does neither. The server enforces both and the WS protocol

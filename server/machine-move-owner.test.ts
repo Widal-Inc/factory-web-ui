@@ -72,7 +72,7 @@ it("each kind of access is the one it names", async () => {
     const { via, role } = (await response!.json() as { auth: { via: string; role: string } }).auth;
     return `${via}/${role}`;
   };
-  expect(await Promise.all([...OWNERS, ...OTHERS].map(auth))).toEqual(["local/drive", "token/drive", "device/drive", "relay/drive", "open/drive", "device/watch", "relay/watch"]);
+  expect(await Promise.all([...OWNERS, ...OTHERS].map(auth))).toEqual(["local/drive", "token/drive", "device/drive", "open/drive", "device/watch"]);
 });
 
 it("lets the owner from this PC, the token, a paired or a relay device that drives move another PC or every PC; never an open LAN visitor or a device that watches", async () => {

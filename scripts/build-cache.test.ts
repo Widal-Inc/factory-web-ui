@@ -46,7 +46,7 @@ describe("cacheKey", () => {
     changed(keyOf(root, { VITE_FLAG: "1" }));
     changed(keyOf(root, { HERDR_TEST_HOOKS: "1" }));
     changed(keyOf(root, { NODE_ENV: "development" }));
-    changed(keyOf(root, {}, ["--mode", "shell"]));
+    changed(keyOf(root, {}, ["--mode", "other"]));
     writeFileSync(join(root, ".env"), "VITE_A=1\n");
     changed(keyOf(root));
     writeFileSync(join(root, ".env"), "VITE_A=2\n");

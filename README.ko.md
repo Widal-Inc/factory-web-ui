@@ -64,7 +64,7 @@ irm https://ovis.sh/install.ps1 | iex
 - **Android:** Google Play 베타, [ovis.sh/ko/beta](https://ovis.sh/ko/beta/)에서.
 - **브라우저:** 앱 없이, 페이지를 홈 화면에 추가합니다.
 
-휴대폰을 연결하려면 **Settings → Phone & devices**에서 종단 간 암호화되는 **Ovis 릴레이**를 켜고 QR 코드를 스캔하세요. [작동 방식 →](docs/guide.md#through-the-ovis-relay)
+휴대폰을 연결하려면 Tailscale로 앱을 열고 **Settings → Phone & devices**의 QR 코드를 스캔하세요. [작동 방식 →](docs/guide.md#on-your-phone)
 
 ## 할 수 있는 일
 
@@ -76,9 +76,9 @@ irm https://ovis.sh/install.ps1 | iex
 
 [전체 기능 →](docs/guide.md#features)
 
-**한계:** 내 컴퓨터가 켜져 있고 닿을 수 있어야 합니다(Ovis 릴레이, Tailscale, VPN, SSH 터널). Herdr 데스크톱 앱의 터미널은 Linux와 macOS에서만 됩니다.
+**한계:** 내 컴퓨터가 켜져 있고 닿을 수 있어야 합니다(Tailscale, VPN, SSH 터널). Herdr 데스크톱 앱의 터미널은 Linux와 macOS에서만 됩니다.
 
-**개인정보:** 세션은 내 컴퓨터에 남고, 계정이 없습니다. 선택 사항인 릴레이는 내용을 읽지 못합니다([신뢰 모델](docs/relay.md#trust-model)). 익명 사용 집계는 기본으로 켜져 있고, **Settings → About**이나 `OVIS_TELEMETRY=0`으로 끕니다([보내는 내용](docs/guide.md#anonymous-usage-counts)).
+**개인정보:** 세션은 내 컴퓨터에 남고, 계정이 없습니다. 익명 사용 집계는 기본으로 켜져 있고, **Settings → About**이나 `OVIS_TELEMETRY=0`으로 끕니다([보내는 내용](docs/guide.md#anonymous-usage-counts)).
 
 <a id="docs"></a>
 
