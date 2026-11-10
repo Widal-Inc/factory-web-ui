@@ -82,7 +82,6 @@
   "scripts/chat-history-browser-qa.ts": 11,
   "scripts/session-history-browser-qa.ts": 11,
   "scripts/grok-chat-browser-qa.ts": 11,
-  "scripts/lan-exposure-notice-regression.ts": 10,
   "scripts/herdr-restart-regression.ts": 10,
   "scripts/cliproxy-settings-regression.ts": 10,
   "scripts/shortcut-exact-modifiers-demo-regression.ts": 10,
