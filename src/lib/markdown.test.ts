@@ -434,17 +434,20 @@ describe("text no one wrote by hand", () => {
     // process's clock may count in steps of milliseconds, so no run of the small text reads none
     const shortest = threadClock === null ? 20 : 2;
     let runs = 1;
-    const timed = (input: string): number => {
+    // Equal total input per sample: ten small parses to one large. Otherwise the large sample
+    // allocates ten times as many temporary nodes and can pay for collection while the
+    // fastest small sample can avoid it. Normalize back to the time for one parse below.
+    const timed = (input: string, count: number): number => {
       const start = cpu();
-      for (let run = 0; run < runs; run += 1) parse(input);
-      return cpu() - start;
+      for (let run = 0; run < runs * count; run += 1) parse(input);
+      return (cpu() - start) / count;
     };
-    while (timed(small) < shortest) runs *= 2;
+    while (timed(small, 10) < shortest) runs *= 2;
     let fastestSmall = Infinity;
     let fastestLarge = Infinity;
     for (let round = 0; round < 5 && !(fastestLarge / fastestSmall < 30); round += 1) {
-      fastestSmall = Math.min(fastestSmall, timed(small));
-      fastestLarge = Math.min(fastestLarge, timed(large));
+      fastestSmall = Math.min(fastestSmall, timed(small, 10));
+      fastestLarge = Math.min(fastestLarge, timed(large, 1));
     }
     expect(fastestLarge / fastestSmall).toBeLessThan(30);
     return read;
@@ -580,7 +583,7 @@ describe("text no one wrote by hand", () => {
       return nodes;
     };
     // a megabyte of each took from one minute to four: every one was searched from to the line's end
-    for (const part of ["[a", "\\(", "_a ", "__a ", "a$", ":codex-file-citation{"]) {
+    for (const part of ["[a", "\\(", "_a ", "__a ", "a$", ":codex-file-citation{", "$a ", "$5 ", "$a\\$", " $a$b"]) {
       const line = (length: number): string => part.repeat(Math.ceil(length / part.length));
       for (const length of [20_000, 200_000]) {
         expect(counted(line(length))).toEqual([{ type: "text", value: line(length) }]);
@@ -601,6 +604,19 @@ describe("text no one wrote by hand", () => {
       if (marks !== "") marked += 1;
     }
     expect(marked).toBeGreaterThan(1000);
+  });
+
+  it("keeps the dollar token rule when rejecting impossible closers early", () => {
+    const asBefore = /(?<![A-Za-z0-9\\$])\$(?:[^\s$\\`]|[^\s$`][^\n\r\u2028\u2029$`]*[^\s$\\`])\$(?![A-Za-z0-9_${#@*(`])/gu;
+    const dollars = (marks: Iterable<RegExpMatchArray>): string => [...marks]
+      .filter((mark) => mark[0].startsWith("$"))
+      .map((mark) => `${mark.index}:${mark[0]}`).join("\n");
+    const lines = everyLine(["$", "a", "5", " ", "\\", "\n", "\u2028"], 5);
+    lines.push("$5 for the $", "$x + y$", "$x\\$ $y$", "$a$이다", "$x$#tag", "$x$`code`", "$a\tb$");
+    for (const line of lines) {
+      const expected = [...line.matchAll(asBefore)].filter((mark) => !/^\$\d[\d.,]*\s+\p{L}/u.test(mark[0]));
+      expect(`${line}: ${dollars(inlineMarks(line))}`).toBe(`${line}: ${dollars(expected)}`);
+    }
   });
 
   it("reads a line of dollars that never closes in linear time", () => {
