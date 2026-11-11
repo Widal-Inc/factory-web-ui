@@ -210,13 +210,15 @@ export function* walkSkillSteps(root: string, rules: WalkRules): Generator<Walke
     }
     return;
   }
-  function* visit(directory: string): Generator<WalkedSkill | null> {
+  // Keep the alias for names and ignore rules, but resolve children from their real parent: a
+  // lattice of links otherwise resolves its growing alias prefix again at every stat and visit.
+  function* visit(directory: string, lookup = directory): Generator<WalkedSkill | null> {
     // every visit counts, a link back to an ancestor too: each one is a lookup on the server's thread
     yield null;
     if (budget.folders <= 0 || budget.entries <= 0 || budget.reads <= 0) return;
     budget.folders -= 1;
     let canonical: string;
-    try { canonical = realpathSync(directory); } catch { return; }
+    try { canonical = realpathSync(lookup); } catch { return; }
     if (ancestors.has(canonical) || visited?.has(canonical)) return;
     ancestors.add(canonical);
     try {
@@ -232,7 +234,7 @@ export function* walkSkillSteps(root: string, rules: WalkRules): Generator<Walke
       }
       if (budget.entries <= 0 || budget.reads <= 0) return;
       // readdir is atomic: charge its whole array before suspending, even the unprocessed tail.
-      const found = readdirSync(directory, { withFileTypes: true });
+      const found = readdirSync(canonical, { withFileTypes: true });
       const entries = found.slice(0, budget.entries);
       budget.entries -= found.length;
       for (let index = 0; index < entries.length; index++) yield null;
@@ -254,10 +256,10 @@ export function* walkSkillSteps(root: string, rules: WalkRules): Generator<Walke
         if (entry.name.startsWith(".") || entry.name === "node_modules" || rules.skipNames?.(entry.name)) continue;
         const path = join(directory, entry.name);
         try {
-          const target = statSync(path);
+          const target = statSync(join(canonical, entry.name));
           const relativePath = relative(root, path).split(sep).join("/");
           if (ignore.ignores(relativePath + (target.isDirectory() ? "/" : ""))) continue;
-          if (target.isDirectory()) yield* visit(path);
+          if (target.isDirectory()) yield* visit(path, join(canonical, entry.name));
           else if (target.isFile() && entry.name.endsWith(".md") && (rules.looseMarkdown === "root" ? directory === root : rules.looseMarkdown === "nested" && directory !== root)) yield load(path);
         } catch { continue; /* broken links and unreadable directories are skipped */ }
       }
@@ -311,18 +313,19 @@ export function* customCommandSteps(root: string, source: SlashCommand["source"]
   // loader does the same (1.84.0 loadCommandsFromDirectory stats each entry and has no root check), so
   // it runs those commands, and its menu lists what it runs.
   const ancestors = new Set<string>();
-  function* visit(directory: string): Generator<SlashCommand | null> {
+  // Names retain the alias namespace; filesystem probes reuse the already resolved parent.
+  function* visit(directory: string, lookup = directory): Generator<SlashCommand | null> {
     // every visit counts, a link back to an ancestor too: each one is a lookup on the server's thread
     yield null;
     if (budget.folders <= 0 || budget.entries <= 0 || budget.reads <= 0) return;
     budget.folders -= 1;
     let canonical: string;
-    try { canonical = realpathSync(directory); } catch { return; }
+    try { canonical = realpathSync(lookup); } catch { return; }
     if (ancestors.has(canonical)) return;
     ancestors.add(canonical);
     try {
       let found: Dirent[];
-      try { found = readdirSync(directory, { withFileTypes: true }); }
+      try { found = readdirSync(canonical, { withFileTypes: true }); }
       catch (error) {
         if (error instanceof Error && "code" in error && error.code === "ENOTDIR") return;
         throw error;
@@ -336,8 +339,8 @@ export function* customCommandSteps(root: string, source: SlashCommand["source"]
         if (budget.reads <= 0) break;
         const path = join(directory, entry.name);
         try {
-          const target = statSync(path);
-          if (target.isDirectory()) yield* visit(path);
+          const target = statSync(join(canonical, entry.name));
+          if (target.isDirectory()) yield* visit(path, join(canonical, entry.name));
           else if (target.isFile() && entry.name.endsWith(".md")) {
             const markdown = readSkillText(path, budget);
             // Finish visibility filtering from this read before spending the next allowance.

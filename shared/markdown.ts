@@ -236,7 +236,12 @@ export function* inlineMarks(source: string): Generator<RegExpExecArray> {
     } else if (char === "$") {
       // a formula's `$` follows no Latin letter, digit, backslash or `$` (Korean, Japanese and
       // Chinese text runs into a formula with no space: `값은$x$이다`), and its closer is on this line
-      if (/[A-Za-z0-9\\$]/.test(source[start - 1] ?? "") || !(dollarClose(start + 2) < mathBreak(start + 1))) pattern = null;
+      if (/[A-Za-z0-9\\$]/.test(source[start - 1] ?? "")) continue;
+      // No dollar can occur inside a formula. Reject an impossible first closer before trying
+      // the token regex at every price, escaped dollar or adjacent identifier.
+      const close = dollarClose(start + 2);
+      if (!(close < mathBreak(start + 1))
+        || /[\s\\`]/.test(source[close - 1] ?? "") || /[A-Za-z0-9_${#@*(`]/.test(source[close + 1] ?? "")) pattern = null;
     } else if (char === "[") {
       const label = labelEnd(start + 1);
       const target = label + 2;

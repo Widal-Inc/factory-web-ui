@@ -136,6 +136,16 @@ describe("highlightOffThread", () => {
   it("gives up past its budget without holding the page", async () => {
     // a line of dashes in YAML: quadratic for the tokenizer, about half a minute at this size
     const source = "-".repeat(200_000);
+    // Calibrate this runner's timer cadence over the same budget. A CPU-scheduled runner can
+    // deliver a 50 ms interval only every 100 ms even with no work, in both Bun and Node.
+    // The worker must leave over half that capacity free; the absolute deadline stays below.
+    let idleTicks = 0;
+    const idleTimer = setInterval(() => idleTicks++, 50);
+    try {
+      // fixed wait: measure idle timer cadence for the same duration as the worker budget
+      await new Promise<void>((resolve) => setTimeout(resolve, HIGHLIGHT_BUDGET_MS));
+    } finally { clearInterval(idleTimer); }
+    expect(idleTicks).toBeGreaterThan(0);
     const start = performance.now();
     let ticks = 0;
     const timer = setInterval(() => ticks++, 50);
@@ -144,7 +154,7 @@ describe("highlightOffThread", () => {
     expect(lines).toBeNull();
     expect(performance.now() - start).toBeLessThan(HIGHLIGHT_BUDGET_MS + 1_000);
     // the page kept running meanwhile
-    expect(ticks).toBeGreaterThan(HIGHLIGHT_BUDGET_MS / 50 / 2);
+    expect(ticks).toBeGreaterThan(idleTicks / 2);
     expect(highlightKnown(source, "yaml")?.tooLong).toBe(true);
   }, HIGHLIGHT_BUDGET_MS + 5_000);
   it("remembers giving up on a text whose view left while it ran", async () => {
