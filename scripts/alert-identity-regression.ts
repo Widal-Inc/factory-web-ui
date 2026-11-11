@@ -38,6 +38,8 @@ export async function checkAlertIdentitySettings(browser: Browser): Promise<void
         assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("ovis:alert-filters")!).pcsOff), [localId, "Other PC"]);
         await remote.click();
         await page.reload();
+        await page.locator(".conn-live").waitFor();
+        await page.keyboard.press("ControlOrMeta+Shift+Comma");
         await openSettingsPage(page, "Alerts");
         assert.equal(await remote.getAttribute("aria-checked"), "false");
         assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("ovis:alert-filters")!).pcsOff), [localId, "Other PC", remoteId]);
