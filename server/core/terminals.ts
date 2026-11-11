@@ -6,6 +6,7 @@
 import type { ClientMessage, ServerMessage } from "../../shared/protocol.ts";
 import { RECEIPT_RESUME_ID } from "../../shared/receipt-resume.ts";
 import { ConversationMonitor } from "../conversation-monitor.ts";
+import { withoutFactoryAuthority } from "../factory-context.ts";
 import { CoreAttachSession } from "../herdr-core/attach-session.ts";
 import { type SightingFacts, sightingFacts } from "../input-guard.ts";
 import { OUTPUT_HARD_BYTES, OUTPUT_HIGH_BYTES, OUTPUT_STALL_MS, OutputWindow, wireBytes } from "../output-window.ts";
@@ -363,7 +364,8 @@ export function createTerminalRegistry({ options, clients, stopped, terminalAtta
       let attachment: PaneAttachment;
       try {
         // a covered grid (keep_size) creates the pty at the pane's own size, as an observer does
-        attachment = await ensureAttachment(message.pane_id, geometry.cols, geometry.rows, connectionOf(client).mode === "observe" || message.keep_size === true);
+        // Shared readers can outlive this sign-in; output and writers retain their own checks.
+        attachment = await withoutFactoryAuthority(() => ensureAttachment(message.pane_id, geometry.cols, geometry.rows, connectionOf(client).mode === "observe" || message.keep_size === true));
       } catch (error) {
         if (client.data.attached.get(message.pane_id) === claim) {
           client.data.attached.delete(message.pane_id);
@@ -372,6 +374,7 @@ export function createTerminalRegistry({ options, clients, stopped, terminalAtta
         }
         throw error;
       }
+      await client.data.factoryAuthorize?.();
       if (stopped() || connectionOf(client).closing || client.data.attached.get(message.pane_id) !== claim) {
         releaseUnclaimed(message.pane_id, attachment);
         return;
@@ -470,7 +473,7 @@ export function createTerminalRegistry({ options, clients, stopped, terminalAtta
           return;
         }
         watches.add(message.pane_id);
-        conversations.watch(message.pane_id);
+        withoutFactoryAuthority(() => conversations.watch(message.pane_id));
         return;
       }
       if (message.enabled) {
@@ -479,7 +482,7 @@ export function createTerminalRegistry({ options, clients, stopped, terminalAtta
           return;
         }
         client.data.conversationInterests.add(message.pane_id);
-        conversations.watch(message.pane_id);
+        withoutFactoryAuthority(() => conversations.watch(message.pane_id));
       } else {
         client.data.conversationInterests.delete(message.pane_id);
         releaseConversation(message.pane_id);
@@ -516,6 +519,8 @@ export function createTerminalRegistry({ options, clients, stopped, terminalAtta
         try { await creating; } catch { return; }
         if (connectionOf(client).closing || connectionOf(client).mode !== "interact" || client.data.attached.get(message.pane_id) !== claim || claim?.keepSize) return;
       }
+      await client.data.factoryAuthorize?.();
+      if (connectionOf(client).closing || connectionOf(client).mode !== "interact" || client.data.attached.get(message.pane_id) !== claim || claim?.keepSize) return;
       drivePty(message.pane_id, client, geometry.cols, geometry.rows);
       return;
     },

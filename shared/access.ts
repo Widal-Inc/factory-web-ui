@@ -1,5 +1,5 @@
 /** How a request got in, when it did. */
-export type AccessVia = "local" | "token";
+export type AccessVia = "local" | "token" | "alb";
 /** Why a request did not. */
 export type AccessRefusal = "token_required";
 

@@ -17,6 +17,7 @@ import type {
 } from "../../shared/protocol.ts";
 import type { AgentInfo, AgentManifestInfo, AgentStartParams, PaneInfo, PaneLayoutSnapshot, PaneProcessInfo, PaneScrollInfo, TabInfo, WorkspaceInfo } from "../../shared/herdr-api.generated.ts";
 import type { HerdrMethod, HerdrMethods, SingleHerdrMethod, UntypedHerdrMethod } from "./methods.ts";
+import { currentFactoryAuthority } from "../factory-context.ts";
 import type { HerdrCoreLayout, HerdrIdentity } from "../../shared/machines.ts";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -262,6 +263,7 @@ export async function herdrRpc(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   guard?: () => boolean,
 ): Promise<unknown> {
+  const factoryAuthority = currentFactoryAuthority();
   const id = nextId();
   const started = performance.now();
   const key = JSON.stringify([socketPath, method]); // private bookkeeping only; never logged
@@ -323,9 +325,13 @@ export async function herdrRpc(
       const onData = makeLineReader(limit, handleLine, (bytes) => invalid(`over the ${limit}-byte line limit`, bytes));
       const connectFailed = (err: Error) => finish(() =>
         reject(new HerdrError("connect_failed", `cannot reach herdr at ${socketPath}: ${err.message}`)));
-      const writeRequest = () => {
-        if (settled || socket === null || request !== null && written === request.length) return;
+      let writing = false;
+      const writeRequest = async () => {
+        if (writing || settled || socket === null || request !== null && written === request.length) return;
+        writing = true;
         try {
+          if (factoryAuthority) await factoryAuthority();
+          if (settled) return;
           // The sender's authority is asked before every write. Before the first byte a revoked
           // sender cancels. Once a frame has started it is never changed or replayed; if authority
           // lapses mid-frame the connection ends with the frame cut short, which herdr cannot act
@@ -348,8 +354,8 @@ export async function herdrRpc(
         } catch (error) {
           // A connected failure must not be mistaken for proof that no request was sent:
           // prompt answers treat connect_failed as permission to retry the same asking.
-          finish(() => reject(new HerdrError("socket_error", (error as Error)?.message ?? "herdr socket error")));
-        }
+          finish(() => reject(new HerdrError(written === 0 && factoryAuthority ? "cancelled" : "socket_error", factoryAuthority ? "Factory access refused" : (error as Error)?.message ?? "herdr socket error")));
+        } finally { writing = false; }
       };
 
       Bun.connect({

@@ -1,5 +1,6 @@
 import type { SshTarget } from "../shared/machines.ts";
 import { parseCookies, tokenCookie } from "./auth.ts";
+import { factoryOriginAllowed } from "./factory-context.ts";
 
 export function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
 
@@ -16,6 +17,8 @@ export function validateTarget(value: unknown): SshTarget {
 }
 
 export function sameOrigin(request: Request): boolean {
+  const factory = factoryOriginAllowed(request);
+  if (factory !== undefined) return factory;
   const site = request.headers.get("sec-fetch-site");
   if (site && site !== "same-origin" && site !== "none") return false;
   const origin = request.headers.get("origin");

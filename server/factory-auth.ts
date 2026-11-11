@@ -9,11 +9,13 @@ const MAX_IDENTITY_BYTES = 32 * 1024;
 
 export interface FactoryAuthOptions {
   factory: string;
+  owner: string;
   origin: string;
   loadBalancer: string;
   issuer: string;
   clientId: string;
   hubOrigin: string;
+  registryOrigin: string;
   trustedProxyCidrs: string[];
   /** Only tests substitute keys and the hub. Production fetches pinned AWS/hub origins. */
   fetch?: typeof fetch;
@@ -55,6 +57,7 @@ function origin(value: string, name: string, https: boolean): string {
 export class FactoryAuth {
   readonly factory: string;
   readonly origin: string;
+  readonly browserOrigin: string;
   private readonly hubMe: string;
   private readonly peers = new BlockList();
   private readonly keys = new Map<string, Promise<KeyObject>>();
@@ -67,11 +70,14 @@ export class FactoryAuth {
     if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(options.factory)) throw new Error("Invalid factory ID");
     this.factory = options.factory;
     this.origin = origin(options.origin, "Factory origin", true);
-    this.hubMe = `${origin(options.hubOrigin, "Hub origin", false)}/api/app/me`;
+    if (!/^[^\s\x00-\x1f\x7f/]{1,254}$/.test(options.owner)) throw new Error("Invalid factory owner");
+    this.browserOrigin = origin(options.hubOrigin, "Hub browser origin", true);
+    this.hubMe = `${origin(options.registryOrigin, "Registry origin", false)}/api/app/me`;
     const arn = ARN.exec(options.loadBalancer);
     if (!arn) throw new Error("Invalid ALB ARN");
     this.keyHost = `https://public-keys.auth.elb.${arn[2]}.amazonaws.com${arn[1] === "aws-cn" ? ".cn" : ""}`;
-    origin(options.issuer, "Identity issuer", true);
+    const issuer = new URL(options.issuer);
+    if (issuer.protocol !== "https:" || issuer.username || issuer.password || issuer.search || issuer.hash) throw new Error("Identity issuer must be an HTTPS URL");
     if (!options.clientId || !/^[A-Za-z0-9_-]{1,256}$/.test(options.clientId)) throw new Error("Invalid identity client ID");
     if (!options.trustedProxyCidrs.length) throw new Error("Trusted ALB subnets are required");
     for (const cidr of options.trustedProxyCidrs) {
@@ -101,17 +107,38 @@ export class FactoryAuth {
     return undefined;
   }
 
+  /** Browser preflights contain no sign-in cookie. This grants only CORS metadata, never route execution. */
+  preflight(request: Request, peer: string | null): Response | undefined {
+    const url = new URL(request.url);
+    if (request.method !== "OPTIONS" || !url.pathname.startsWith("/api/") || url.search || request.headers.has(ALB_IDENTITY_HEADER)
+      || !this.trustedPeer(peer) || url.host !== new URL(this.origin).host || request.headers.get("x-forwarded-proto") !== "https"
+      || !this.allowsOrigin(request.headers.get("origin"))) return undefined;
+    const method = request.headers.get("access-control-request-method");
+    const requested = request.headers.get("access-control-request-headers") ?? "";
+    const allowed = new Set(["content-type", "x-herdr-machine", "x-herdr-update", "x-request-id"]);
+    if (!method || !["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"].includes(method) || requested.length > 512
+      || requested.split(",").some((name) => name.trim() !== "" && !allowed.has(name.trim().toLowerCase()))) return undefined;
+    return new Response(null, { status: 204, headers: {
+      "cache-control": "no-store", "access-control-allow-origin": request.headers.get("origin")!,
+      "access-control-allow-credentials": "true", "access-control-allow-methods": method,
+      "access-control-allow-headers": [...allowed].join(", "), "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+    } });
+  }
+
   async admit(request: Request, peer: string | null): Promise<FactoryIdentity> {
     if (!this.trustedPeer(peer)) throw new FactoryAuthError(403);
     const url = new URL(request.url);
     // Pin the browser origin to installation config, never to caller-controlled forwarding headers.
     if (url.host !== new URL(this.origin).host || request.headers.get("x-forwarded-proto") !== "https") throw new FactoryAuthError(403);
     const mutation = !["GET", "HEAD"].includes(request.method) || url.pathname === "/ws";
-    if (mutation && request.headers.get("origin") !== this.origin) throw new FactoryAuthError(403);
+    const browserOrigin = request.headers.get("origin");
+    if ((mutation || browserOrigin !== null) && !this.allowsOrigin(browserOrigin)) throw new FactoryAuthError(403);
     const identity = await this.identity(request.headers.get(ALB_IDENTITY_HEADER));
     await this.checkOwner(identity);
     return identity;
   }
+
+  allowsOrigin(value: string | null): boolean { return value === this.origin || value === this.browserOrigin; }
 
   private async key(kid: string): Promise<KeyObject> {
     const known = this.keys.get(kid);
@@ -163,6 +190,7 @@ export class FactoryAuth {
   /** Each request, incoming frame and outgoing frame asks the hub again. A failure never falls back to a token/local role. */
   async checkOwner(identity: FactoryIdentity): Promise<void> {
     if (identity.expires <= this.now()) throw new FactoryAuthError(401);
+    if (!samePerson(identity.person, this.options.owner)) throw new FactoryAuthError(403);
     let response: Response;
     let me: Record<string, unknown> | undefined;
     try {
@@ -181,13 +209,13 @@ export class FactoryAuth {
     const owns = me.factories.some((entry: unknown) => {
       const factory = object(entry);
       return factory?.factory === this.factory && typeof factory.owner === "string" && samePerson(factory.owner, identity.person)
-        && factory.address === this.origin && ["creating", "ready"].includes(String(factory.state));
+        && factory.address === this.origin && factory.state === "ready";
     });
     if (!owns || identity.expires <= this.now()) throw new FactoryAuthError(403);
   }
 
-  audit(identity: FactoryIdentity, action: string, outcome: "allowed" | "denied" = "allowed"): void {
-    const event: FactoryAudit = { at: new Date(this.now()).toISOString(), factory: this.factory, actor: identity.person, action, outcome };
+  audit(identity: FactoryIdentity | undefined, action: string, outcome: "allowed" | "denied" = "allowed"): void {
+    const event: FactoryAudit = { at: new Date(this.now()).toISOString(), factory: this.factory, actor: identity?.person ?? "unknown", action, outcome };
     try {
       if (this.options.audit) this.options.audit(event);
       else console.info(JSON.stringify(event));
@@ -204,8 +232,8 @@ export function factoryAuthResponse(error: unknown): Response {
 
 /** Any factory configuration opts into the complete gate. Partial/misspelled modes cannot silently start a local server. */
 export function factoryAuthFromEnv(env: Record<string, string | undefined>): FactoryAuth | undefined {
-  const names = ["WIDAL_AUTH_MODE", "WIDAL_FACTORY_ID", "WIDAL_FACTORY_ORIGIN", "WIDAL_ALB_ARN", "WIDAL_OIDC_ISSUER", "WIDAL_OIDC_CLIENT_ID", "WIDAL_HUB_ORIGIN", "WIDAL_ALB_SUBNETS"];
-  if (!names.some((name) => env[name] !== undefined)) return undefined;
+  const names = ["WIDAL_AUTH_MODE", "WIDAL_FACTORY_OWNER", "WIDAL_REGISTRY_ORIGIN", "WIDAL_FACTORY_ID", "WIDAL_FACTORY_ORIGIN", "WIDAL_ALB_ARN", "WIDAL_OIDC_ISSUER", "WIDAL_OIDC_CLIENT_ID", "WIDAL_HUB_ORIGIN", "WIDAL_ALB_SUBNETS"];
+  if (!Object.keys(env).some((name) => names.includes(name) || /^WIDAL_(AUTH|FACTORY|ALB|OIDC|REGISTRY|HUB)_/.test(name))) return undefined;
   if (env["WIDAL_AUTH_MODE"] !== "alb" || names.some((name) => !env[name]?.trim())) throw new Error("Complete ALB factory authentication configuration is required");
-  return new FactoryAuth({ factory: env["WIDAL_FACTORY_ID"]!, origin: env["WIDAL_FACTORY_ORIGIN"]!, loadBalancer: env["WIDAL_ALB_ARN"]!, issuer: env["WIDAL_OIDC_ISSUER"]!, clientId: env["WIDAL_OIDC_CLIENT_ID"]!, hubOrigin: env["WIDAL_HUB_ORIGIN"]!, trustedProxyCidrs: env["WIDAL_ALB_SUBNETS"]!.split(",").map((cidr) => cidr.trim()) });
+  return new FactoryAuth({ factory: env["WIDAL_FACTORY_ID"]!, owner: env["WIDAL_FACTORY_OWNER"]!, registryOrigin: env["WIDAL_REGISTRY_ORIGIN"]!, origin: env["WIDAL_FACTORY_ORIGIN"]!, loadBalancer: env["WIDAL_ALB_ARN"]!, issuer: env["WIDAL_OIDC_ISSUER"]!, clientId: env["WIDAL_OIDC_CLIENT_ID"]!, hubOrigin: env["WIDAL_HUB_ORIGIN"]!, trustedProxyCidrs: env["WIDAL_ALB_SUBNETS"]!.split(",").map((cidr) => cidr.trim()) });
 }
