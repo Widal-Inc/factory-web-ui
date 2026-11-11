@@ -107,6 +107,18 @@ describe("OpenCode's menu", () => {
     expect(commands.filter((row) => row.name.startsWith("lattice/")).length).toBeLessThanOrEqual(MAX_COMMAND_FILES);
   }, 20_000);
 
+  it("keeps sibling folder aliases as distinct command names with one file identity", () => {
+    const { root, home, config } = fixture();
+    const shared = join(root, "shared-commands");
+    put(join(shared, "nested", "check.md"), "---\ndescription: Check\n---\nRun checks");
+    mkdirSync(join(config, "commands"), { recursive: true });
+    for (const alias of ["first", "second"]) symlinkSync(shared, join(config, "commands", alias), "dir");
+    const commands = paneCommands("opencode", null, home).filter((row) => row.source === "user");
+    expect(commands.map((row) => row.name).sort()).toEqual(["first/nested/check", "second/nested/check"]);
+    expect(new Set(commands.map((row) => row.id)).size).toBe(1);
+    expect(commands.every((row) => row.description === "Check")).toBe(true);
+  });
+
   it("rejects invalid metadata without falling back to directory names", () => {
     const { home, config } = fixture();
     for (const [directory, name, desc] of [
