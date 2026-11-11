@@ -325,13 +325,9 @@ export async function herdrRpc(
       const onData = makeLineReader(limit, handleLine, (bytes) => invalid(`over the ${limit}-byte line limit`, bytes));
       const connectFailed = (err: Error) => finish(() =>
         reject(new HerdrError("connect_failed", `cannot reach herdr at ${socketPath}: ${err.message}`)));
-      let writing = false;
-      const writeRequest = async () => {
-        if (writing || settled || socket === null || request !== null && written === request.length) return;
-        writing = true;
+      const writeAuthorizedRequest = () => {
+        if (settled || socket === null || request !== null && written === request.length) return;
         try {
-          if (factoryAuthority) await factoryAuthority();
-          if (settled) return;
           // The sender's authority is asked before every write. Before the first byte a revoked
           // sender cancels. Once a frame has started it is never changed or replayed; if authority
           // lapses mid-frame the connection ends with the frame cut short, which herdr cannot act
@@ -354,8 +350,18 @@ export async function herdrRpc(
         } catch (error) {
           // A connected failure must not be mistaken for proof that no request was sent:
           // prompt answers treat connect_failed as permission to retry the same asking.
-          finish(() => reject(new HerdrError(written === 0 && factoryAuthority ? "cancelled" : "socket_error", factoryAuthority ? "Factory access refused" : (error as Error)?.message ?? "herdr socket error")));
-        } finally { writing = false; }
+          finish(() => reject(new HerdrError("socket_error", (error as Error)?.message ?? "herdr socket error")));
+        }
+      };
+      let checking = false;
+      const writeRequest = () => {
+        // Keep Bun's unbuffered drain path synchronous for standalone servers, as before this gate.
+        if (!factoryAuthority) { writeAuthorizedRequest(); return; }
+        if (checking || settled || socket === null || request !== null && written === request.length) return;
+        checking = true;
+        void factoryAuthority().then(writeAuthorizedRequest, () => {
+          finish(() => reject(new HerdrError(written === 0 ? "cancelled" : "socket_error", "Factory access refused")));
+        }).finally(() => { checking = false; });
       };
 
       Bun.connect({
