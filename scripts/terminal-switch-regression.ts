@@ -77,6 +77,7 @@ try {
         await paneSendText(panes[1]!, `printf '${hidden}\\n'\n`);
         await select(panes[1]!);
         await frame(panes[1]!).locator(shownRows(), { hasText: hidden }).waitFor({ state: "attached" });
+        await select(panes[0]!);
         for (const id of panes.slice(2)) await select(id);
         await frame(panes[1]!).waitFor({ state: "detached" });
         assert.equal(await page.locator("[data-layout-pane]").count(), 4, "mirrors keep the four-tab bound");
