@@ -906,7 +906,10 @@ try {
     const browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
     try {
       const only = process.env["SIDEBAR_FILTER_CASE"];
+      const onlyScene = process.env["SIDEBAR_FILTER_SCENE"];
+      if (onlyScene && !["desktop-dark", "desktop-light", "phone-dark", "phone-light"].includes(onlyScene)) throw new Error(`Unknown sidebar scene: ${onlyScene}`);
       if (!only || only === "en") for (const phone of [false, true]) for (const theme of ["dark", "light"] as const) {
+        if (onlyScene && onlyScene !== `${phone ? "phone" : "desktop"}-${theme}`) continue;
         const scene: Scene = { phone, theme, language: "en" };
         await happyPath(browser, scene);
         await selectedNonMatch(browser, scene);

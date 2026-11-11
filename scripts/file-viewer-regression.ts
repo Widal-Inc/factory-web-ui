@@ -5,7 +5,7 @@ import { Database } from "bun:sqlite";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chromium, type Locator, type Page } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright-core";
 import { createServer } from "../server/index.ts";
 import { forgetPageMedia, PAGE_MEDIA_LIFETIME_MS, pageFileHooks, pageMediaResponse } from "../server/file-view.ts";
 import { herdrRpc, workspaceClose, workspaceCreate } from "../server/herdr/client.ts";
@@ -47,6 +47,22 @@ const activateInTranscript = async (page: Page, link: Locator): Promise<void> =>
 };
 
 const root = mkdtempSync(join(tmpdir(), "ovis-file-back-"));
+const evidence = process.env["CHECK_BROWSER_EVIDENCE_DIR"];
+const previewContexts: BrowserContext[] = [];
+const previewResponses: Array<{ url: string; status: number }> = [];
+async function previewContext(browser: Browser, options?: Parameters<Browser["newContext"]>[0]): Promise<BrowserContext> {
+  const context = await browser.newContext(options);
+  if (evidence) {
+    previewContexts.push(context);
+    // These pages contain only this script's synthetic transcript and files.
+    await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
+    context.on("response", (response) => {
+      if (previewResponses.length >= 100) previewResponses.shift();
+      previewResponses.push({ url: response.url(), status: response.status() });
+    });
+  }
+  return context;
+}
 const reportServer = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(
   '<!doctype html><h1>Same-host report</h1><a href="#details">Report details</a><section id="details">Details</section>',
   { headers: { "content-type": "text/html; charset=utf-8" } },
@@ -208,7 +224,7 @@ try {
   server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), codexHome, sshCandidates: { sshDir: join(root, "no-ssh"), readStatus: async () => null } });
   const origin = `http://127.0.0.1:${server.port}`;
   browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const context = await previewContext(browser, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const page = await context.newPage();
   // seeded once: a later step changes a setting and reloads. The chat's own font size and
   // family are set, so a Markdown preview can be shown to take them over. Long tasks are recorded
@@ -1334,7 +1350,7 @@ try {
   // the same document, while raw/download keep their byte-for-byte API contract.
   for (const width of [390, 1440]) {
     for (const theme of ["dark", "light"]) {
-      const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
+      const context = await previewContext(browser, { viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
       await context.addInitScript((theme) => localStorage.setItem("ovis:settings", JSON.stringify({ language: "en", theme })), theme);
       const page = await context.newPage();
       page.setDefaultTimeout(10_000);
@@ -1423,7 +1439,7 @@ try {
   // Since the body is then the one scroll box, it opens with the focus, so the keys scroll it
   // before any click; and the bound is the screen's only, so printing it prints every page.
   for (const width of [1280, 601, 600, 390]) {
-    const readerContext = await browser.newContext({ viewport: { width, height: 800 } });
+    const readerContext = await previewContext(browser, { viewport: { width, height: 800 } });
     try {
       const readerPage = await readerContext.newPage();
       await readerPage.goto(`${origin}/?read=${encodeURIComponent(join(root, "long.md"))}`);
@@ -1481,7 +1497,7 @@ try {
   assert.ok(local?.snapshot);
   const remote: Machine = { ...local, id: "remote-fixture", name: "Remote fixture", snapshot: { ...local.snapshot, panes: [], workspaces: [], tabs: [], layouts: [], agents: [] } };
   for (const target of ["remote-fixture", "local", "missing-fixture"]) {
-    const ownerContext = await browser.newContext();
+    const ownerContext = await previewContext(browser);
     const fileRequests: string[] = [];
     await ownerContext.addInitScript(({ stored, pane }) => {
       localStorage.setItem("ovis:settings", JSON.stringify({ language: "en" }));
@@ -2036,6 +2052,22 @@ try {
   }
   assert.deepEqual(reportErrors, []);
   console.log("PASS App mobile chat report link opens in-app; Close skips frame history and Back returns to the conversation");
+} catch (error) {
+  if (evidence) {
+    mkdirSync(evidence, { recursive: true });
+    writeFileSync(join(evidence, "file-viewer-responses.json"), JSON.stringify(previewResponses, null, 2));
+    for (const [index, context] of previewContexts.entries()) {
+      try {
+        for (const [pageIndex, page] of context.pages().entries()) {
+          const html = await page.content();
+          writeFileSync(join(evidence, `file-viewer-${index}-${pageIndex}.html`), html.slice(0, 150_000));
+          await page.screenshot({ path: join(evidence, `file-viewer-${index}-${pageIndex}.png`), timeout: 5_000 });
+        }
+        await context.tracing.stop({ path: join(evidence, `file-viewer-${index}.zip`) });
+      } catch (captureError) { console.error("File viewer evidence:", captureError); }
+    }
+  }
+  throw error;
 } finally {
   await browser?.close();
   reportServer.stop(true);

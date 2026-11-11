@@ -872,6 +872,8 @@ try {
   try {
     const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? chromium.executablePath(), headless: true, args: ["--no-sandbox"] });
     try {
+      // Resume the search and following matrices after a completed page/theme prefix.
+      if (process.env["SETTINGS_FOCUSED"] !== "search") {
       for (const [width, language] of [[390, "en"], [320, "en"], [320, "ko"], [320, "ja"], [320, "zh"]] as const) {
         const started = performance.now();
         const strings: Record<string, string> = language === "ko" ? KO : language === "ja" ? JA : language === "zh" ? ZH : {};
@@ -1455,6 +1457,7 @@ try {
       }
 
       await lateCloseStep(browser, url);
+      }
       await settingsSearch(browser, url);
       await dialogSearch(browser, url);
       await foldedGroups(browser, url);

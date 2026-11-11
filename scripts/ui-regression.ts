@@ -1478,6 +1478,12 @@ try {
   assert.deepEqual(limitedUploads, Array(6).fill(paneB), "every picked file is uploaded");
   assert.equal(await page.getByRole("alert").filter({ hasText: /the first \d+ of \d+ files/ }).count(), 0, "nothing was left out");
   limitedUploads.length = 0;
+  const uploadResponses: Array<{ status: number; elapsedMs: number }> = [];
+  const uploadStarted = performance.now();
+  const onUploadResponse = (response: import("playwright-core").Response): void => {
+    if (new URL(response.url()).pathname === "/api/pane/image") uploadResponses.push({ status: response.status(), elapsedMs: Math.round(performance.now() - uploadStarted) });
+  };
+  page.on("response", onUploadResponse);
   // the first file is over the size limit: its error and the count left out both stay in the note
   // Paths let Chromium pick the real files. A buffer sends 32 MB through Playwright's injected
   // base64 decoder on the page before the app can reject it by size, timing out on a busy runner.
@@ -1490,7 +1496,14 @@ try {
     return path;
   });
   await page.locator('input[type="file"]').setInputFiles([hugeFile, ...manyFiles]);
-  await until(async () => (await ready.count()) === readyBefore + 6 + 99, "the files within both limits uploaded");
+  try {
+    await until(async () => (await ready.count()) === readyBefore + 6 + 99, "the files within both limits uploaded");
+  } catch (error) {
+    console.error("UPLOAD_COMPLETION_EVIDENCE", JSON.stringify({ started: limitedUploads.length, responses: uploadResponses, ready: await ready.count(), expected: readyBefore + 6 + 99,
+      attachments: await page.locator(".composer-attachment").evaluateAll((tiles) => tiles.map((tile) => ({ state: tile.className, text: tile.textContent }))),
+      composerLength: (await composer.inputValue()).length }));
+    throw error;
+  } finally { page.off("response", onUploadResponse); }
   const note = page.getByRole("alert").filter({ hasText: "Too large to attach: huge.bin" });
   await note.waitFor();
   assert.match(await note.innerText(), /the first 100 of 101 files were taken/);
