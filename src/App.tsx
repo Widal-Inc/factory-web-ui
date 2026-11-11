@@ -281,7 +281,7 @@ export function App() {
   const setupGuide = useSetupGuide({
     enabled: locked === false,
     workspaces: machineRosterLoaded && localSnapshot !== null ? localSnapshot.workspaces.length : null,
-   
+
   });
   const guideShown = setupGuide.guide !== null && !setupGuide.paused;
 
@@ -1180,7 +1180,7 @@ export function App() {
         onDraft={setNewFields}
         onClose={closeNewSession}
         onOpenPane={(paneId) => { closeNewSession(); selectTarget(newSessionMachineId, paneId, "terminal"); void load(); }}
-       
+
         groupKept={(groupOf) => liveGroupKeys(groupOf, machines, hiddenMachines)}
         onCreated={(paneId, agentStarted, messageWaits = false) => {
           closeNewSession();

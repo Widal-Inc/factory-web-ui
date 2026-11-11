@@ -60,4 +60,3 @@ it("tells the runtime facts to the bridge token in the bridge's own health answe
   const health = await (await fetch(`${base}/api/health?scope=bridge`, { headers: bridge })).json() as { herdr_runtime?: HerdrRuntimeFacts };
   expect(health.herdr_runtime).toEqual(facts);
 });
-
