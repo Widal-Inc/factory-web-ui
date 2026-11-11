@@ -1,126 +1,55 @@
-<p align="center">
-  <img src="public/icons/icon-192.png" alt="Ovis" width="100">
-</p>
+# Widal Factory
 
-<h1 align="center">Ovis</h1>
+ソフトウェアファクトリーを管理する Web アプリ。[Widal-Inc/factory-web-ui](https://github.com/Widal-Inc/factory-web-ui) で開発しています。
 
-<p align="center">
-  <strong>コーディングエージェントを、デスクトップ、スマートフォン、ブラウザーで。</strong>
-</p>
+[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-666666?labelColor=333333" alt="MIT license"></a>
-  <a href="https://github.com/devswha/ovis/releases/latest"><img src="https://img.shields.io/github/v/release/devswha/ovis?label=release&labelColor=333333&color=666666" alt="Latest release"></a>
-  <a href="https://github.com/devswha/ovis/stargazers"><img src="https://img.shields.io/github/stars/devswha/ovis?labelColor=333333&color=666666&logo=github" alt="GitHub stars"></a>
-  <a href="https://github.com/herdrdev/herdr"><img src="https://img.shields.io/badge/herdr-0.9.0%2B-666666?labelColor=333333" alt="herdr 0.9.0+"></a>
-</p>
+現在は React のブラウザークライアントと Bun のブリッジを提供し、herdr のワークスペース、エージェントの会話、確認カード、ファイル、ターミナルを扱います。ターミナルとエージェントの状態は herdr が管理します。Factory 専用ページ、共通サインイン、Setup は統合待ちです。このリポジトリだけで完成済みのホスト型サービスにはなりません。
 
-<p align="center">
-  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <strong>日本語</strong> · <a href="README.ko.md">한국어</a>
-  <br>
-  <a href="https://ovis.sh/">公式サイト</a> ·
-  <a href="#install">インストール</a> ·
-  <a href="https://ovis.sh/demo/">デモを試す</a> ·
-  <a href="docs/guide.md#quick-start">クイックスタート</a> ·
-  <a href="docs/guide.md#faq">よくある質問</a> ·
-  <a href="#docs">ドキュメント</a>
-</p>
+## ソースから実行
 
-自分のコンピューターのコーディングエージェントと、デスクトップアプリ、スマートフォン、どのブラウザーからでもチャットし、確認にはタップで答えます。[herdr](https://github.com/herdrdev/herdr) と [Herdr デスクトップアプリのターミナル](docs/guide.md#herdr-app-terminals) のクライアントです。
-
-<p align="center">
-  <a href="https://ovis.sh/demo/"><img src="docs/media/readme/hero.webp" alt="デモで収録した Ovis の画面：デスクトップのブラウザーで Claude Code に続きのメッセージを送るとターンが一歩ずつ進み、次にデスクトップとスマートフォンが並び、git push origin feat/export-guard を確認する Codex の Allow command? カードでスマートフォンから Yes をタップすると両方の画面でカードが閉じ、最後に release タブをクリックするとシェルのペインが git log と bun test を実行する本物のターミナルとして開きます。"></a>
-  <br>
-  <sub>ブラウザーで動く<a href="https://ovis.sh/demo/">デモ</a>で収録しました。</sub>
-</p>
-
-<a id="install"></a>
-
-## インストール
-
-**コンピューターに**
-
-- **Mac:** [Apple シリコン版](https://ovis.sh/Ovis-mac-arm64.dmg) または [Intel 版](https://ovis.sh/Ovis-mac-x64.dmg) のデスクトップアプリを **アプリケーション** にドラッグします。
-- **Windows:** デスクトップアプリ [Ovis-win-x64.exe](https://ovis.sh/Ovis-win-x64.exe) を実行します。「Windows によって PC が保護されました」と表示されたら、**詳細情報** → **実行** を選んでください。
-- **Linux:** Debian・Ubuntu はデスクトップアプリの [x64](https://ovis.sh/Ovis-linux-x64.deb) か [arm64](https://ovis.sh/Ovis-linux-arm64.deb)（`sudo apt install ./Ovis-linux-*.deb`）、それ以外は AppImage の [x64](https://ovis.sh/Ovis-linux-x64.AppImage) か [arm64](https://ovis.sh/Ovis-linux-arm64.AppImage)（`chmod +x Ovis-linux-*.AppImage`）。
-
-デスクトップアプリはほかに何も要らず、独自のターミナルを使います。herdr のセッションを使うには、Linux か macOS で：
+Git、Bun 1.4 以降（CI は 1.4.2）、起動済みの herdr 0.9.0 以降が必要です。Linux/macOS のターミナル接続には Rust PTY ホスト、または代替の Node 18 以降を使います。どちらもなければ画面をミラーリングします。Windows はミラー表示です。[セットアップ](INSTALL.md)を参照してください。
 
 ```bash
-curl -fsSL https://ovis.sh/install.sh | sh
+git clone https://github.com/Widal-Inc/factory-web-ui.git
+cd factory-web-ui
+bun install --frozen-lockfile
 ```
 
-Windows では PowerShell で：
-
-```powershell
-irm https://ovis.sh/install.ps1 | iex
-```
-
-ほかの方法と手順：[INSTALL.md](INSTALL.md)。
-
-**スマートフォンに**
-
-- **iPhone:** TestFlight のベータ版、[ovis.sh/ja/beta](https://ovis.sh/ja/beta/) から。
-- **Android:** Google Play のベータ版、[ovis.sh/ja/beta](https://ovis.sh/ja/beta/) から。
-- **ブラウザー:** アプリなしで、ページをホーム画面に追加します。
-
-スマートフォンをつなぐには、**Settings → Phone & devices** でエンドツーエンド暗号化の **Ovis リレー**をオンにし、QR コードを読み取ります。[仕組み →](docs/guide.md#through-the-ovis-relay)
-
-## できること
-
-- **エージェントをチャットで。** Claude Code、Codex、OpenCode など。[対応エージェント →](docs/guide.md#supported-agents)
-- **確認や質問はカードで。** タップで答えます。
-- **プッシュ通知。** アプリを閉じていても届きます。
-- **本物のターミナルをワンクリックで。** スマートフォンにはキーバー付き。
-- **すべてのワークスペースをひとつのリストに。** SSH でつないだ別の PC も。
-
-[すべての機能 →](docs/guide.md#features)
-
-**制約：** 自分のコンピューターが動いていて、届く必要があります（Ovis リレー、Tailscale、VPN、SSH トンネル）。Herdr デスクトップアプリのターミナルは Linux と macOS のみ対応です。
-
-**プライバシー：** セッションは自分のコンピューターに残り、アカウントはありません。任意のリレーは内容を読めません（[信頼モデル](docs/relay.md#trust-model)）。匿名の使用状況の集計はデフォルトで有効で、**Settings → About** か `OVIS_TELEMETRY=0` でオフにできます（[送信される内容](docs/guide.md#anonymous-usage-counts)）。
-
-<a id="docs"></a>
-
-## ドキュメント
-
-- **[ユーザーガイド](docs/guide.md)：** [クイックスタート](docs/guide.md#quick-start) · [対応エージェント](docs/guide.md#supported-agents) · [機能](docs/guide.md#features) · [スマートフォン](docs/guide.md#on-your-phone) · [リモート PC](docs/remote-pcs.md) · [アクセスと安全性](docs/guide.md#access-and-safety) · [設定](docs/guide.md#configuration) · [キーボードショートカット](docs/guide.md#keyboard-shortcuts)
-- **[よくある質問](docs/guide.md#faq)：** herdr 自身の TUI、Tailscale、コンピューターの外に出るもの、collie・Happy・Paseo などとの違い。
-- **[INSTALL.md](INSTALL.md)：** すべてのインストール方法の手順と、うまくいかないときの対処。
-- **[デモ](https://ovis.sh/demo/)：** 架空のセッションで動く本物のアプリを、ブラウザーで。
-- **[変更履歴](CHANGELOG.md)**
-
-<a id="thanks"></a>
-
-## 謝辞
-
-[herdr](https://github.com/herdrdev/herdr) を基盤とし、[chatmux](https://github.com/devswha/chatmux) から着想を得て、[xterm.js](https://xtermjs.org)、[React](https://react.dev)、[Bun](https://bun.sh)、[Lucide](https://lucide.dev) を使用しています。
-
-[@Yoonwoo-Ha](https://github.com/Yoonwoo-Ha) をはじめ、貢献してくださったすべての方に感謝します。アイコンとウェブサイトのデザインを手伝ってくださった [@sanguneo](https://github.com/sanguneo) にも感謝します。
-
-<a id="agent-instructions"></a>
-
-## エージェント向けの手順
-
-アプリのインストールを支援する場合は、[INSTALL.md](INSTALL.md) に従ってください。リポジトリを変更する場合は、[CONTRIBUTING.md](CONTRIBUTING.md)、[レビュールール](.github/REVIEW.md)、[AGENTS.md](AGENTS.md) に従ってください。
-
-<a id="development"></a>
-
-## 開発
+1 つ目のターミナルで、継承した上流テレメトリーを無効にして実行します。
 
 ```bash
-git clone https://github.com/devswha/ovis.git
-cd ovis
-bun install
-
-bun run server      # API + WebSocket on :7317
-bun run dev         # Vite on :5173; run in a second terminal
+OVIS_TELEMETRY=0 OVIS_RUNTIME=herdr HOST=127.0.0.1 bun run server
 ```
 
-変更の送り方は [CONTRIBUTING.md](CONTRIBUTING.md)、テスト、メディア素材、リリースについては[開発ドキュメント](docs/development.md)、UI の規約については [DESIGN.md](DESIGN.md) を参照してください。セキュリティの問題は [SECURITY.md](SECURITY.md) の手順で非公開で報告してください。
+別のターミナルで実行します。
 
-<a id="license"></a>
+```bash
+bun run dev
+```
 
-## ライセンス
+`http://localhost:5173` を開きます。Vite は API と WebSocket をポート 7317 に転送します。QA では専用の herdr テストセッションを使ってください。ビルド済みクライアントを使う場合は `bun run build` の後に同じサーバーコマンドを実行し、`http://127.0.0.1:7317` を開きます。PowerShell の環境変数の設定方法は [INSTALL.md](INSTALL.md) にあります。
 
-[MIT](LICENSE)。Copyright © 2026 devswha.
+## 現在の範囲
+
+対応エージェントの会話を読み、確認カードに回答し、ターミナルや選択中の PC のファイル・変更を確認できます。切断後も未送信の下書きは残り、送信には明示的な操作が必要です。[リモート PC](docs/remote-pcs.md) のランタイム配布は別途統合が必要です。
+
+UI、アイコン、インストーラー、サービスコードは移行途中です。Widal 用のインストール URL、公開デモ、ネイティブ版ダウンロード、リリース経路はここでは提供していません。上流のインストーラー、アカウント、リレー、ペアリング、更新機能をこのフォークの導入に使わないでください。[配布状況](docs/app-updates.md)を参照してください。
+
+実行例は `OVIS_TELEMETRY=0` で上流テレメトリーを無効にします。この文書は実装を削除せず、Widal の送信先も追加しません。「アカウント不要」「PC 外には何も送られない」「共通サインインが実装済み」とは解釈しないでください。[アクセスとデータ](docs/guide.md#access-and-safety)を確認してください。
+
+## ドキュメントと貢献
+
+- [ユーザーガイド](docs/guide.md)、[開発とチェック](docs/development.md)、[貢献方法](CONTRIBUTING.md)、[エージェント向け指示](AGENTS.md)
+- [フォークの文書監査と互換性名](docs/fork-status.md)、[デザイン](DESIGN.md)、[過去の変更履歴](CHANGELOG.md)
+- [バグ報告](https://github.com/Widal-Inc/factory-web-ui/issues)、[非公開のセキュリティ報告](SECURITY.md)
+
+## 上流への謝辞
+
+Widal Factory は [Ovis](https://github.com/devswha/ovis) のフォークです。上流の著作権、法的表示、作者の記録を保持します。既存のアートワークは継承したもので、この文書は新しい Widal ロゴを提供しません。
+
+Built on [herdr](https://github.com/herdrdev/herdr), with inspiration from [chatmux](https://github.com/devswha/chatmux), and powered by [xterm.js](https://xtermjs.org), [React](https://react.dev), [Bun](https://bun.sh) and [Lucide](https://lucide.dev).
+
+Thanks to everyone who has contributed, including [@Yoonwoo-Ha](https://github.com/Yoonwoo-Ha), and to [@sanguneo](https://github.com/sanguneo), who helped design the icon and the website.
+
+[MIT](LICENSE). Copyright © 2026 devswha. [Third-party notices](THIRD_PARTY_NOTICES.md).

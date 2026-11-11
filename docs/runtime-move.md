@@ -1,8 +1,10 @@
 # Moving herdr's session to herdr-core
 
-Settings > About offers "Move everything to herdr-core" on a PC whose Ovis serves herdr's TUI, has
-herdr-core, can switch its runtime (Linux and macOS, started by Ovis's launcher) and has no Herdr app
-installed (the app arranges a core in a document Ovis never writes). It moves all of herdr's session
+Implementation reference for Widal Factory's inherited runtime migration. This is not a setup prerequisite; the supported source workflow is in [INSTALL.md](../INSTALL.md). Managed-launcher and remote update/distribution integration remain pending. Quoted legacy error messages below describe existing code, not a Widal release path.
+
+Settings > About offers "Move everything to herdr-core" on a PC whose Widal Factory serves herdr's TUI, has
+herdr-core, can switch its runtime (Linux and macOS, started by Widal Factory's launcher) and has no Herdr app
+installed (the app arranges a core in a document Widal Factory never writes). It moves all of herdr's session
 or nothing.
 
 On such a PC without herdr-core (Linux and macOS, x64 and arm64), the row reads "Install herdr-core
@@ -20,8 +22,8 @@ touched. Once it is in, the move's plan opens as usual; nothing moves until "Mov
 |---|---|
 | Workspaces, tabs, their order and names | the same, as `herdr.space` / `herdr.tab` / `ovis.*` labels and the `ovis-layout` document ([herdr-core-layout.md](herdr-core-layout.md)) |
 | Splits and their ratios | the same tree, rebuilt from herdr's `split_<n>_<path>` ids |
-| An idle Claude Code whose input box reads empty, its conversation in this PC's stores | ended by Ovis, reopened on that conversation (the commands Earlier sessions uses) |
-| An idle Claude Code whose conversation cannot be told | ended by Ovis, started new in the same folder |
+| An idle Claude Code whose input box reads empty, its conversation in this PC's stores | ended by Widal Factory, reopened on that conversation (the commands Earlier sessions uses) |
+| An idle Claude Code whose conversation cannot be told | ended by Widal Factory, started new in the same folder |
 | An agent the person ended (the pane still names its conversation) | reopened on that conversation; nothing is typed |
 | A shell with nothing running in front | a new shell in the same folder |
 
@@ -30,10 +32,10 @@ One conversation reopens in one pane only.
 
 ## What makes it wait
 
-An agent at work, waiting for an answer, or with a message Ovis still holds for it; a shell whose
+An agent at work, waiting for an answer, or with a message Widal Factory still holds for it; a shell whose
 foreground process is not the shell (or whose processes herdr cannot tell): the move waits and goes
 by itself once none is left, until it is cancelled. Any other agent, one with text typed in its
-input line, or one Ovis has no exit command for, waits for the person to end it: Ovis cannot read
+input line, or one Widal Factory has no exit command for, waits for the person to end it: Widal Factory cannot read
 those input lines, and its exit command, sent as a message, would send what is typed there. Once
 the person ends it, its conversation reopens on herdr-core.
 
@@ -46,18 +48,18 @@ While it waits, the dialog lets the person end a shell's command where they woul
 - Force end is offered only when Ctrl+C was sent at least 3 s earlier and that same group still
   runs; it sends SIGTERM to the pane's foreground process group (the group herdr names in
   `pane.process_info`), never to a process found by name. The group is the job the shell runs, so
-  everything in it ends. A pane running this Ovis server, its process group or its launcher is
+  everything in it ends. A pane running this Widal Factory server, its process group or its launcher is
   refused. This relies on herdr and the server sharing one PC's process ids, as the move does.
 - End all and move now asks the server for the running commands it would end
   (`POST /api/runtime/move/stop-all` with `{}`), shows "Ends N running commands. Unsaved work may be
   lost." for that list, and sends its token on confirm. The server ends nothing when the list (panes,
   commands, process groups) is no longer the one it offered; the person is asked again. A token is
   used once and belongs to one wait.
-- Nothing is sent or signalled when Ovis cannot tell its own process group (Linux reads
+- Nothing is sent or signalled when Widal Factory cannot tell its own process group (Linux reads
   `/proc/self/stat`, macOS asks `ps`), and a cancel that arrives while herdr answers the last look
   sends nothing: herdr checks the wait again right before it writes Ctrl+C.
 - Force end signals only when this PC itself reports that group in front of the shell's terminal
-  (`/proc/<shell>/stat` tpgid, or `ps -o tpgid=` on macOS); otherwise (`not_local`, e.g. Ovis and
+  (`/proc/<shell>/stat` tpgid, or `ps -o tpgid=` on macOS); otherwise (`not_local`, e.g. Widal Factory and
   herdr in different pid namespaces) nothing is signalled. It is still not atomic: a process group
   has no pidfd, so between that last look and the kill the group could end and its id be reused.
 - The command a row or End all's confirm showed is compared with the name from the same look as the
@@ -70,7 +72,7 @@ A pane that does not end keeps the move waiting, as before.
 
 ## How it runs
 
-1. Each agent Ovis ends is sent its own exit command (`/exit`, through herdr's agent.prompt) only
+1. Each agent Widal Factory ends is sent its own exit command (`/exit`, through herdr's agent.prompt) only
    while herdr still says it is idle and its input box reads empty, and must be gone within 10 s. If it takes work instead, nothing
    more is typed into it and the move rolls back.
 2. Everything is built on herdr-core through an adapter of the move's own, on a socket in the state
@@ -89,7 +91,7 @@ run on herdr-core); end those on herdr-core first, then reopen them in herdr fro
 
 ## One move at a time
 
-Two Ovis servers can serve one herdr session: the PC's own and a connection server's bridge, say. Only one
+Two Widal Factory servers can serve one herdr session: the PC's own and a connection server's bridge, say. Only one
 moves it at a time. Before a move waits or starts, its server listens on a unix socket,
 `runtime-move.sock`, in the real folder of that session's socket (a symlinked folder, such as a dotfiles
 `~/.config`, is resolved, never refused). The kernel lets one process bind it while that process listens,
@@ -154,10 +156,10 @@ SSH or relay PC: `{ serving, offered, reason, status }`, read from that PC's own
 roster (a watching device's too) may carry it: the state, a running move's step and count, and for a
 move that could not finish only how many agents it left. Its reasons name folders and agents' words,
 so they stay in the plan answer, which only a driving device reads. It is `null` when the PC cannot
-tell (an Ovis without the route, one that does not take this server's credential there, or one with no
+tell (an Widal Factory without the route, one that does not take this server's credential there, or one with no
 runtime to switch), and absent while it is not connected; a read that fails for a moment (herdr away, a
 timeout) keeps the badge it had.
 
-**An older Ovis**: a PC whose Ovis predates these routes (it answers 404 `not_found`, its answer to an
+**An older Widal Factory**: a PC whose Widal Factory predates these routes (it answers 404 `not_found`, its answer to an
 unknown route, or, over SSH, 401 or 403 to the bridge token; any other 404, a herdr error, is passed on
 as it came) is answered 409 `pc_update_required`, "Update Ovis on that PC first, then move it."

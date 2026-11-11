@@ -1,3 +1,9 @@
+# Historical upstream reference — not Widal deployment guidance
+
+The following document is retained for upstream implementation history and compatibility. Its Ovis names, endpoints, artifacts, deployment commands, store copy and prior test results do not describe supported Widal Factory services or releases. Do not execute its publishing/install instructions for this fork. Follow [current integration status](relay.md) and the repository's source setup instead. Legal notices and authorship remain unchanged.
+
+---
+
 # Relay mux flight and memory limits
 
 Ovis Mux v1 has two independent limits: DATA credit, returned when the consumer

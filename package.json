@@ -1,13 +1,13 @@
 {
-  "name": "ovis",
+  "name": "factory-web-ui",
   "private": true,
   "version": "0.5.1",
   "type": "module",
-  "description": "Ovis, the browser and phone client for herdr - live herdr workspaces, panes and agents in a web UI",
+  "description": "Widal Factory web app for managing software factories",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/devswha/ovis.git"
+    "url": "git+https://github.com/Widal-Inc/factory-web-ui.git"
   },
   "scripts": {
     "dev": "bun --bun vite",

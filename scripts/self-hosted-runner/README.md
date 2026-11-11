@@ -1,5 +1,7 @@
 # Self-hosted CI runner
 
+This describes the inherited runner implementation. It does not establish runner registrations, credentials or host capacity for Widal Factory. Coordinate this city's test allocations with the witness; do not operate the upstream maintainer's hosts or units.
+
 An ephemeral Docker GitHub Actions runner for this repository's Linux CI/CD jobs. Each container registers, runs exactly one job and exits; the launcher then starts a fresh one. The image includes Bun, Node 22, checksum-pinned herdr, Playwright Chromium and its system libraries, ffmpeg, git, `gh`, curl, jq, unzip and xz-utils, with no sudo. Jobs detect it with `RUNNER_ENVIRONMENT=self-hosted`.
 
 ## Prerequisites
@@ -197,7 +199,7 @@ runners is online, main's Linux jobs wait, so delete the variable when the P620 
 namespace: they take runners away from pull requests, not load, and main's herdr-backed jobs still
 share `check.ts`'s slots (`CHECK_HOST_MAX_RUNS`) with theirs, so they can wait there for one.
 
-On the maintainer PC the launcher runs as the systemd user unit `ovis-ci-runner.service`
+Historically, on the upstream maintainer PC the launcher ran as the systemd user unit `ovis-ci-runner.service`
 (`run.sh --repo devswha/ovis --count 4 --labels self-hosted-ovis` from a copy of this directory in
 `~/.local/share/ovis-ci-runner`): four slots let one CI run's four Linux jobs start together, and
 `check.ts`'s shared slots cap its herdr-backed lanes at `ci.yml`'s `CHECK_MAX_RUNS`. Copy the directory again and

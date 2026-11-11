@@ -1,5 +1,7 @@
 # Performance audit: v0.4.12 to main
 
+Historical upstream audit/test evidence, retained with its original issue links and attribution. These results are not validation of a Widal Factory release or completed sign-in/Setup. See [fork status](fork-status.md).
+
 ## Scope and verdict
 
 The original investigation and plan below describe the release comparison at `60d9345f`.

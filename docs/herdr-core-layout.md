@@ -1,12 +1,12 @@
-# Ovis's layout on herdr-core
+# Widal Factory's layout on herdr-core
 
 herdr-core (`hc`) has terminals, labels and documents, but no workspaces, tabs or splits. On a
-core no Herdr app arranges (its `herdr-app` document was never written, or was deleted), Ovis
+core no Herdr app arranges (its `herdr-app` document was never written, or was deleted), Widal Factory
 keeps them itself, in the two places below. Any hc client may read them; a client that writes
-them keeps to the rules here, so Ovis and it do not undo each other's changes.
+them keeps to the rules here, so Widal Factory and it do not undo each other's changes.
 
-Ovis never writes the Herdr app's `herdr-app` document. Where it exists, the app arranges the
-core and Ovis only reads it.
+Widal Factory never writes the Herdr app's `herdr-app` document. Where it exists, the app arranges the
+core and Widal Factory only reads it.
 
 ## Terminal labels
 
@@ -15,14 +15,14 @@ terminal (`hc label`, `terminal.label`; a label set to the empty string is remov
 
 | Label | Value | Set by |
 |---|---|---|
-| `herdr.space` | the workspace's id | Ovis, on every terminal it starts; the Herdr app groups by it too |
-| `herdr.tab` | the tab's id | Ovis, as above |
+| `herdr.space` | the workspace's id | Widal Factory, on every terminal it starts; the Herdr app groups by it too |
+| `herdr.tab` | the tab's id | Widal Factory, as above |
 | `herdr.seen`, `herdr.pinned` | as the Herdr app's `docs/labels.md` says | every Herdr client |
-| `ovis.workspace` | the workspace's name | Ovis, on each terminal of a renamed workspace |
-| `ovis.tab` | the tab's name | Ovis, on each terminal of a renamed tab |
-| `ovis.pane` | the pane's name (else the terminal's own `name`) | Ovis, on a renamed pane |
+| `ovis.workspace` | the workspace's name | Widal Factory, on each terminal of a renamed workspace |
+| `ovis.tab` | the tab's name | Widal Factory, on each terminal of a renamed tab |
+| `ovis.pane` | the pane's name (else the terminal's own `name`) | Widal Factory, on a renamed pane |
 
-`ovis.*` labels hold only small facts about one terminal. Nothing else Ovis keeps (approvals,
+`ovis.*` labels hold only small facts about one terminal. Nothing else Widal Factory keeps (approvals,
 prompt answers, conversations) is stored in hc.
 
 ## The `ovis-layout` document
@@ -51,7 +51,7 @@ document, `ovis-layout` (`hc doc get ovis-layout`, `doc.get` / `doc.set`):
   puts it on top; `ratio` is `first`'s share.
 - `zoomed` is the terminal address the tab shows alone, or `null`.
 
-Labels stay the truth for membership. Every time Ovis reads the core it reconciles the document
+Labels stay the truth for membership. Every time Widal Factory reads the core it reconciles the document
 with them: a leaf whose terminal is gone or labeled into another tab is dropped (its sibling takes
 the space), a terminal labeled into a tab the document does not place is added to that tab's
 right, and a workspace or tab the document does not list follows the ones it does, in hc's
@@ -65,7 +65,7 @@ terminals' sizes. A viewer then sizes each terminal to its pane.
 1. `doc.get ovis-layout`, and keep its `version`.
 2. Reconcile it with the labels as above, and make the change.
 3. `doc.set ovis-layout` with that `version`. On `conflict` someone wrote first: start again from
-   step 1 (Ovis does so once, then reports the conflict).
+   step 1 (Widal Factory does so once, then reports the conflict).
 
-A document whose `schema` is not one a client knows is neither read nor overwritten by it: Ovis
+A document whose `schema` is not one a client knows is neither read nor overwritten by it: Widal Factory
 then lays tabs out from the labels and refuses layout changes.

@@ -164,6 +164,8 @@ trips and pane changes on those keyboards before claiming universal IME compatib
 
 ## Upstream findings and limits (2026-10-03)
 
+The following dated native/platform results are upstream history, not Widal release validation. Original names, code paths and findings are preserved. See [native-app status](native-app.md).
+
 - [xterm #6089](https://github.com/xtermjs/xterm.js/issues/6089) and
   [PR #6090](https://github.com/xtermjs/xterm.js/pull/6090): rapid composition under renderer load;
   the proposed patch is unmerged. Stock 5.5.0 was independently reproduced dropping both syllables

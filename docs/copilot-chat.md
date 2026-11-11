@@ -9,7 +9,7 @@ This reader supports existing panes; it does not add Copilot to the launch picke
 ## Setup and session identity
 
 Run `herdr integration install copilot` in the effective Copilot home before starting a
-pane to enable Herdr's session report. Ovis never changes the CLI configuration.
+pane to enable Herdr's session report. Widal Factory never changes the CLI configuration.
 The reader uses the foreground process's `--config-dir`, then `COPILOT_HOME`, otherwise
 `HOME/.copilot`; an explicit `--log-dir` selects its log directory.
 
@@ -36,7 +36,7 @@ Resume the intended session in the CLI to establish fresh foreground evidence.
 When you start Copilot yourself with `--ui-server`, Chat follows the session that Copilot's
 local API names as its foreground session, through foreground switches. It reads that API only
 when the listener is bound to loopback and belongs to the pane's own process. It sends only
-`connect` and `session.getForeground`. Ovis never adds `--ui-server` to a launch.
+`connect` and `session.getForeground`. Widal Factory never adds `--ui-server` to a launch.
 
 That API has no authentication. With Copilot CLI 1.0.105, any program that can reach its
 loopback port can control the session, including creating new sessions, and setting

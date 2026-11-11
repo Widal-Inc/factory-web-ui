@@ -1,5 +1,7 @@
 # Foldable testing (Galaxy Z Fold8 / Fold8 Ultra)
 
+Historical upstream research and emulation results. Retained device estimates, access recipes and source links are not Widal Factory deployment guidance or release validation. Use [current source setup](../INSTALL.md) and [fork status](fork-status.md).
+
 Researched 2026-09-27, without a physical device. Covers the screens, what was checked in emulation, and how to test closer to the real thing. Anything marked *unverified* could not be confirmed for 2026.
 
 ## Screens

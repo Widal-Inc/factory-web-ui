@@ -1,3 +1,9 @@
+# Historical upstream reference — not Widal deployment guidance
+
+The following document is retained for upstream implementation history and compatibility. Its Ovis names, endpoints, artifacts, deployment commands, store copy and prior test results do not describe supported Widal Factory services or releases. Do not execute its publishing/install instructions for this fork. Follow [current integration status](../docs/app-updates.md) and the repository's source setup instead. Legal notices and authorship remain unchanged.
+
+---
+
 # Telemetry receiver
 
 The Cloudflare Worker that receives the app's anonymous install and update counts and its daily

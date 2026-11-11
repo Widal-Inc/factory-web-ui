@@ -1,18 +1,20 @@
-# Development
+# Widal Factory development
+
+Use the [source setup](../INSTALL.md). Shared sign-in, Setup, branding configuration and Widal distribution are pending integration. Inherited tests may exercise legacy services; that does not establish supported Widal onboarding or hosted services. See [fork status](fork-status.md).
 
 ## Run it
 
 Run the server and Vite side by side:
 
 ```bash
-bun install
-bun run server   # API + WebSocket on :7317
+bun install --frozen-lockfile
+OVIS_TELEMETRY=0 OVIS_RUNTIME=herdr HOST=127.0.0.1 bun run server   # API + WebSocket on :7317
 bun run dev      # Vite on :5173, proxies /api and /ws
 ```
 
-`bun run server` and `bun run dev` never update themselves; only `bun run start` and the plugin run the update supervisor.
+`bun run server` and `bun run dev` do not update themselves. Use them for the fork; avoid the inherited managed launcher until [distribution integration](app-updates.md) is ready.
 
-For a loopback-only server, `HOST=127.0.0.1 OVIS_IPV6_LOOPBACK=1 bun run server` also listens on
+For a loopback-only server, `OVIS_TELEMETRY=0 OVIS_RUNTIME=herdr HOST=127.0.0.1 OVIS_IPV6_LOOPBACK=1 bun run server` also listens on
 `::1` at the same port. Both listeners share the API and WebSocket services; `localhost`,
 `127.0.0.1` and `[::1]` keep their own URLs and browser storage. This option does not change a
 non-loopback bind and requires IPv6 loopback to be available.
@@ -115,7 +117,7 @@ pairings as `/api/machines/events`. The local connection is kept even while a re
 selected; remote terminal sockets do not subscribe to this document.
 
 Older servers still use SSE. Set `OVIS_MACHINE_EVENTS_WS=0` in the server environment and restart
-only Ovis to disable the capability and return new clients to SSE without changing stored data.
+only Widal Factory to disable the capability and return new clients to SSE without changing stored data.
 Removing that override and restarting restores the WebSocket transport. The SSE endpoint remains
 available to older clients and bridge/relay consumers. A reconnect negotiates the transport again;
 no terminal input is replayed by this subscription.
@@ -155,7 +157,7 @@ bun run check run --build bun scripts/ui-regression.ts                     # bui
 ```
 
 `fast` needs no herdr. The other modes run on a herdr of their own: its config, its plugin state
-and Ovis's state live in a directory made for the run (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
+and Widal Factory's state live in a directory made for the run (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
 `OVIS_STATE_DIR`), under a session name made for the run. Nothing reads your herdr config,
 so no plugin installed there starts with the test servers, and two runs on one PC share no
 socket and no file. The run stops its herdr servers and removes the directory when it ends, also
@@ -276,7 +278,7 @@ bun scripts/pane-input-focus-demo-regression.ts # the input focus shortcut again
 bun scripts/mirror-scroll-demo-regression.ts # fixed mirror wheel/touch, native history, no guessed program input, observe guards
 bun scripts/terminal-images-demo-regression.ts # Settings -> Pictures in the terminal: a picture is drawn, goes while off, and on again the next one is drawn only where it was printed
 bun scripts/core-history-scroll-demo-regression.ts # a herdr-core server's history kept in xterm: wheel and swipe scroll it, a replay erases the last one, nothing typed; herdr's own keeps none (#2663)
-bun scripts/codex-drag-demo-regression.ts         # a plain drag in a Codex pane stays Ovis's selection unless Settings' Codex panes is on; then it is Codex's, with a Shift+drag note on herdr (#2384)
+bun scripts/codex-drag-demo-regression.ts         # a plain drag in a Codex pane stays Widal Factory's selection unless Settings' Codex panes is on; then it is Codex's, with a Shift+drag note on herdr (#2384)
 bun scripts/terminal-ghostty-demo-regression.ts # libghostty draws every pane: a herdr-core pane from its first byte, a Kitty picture placed and deleted, typing still through xterm, herdr's own panes too; xterm draws an iTerm2 picture by itself
 bun scripts/mirror-fold-demo-regression.ts # a mirror, or an attached pane a phone watches at a wider grid, folded whole (portrait, landscape), Original width from the pane menu, driving phones and desktops unfolded
 bun scripts/shortcut-exact-modifiers-demo-regression.ts # recording exact-modifier chords: confirm, refusals, dispatch
@@ -679,272 +681,25 @@ in the historical table above. They were taken with a 2 s push-read bound; the b
 
 ## README media
 
-`bun run build && bun scripts/readme-media/capture.ts` regenerates the stills and demos in `docs/screenshots/` from a staged, fictional session in its own herdr session (`ovis-demo`). Pass `shots` or `video` to redo only one of them. It needs ffmpeg.
-
-- `stage.ts` builds the session from `site/demo/fixtures.ts`: two git repositories under `/tmp/herdr-demo`, each with two agent worktrees herdr adds, a release shell tab, curated chats served in place of transcripts, and the hostname rewritten.
-- `record.ts` records a walkthrough at 2x (Chrome's screencast, with `--force-device-scale-factor=2`), logging pointer moves, clicks, taps and camera cues as it drives the page.
-- `compose.ts` draws every output frame on a canvas: a backdrop, a browser window or a phone, the frame under an eased camera, and a vector cursor with click ripples or touch rings. It writes `demo-*.mp4` (1920×1200 and 1080×1920, 30 fps) and a GIF of each. Stills get the same window or phone on a transparent background.
-
-The MP4s are not committed: GitHub plays a README video only from an upload (`github.com/user-attachments/…`), so drop them into an issue or PR comment and use the link it gives.
-The README's feature grid shows a looping ~7-second cut of each feature video (`docs/media/readme/*.webp`, 800×450, 15 fps), each linking to its upload. Cut one with
-`ffmpeg -ss <start> -t <seconds> -i clip.mp4 -vf "fps=15,scale=800:450:force_original_aspect_ratio=increase:flags=lanczos,crop=800:450" -c:v libwebp_anim -loop 0 -quality 72 -compression_level 6 -an out.webp`;
-the scale and crop fill 800×450 from any source aspect. Start on a sharp frame, not mid camera move. The top video stays a GitHub upload so it plays at full quality.
-
-The user guide's gallery and the retained banner assets are rendered from the film's stills (below): `bun scripts/readme-media/banner.ts [banner] [look]`
-draws `banner.html` in headless Chrome into `docs/media/banner.png` (1920×800) and
-`docs/media/look-{chat,prompt,terminal}.png` (1760×1150), each quantized to 256 colours. `docs/media/chat-loop.gif`
-comes from `scripts/film/render.ts loop`.
-
-## The film
-
-The film (`site/media/ovis-film.mp4`, 56 s) and chat loop (`site/media/chat-loop.mp4`, with the README's
-`docs/media/chat-loop.gif`) are the real client on the demo's fixtures, recorded and composited by `scripts/film/`.
-Raw footage and renders go to `_film/` (gitignored); only the outputs under `docs/media/` are committed.
-herdrweb.dev no longer publishes `site/media/` (it forwards to ovis.sh), so the film and loop MP4s wait for a
-home on ovis.sh. Needs ffmpeg and Chrome at `/usr/bin/google-chrome` (`CHROME_PATH` otherwise).
-
-```bash
-bun run build:site                              # the demo the takes are recorded from
-bun scripts/film/capture.ts [stills] [rec] [stepped] [R10 R11 … | still names]   # _film/footage/
-bun scripts/readme-media/banner.ts              # banner, look-*.png from the stills
-bun scripts/film/render.ts film                 # site/media/ovis-film.{mp4,jpg}
-bun scripts/film/render.ts loop                 # site/media/chat-loop.{mp4,jpg}, docs/media/chat-loop.gif
-bun scripts/film/render.ts check                # acceptance frame grabs, sizes, loop seam
-```
-
-- `capture.ts` serves `_site/` under `/herdr-web-ui/` and records `demo/app/` (no demo banner) at 2x with `hand.ts`
-  (CDP screencast frames with paint times, plus a cue log of every pointer move, click and tap). Film-only staging lives
-  here as init scripts, never in `site/demo/`: fixture `mods` (`todo`, `real`, `stream`, `story`, `worked`) change what
-  the fixtures say, and `filmHold` holds the demo's own 4.5 s / 2.4 s timers so a turn stays running on camera.
-  `_film/footage/INDEX.md` lists every take, its mods and its marks.
-- `timeline.ts` is the film shot by shot as data (source ranges from each take's `marks.json`, camera, type);
-  `camera.ts` the easing and matrices; `stage.ts` the compositor page that draws one frame; `footage.ts` reads the takes.
-- `render.ts` renders frames in parallel Chromes and encodes once. `render.ts report` prints the shot table with the
-  maximum magnification (never above 1 source px per output px); `render.ts stills 8 13.6 …` grabs single frames.
-- After a re-capture, re-check what was placed by hand on the frames (the header of `render.ts` lists it), then
-  re-render.
+Inherited media and demo fixtures are historical assets, not screenshots or a public demo of completed Widal Factory flows. Generate QA media only from isolated fictional sessions. No new logo is supplied by the documentation correction; see [artwork provenance](brand/README.md).
 
 ## Website
 
-The project's website is <https://ovis.sh/>, served from `ovis-site/`. <https://herdrweb.dev/> (GitHub
-Pages, built from `site/`) keeps only what installed users and CI fetch from it: `install.sh`,
-`install.ps1` and the browser demo at `/demo/`. Its home page (`site/index.html`, and `site/zh/index.html`
-at `/zh/`) is a page whose canonical link, meta refresh and script forward to
-<https://ovis.sh/>; ovis.sh hands `/install.sh`, `/install.ps1` and `/demo/` back to herdrweb.dev
-(`ovis-site/_redirects`). `bun run build:site` assembles `_site/`: those pages, the Google site
-verification file, the installers, the favicons and the demo. It writes no sitemap.
-
-`.github/workflows/pages.yml` runs after CI completes
-on `main`, or on manual dispatches from `main`. A completed CI run only builds and deploys when it
-succeeded for a push from this repository; PR runs and forks cannot publish. It builds that CI run's
-head SHA without running validation again. Manual dispatches run reusable CI validation and the site
-build in parallel against the dispatch SHA, and deployment requires both to succeed.
-Deployments are serialized. Immediately before deploying,
-the workflow checks that the validated SHA is still the latest `main` commit; it fails closed if it is
-stale or that check cannot be completed. This does not change the separate Release workflow.
-The standalone `main` CI supplies that validation. Its push runs share one concurrency group: the
-running one finishes, and a newer push cancels the one still waiting, so a burst of merges runs
-main's checks at most twice and the newest run covers the merges in between. The Website workflow
-deploys only after a successful push run of main's newest commit; a cancelled run's Website run
-skips building. Re-running an older main run while a newer one waits cancels the newer one, and
-main's newest commit then waits for the next push or a manual Pages run.
-
-### The browser demo
-
-<https://herdrweb.dev/demo/> is the real client on a fictional session, no server.
-`build-site.ts` builds the client a second time with `vite build --base ./` into `_site/demo/app/`,
-bundles `site/demo/transport.ts` in front of it and frames it with `site/demo/index.html`. The
-transport answers the app's `fetch("/api/…")`, the machines event stream and the `/ws` terminal
-socket from `site/demo/fixtures/`: the chats and the Codex approval are the README's
-(`site/demo/fixtures.ts`, shared with `scripts/readme-media/stage.ts`), and `machines.json`,
-`agents.json`, `commands.json` and the shell pane's `terminal.json` are captured from that staged
-session by `bun scripts/demo-fixtures.ts` (needs herdr; it uses the `ovis-demo` session and
-scrubs the hostname and login). Recapture them after a herdr upgrade changes the snapshot shapes, or
-after changing the staged session. Files, images, push and remote PCs are not part of the demo.
+No public Widal demo, installer site or native download service is established in this repository. `site/` and `ovis-site/` contain inherited website/demo code; building them does not authorize deployment. Do not publish upstream redirects or store/download claims as Widal offerings.
 
 ## Releasing
 
-1. Open a release PR that bumps `version` in `package.json` and `herdr-plugin.toml`,
-   runs `bun scripts/changelog-fold.ts X.Y.Z [YYYY-MM-DD]` (it moves the `Unreleased` notes in
-   [CHANGELOG.md](../CHANGELOG.md) and the [changelog.d/](../changelog.d/README.md) fragments under
-   the new version, dated today in local time by default, links each fragment's PR and deletes the
-   fragments; then add the `by @login` credits; a fragment merged later must be moved into the
-   version by hand, since the release workflow refuses while one is left), and tells the release
-   in [release-summaries.json](../release-summaries.json) the way a game's patch notes do: under
-   the version, for each language in `SUMMARY_LANGUAGES` (`shared/update.ts`: `en`, `ko`, `ja` and `zh`), the lists `new`, `improved` and `fixed` (a list with nothing to say is left out), the same number of
-   lines in every language. From 0.5.0 the notes are short: at most five lines in a list, each one
-   plain sentence of at most 70 characters in English (about as short in the other languages),
-   naming the change most people will notice first. A change that does not make the cut stays in
-   the changelog section, so no line joins two changes to fit it in. It is what an install shows
-   before and after the update, with the changelog section folded under it, so a line names what
-   changes for the people who use the app and leaves out PR numbers and internals. The unit suite and the release workflow fail without every language.
-   The GitHub release is written from the same files by `scripts/release-notes.ts`: the
-   English lists under New features, Improvements and Bug fixes, then the version's whole
-   changelog section folded under **Full changelog**.
-   When the release guards (below) say so, the same PR raises `REMOTE_BUNDLE_VERSION` in
-   `shared/machines.ts`, and after deploying the telemetry Worker
-   ([telemetry/README.md](../telemetry/README.md#deploy)) commits `telemetry/deployed.json` written by
-   `bun scripts/release-guards.ts --worker-deployed`.
-2. Merge it after CI passes.
-3. If it raised `REMOTE_BUNDLE_VERSION` to N, push the tag `remote-vN` on the merged commit and wait
-   for the **Remote PC bundles** workflow to publish it ([remote PCs](remote-pcs.md)); the Release
-   run refuses until its manifest and archives can be downloaded, not only tagged. Merge nothing
-   that touches `server/`, `shared/`, `bun.lock` or `patches/` until the Release run is done: the
-   Release run would then ask for a follow-up PR that raises the number again and a new tag.
-4. Run **Actions → Release → Run workflow**, select `main`, and enter `X.Y.Z` without `v`.
-   The CLI equivalent is `gh workflow run release.yml --ref main -f version=X.Y.Z`.
+Widal packaging and release integration are pending. The inherited workflows, supervisor, native feeds and remote manifest fallback must be adapted and verified before any release is offered. Do not invoke their publish steps or push version tags to test them. See [distribution status](app-updates.md).
 
-The workflow validates metadata, then runs the same unit, integration and browser checks
-as PRs against the exact `main` commit selected when the run starts. Only after all checks
-pass does it create the tag and GitHub release. A failed validation creates neither. Beside the
-checks it builds the Rust PTY host (**Rust PTY host binaries**, `.github/workflows/pty-sidecar.yml`):
-static Linux x64 and arm64 binaries, a universal macOS one, `ovis-pty-sidecar.json` (the version,
-the `crates/pty-sidecar` git tree they were built from, and each file's SHA-256) and `SHA256SUMS`,
-all attached when the release is created, so no tag is seen without them. `bun
-scripts/pty-sidecar.ts install` (herdr's plugin build, each update installed from the app, and
-`install.sh`) puts the binary for its PC in `bin/ovis-pty-sidecar` only when the release's crate
-tree matches the checkout and the SHA-256 matches; otherwise that install runs the Node sidecar where
-the PC has Node, and mirrors its panes where it has none.
-A release without them gets them from **Actions → Attach the Rust PTY host** with its tag. Then it
-attaches the signed Ovis for Mac `Ovis.dmg` to the release, or skips that with a notice while the
-signing secrets are unset ([app/mac/README.md](../app/mac/README.md#releases)), and Ovis for Windows'
-`Ovis.exe` ([app/windows/README.md](../app/windows/README.md#releases)); the release becomes GitHub's
-latest only once it has both. A red `mac-dmg` or `windows-app` job leaves the release published: run
-**Actions → Mac app** or **Actions → Windows app** for its tag instead of releasing again.
+City workers push their own reviewed-work branch and hand the bead to the refinery. The refinery owns pull-request review and merge; no worker pushes to `main`. Record actual checks and skipped coverage in the handoff. Release publication needs its own authorized workflow.
 
-The **Desktop app** job (`.github/workflows/desktop.yml`) builds the desktop app
-([app/electron](../app/electron/README.md)) from the tag, each on its own OS and CPU, under names
-without the version, so `releases/latest/download/<name>` always gives the newest:
-`Ovis-linux-x64.deb`, `Ovis-linux-arm64.deb` (the download for Ubuntu and Debian),
-`Ovis-linux-x64.AppImage`, `Ovis-linux-arm64.AppImage`, `Ovis-mac-arm64.dmg`, `Ovis-mac-x64.dmg`, and
-`Ovis-mac-arm64.zip`, `Ovis-mac-x64.zip` (what a Mac app updates from), and `Ovis-win-x64.exe` (a
-per-user NSIS installer; signed only once the repository variable `DESKTOP_WIN_SIGN` is `true`, with
-the `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` secrets), with their `.blockmap` files.
-The AppImage carries the static AppImage runtime (electron-builder's `toolsets.appimage`), so it
-needs no libfuse2, only the fuse3 a desktop has; without FUSE at all it runs with
-`APPIMAGE_EXTRACT_AND_RUN=1`. Its version is the tag's: the build
-stops unless `package.json` says the same. It attaches them with the update feed: `latest-linux.yml`,
-`latest-linux-arm64.yml`, `latest.yml` for Windows and one `latest-mac.yml` for both Macs (the two Mac
-builds' feeds merged by `bun app/electron/scripts/build.ts merge-feed`). The app is built to update from
-`https://github.com/devswha/ovis/releases/latest/download` (electron-updater's generic provider), so
-an installed app sees a version once it is GitHub's latest, the same moment `ovis.sh/Ovis.dmg` and
-`ovis.sh/Ovis.exe` move (that `Ovis.exe` is still the Windows setup app, `windows-app.yml`). The
-AppImage, the Mac app and the Windows app update themselves; a deb is updated by installing the new
-one.
-The Macs' files are unsigned, and a Mac app updates itself only when signed, until the repository
-variable `DESKTOP_MAC_SIGN` is `true`: then the build signs and notarizes with the same
-`MAC_*` secrets as Ovis for Mac ([app/electron](../app/electron/README.md)'s signing, with
-`OVIS_REQUIRE_NOTARIZATION=1`) and fails if one is missing or the dmg is not notarized. The `mac-dmg` and `windows-app` jobs
-wait for `desktop`, so the release becomes latest only with the desktop files in it; a red `desktop`
-job leaves the release published but holds them back: **Re-run failed jobs** on the Release run
-builds and attaches it again (`--clobber`), then runs them. **Actions → Desktop app** from `main`
-with a tag does the same for one release alone, and refuses the latest release, whose feed installed
-apps read (fix that one with a new patch release); without a tag it only builds, as on a pull
-request touching the app. A release build skips the app's unit tests, which its pull requests ran.
-Do not push release tags by hand: installed updaters read Git tags directly, so a tag is
-visible to them even without a GitHub release. Existing tags cannot be reused; fix a
-published version with a new patch release. If publishing fails after a tag was created,
-verify that tag's commit and repair its GitHub release rather than moving the tag.
+## Historical distribution notes
 
-The hosted shell is then built and deployed in three jobs, so the Cloudflare token never shares a
-job with the build's dependencies. `shell-build` (no environment, no secrets, the dependency cache
-restored read-only) checks out the release tag, fails unless the tag points at the commit this
-release published, builds the shell (`bun run build:shell`), fails if `dist-shell/` lacks
-`index.html` or `build.json`, and uploads `dist-shell.tar.gz` and `dist-shell.tar.gz.sha256`,
-passing the tarball's SHA-256 on as a job output. `shell-deploy`, on a GitHub-hosted runner with
-read-only repository access, checks nothing out and runs no repository code: it sets up Bun, checks
-the downloaded tarball against that SHA-256, refuses it if it holds a link, a special file, a path
-outside it, a `_worker.js`, a `functions/` or a `_routes.json` (Pages would run or route those as
-server code next to the token), unpacks it, installs wrangler from this commit's
-`.github/deploy-tools/package.json` and `bun.lock` with `bun install --frozen-lockfile
---ignore-scripts`, runs that binary as `wrangler pages deploy dist-shell --project-name ovis-app
---branch main --no-bundle` (the token reaches that step alone), and waits until `https://app.ovis.sh/build.json`
-answers 2xx with the tag's commit as its `revision`. The `shell-attach` job, the only one that may
-write, then attaches the tarball and its SHA-256 to the release, so anyone can compare what app.ovis.sh
-serves with what the tag builds; it runs only after a deploy that did not fail. Nothing else deploys
-app.ovis.sh: never from a branch or a developer machine. Until the owner setup below is done the
-deploy passes with a notice naming the missing secrets, the tarball is still attached, and app.ovis.sh
-stays as it was.
-
-To move the deploy to another wrangler, change the version in `.github/deploy-tools/package.json`,
-run `bun install` in that directory and commit both files; the deploy jobs refuse a lockfile that
-does not match the manifest.
-
-One-time owner setup for the shell deploy:
-
-1. In Cloudflare, create the Pages project `ovis-app` (direct upload, production branch `main`) and
-   give it the custom domain `app.ovis.sh`. Keep its production branch `main`: the shell preview
-   deploys to the branch `preview` and stays off app.ovis.sh only while `preview` is not the
-   production branch.
-2. Create an API token that may edit Cloudflare Pages for that account, and add it with the account
-   ID as the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` of the GitHub environment
-   `production` (not repository secrets).
-3. Give the `production` environment the maintainer as a required reviewer: every deploy waits for
-   an approval on the Release run.
-4. Keep the account on the Workers Paid plan (the relay needs it) and set a billing alert at
-   $20 a month.
-
-To try the relay from a phone before a release, without Tailscale, deploy main to the Pages preview:
-**Actions → Shell preview → Run workflow** on `main`, approve the `production` environment, then open
-<https://preview.ovis-app.pages.dev>. The workflow (`.github/workflows/shell-preview.yml`, run by hand
-only) has the same two-job split as the release: `shell-build` builds the shell from main without
-secrets and fails if `dist-shell/` lacks `index.html` or `build.json`; `shell-deploy` checks the
-tarball's SHA-256, deploys it with the locked wrangler and `--branch preview` (never `main`, so
-app.ovis.sh keeps the release's build) and waits until the preview's `build.json` names main's commit.
-Run the PC's Ovis from the same main with `OVIS_RELAY_APP_URL=https://preview.ovis-app.pages.dev`, so its QR codes open the preview
-instead of app.ovis.sh. It uses the same secrets and approval as the release deploy.
-
-Remote-PC runtime bundles are published by a `remote-vN` tag, and an app release requires the bundle
-that matches its server (step 3). See [remote PCs](remote-pcs.md).
-
-`scripts/release-guards.ts` fails a release PR (CI's Fast checks) and the Release run when the bundle's
-inputs changed since the published `remote-vN` without a raised `REMOTE_BUNDLE_VERSION`, when the raised
-one is not published yet (Release only), when `telemetry/worker.ts` or `shared/telemetry.ts` changed
-since the deploy recorded in `telemetry/deployed.json` ([telemetry/README.md](../telemetry/README.md#deploy)),
-or when the step 1 metadata is incomplete. In CI only the change that bumps the version is checked;
-PRs merged before the Release run pass, and the Release run checks the whole tree again.
-
-## Growth snapshot
-
-GitHub shows a repository's traffic (views, clones, referring sites, popular pages) for the last 14
-days only. `.github/workflows/growth-snapshot.yml` saves it every Monday, with the stars and the day
-each was given (never who gave it), through `scripts/growth-snapshot.ts`. Anyone signed in to
-GitHub can download the artifacts of a public repository, so the workflow encrypts the snapshot
-before it uploads it, and its log shows totals only.
-
-It needs two repository secrets (Settings → Secrets and variables → Actions); without them the run
-says so and ends green:
-
-- `GROWTH_METRICS_TOKEN`: a fine-grained personal access token for devswha/ovis only, with
-  the repository permissions **Administration: Read-only** (the traffic endpoints need it) and
-  **Metadata: Read-only**. Such a token expires within a year: put the expiry date in the token's
-  name. An expired or wrong token turns the run red (exit 1 for no access to the repository, exit
-  2 when every traffic endpoint is refused, exit 3 when a stargazer page fails), and GitHub emails
-  the failure.
-- `GROWTH_SNAPSHOT_KEY`: the encryption password, for example from `openssl rand -base64 32`.
-  Keep a copy outside GitHub: without it the artifacts cannot be read.
-
-Artifacts are kept 90 days. To read one:
-
-```sh
-gh run download <run-id> -R devswha/ovis -n growth-snapshot-<run-id>
-GROWTH_SNAPSHOT_KEY=… openssl enc -d -aes-256-cbc -pbkdf2 -pass env:GROWTH_SNAPSHOT_KEY -in growth.tar.gz.enc | tar xzf -
-```
-
-which gives `growth/snapshot-<day>.json` and `growth/stars-by-day.csv`. The same script runs
-locally from the repository root with your own `gh` sign-in:
-`bun scripts/growth-snapshot.ts --out <dir>`. Exit 0 allows individual traffic errors in the JSON;
-exit 2 still writes both files when every traffic endpoint fails. Exit 3 writes neither file,
-including no traffic-only snapshot, and preserves any previous output unchanged. This takes
-precedence over exit 2 if both stars and traffic fail. Exit 1 covers usage, repository access and
-output errors. Both files are staged before publication; a CSV write or replacement failure
-does not publish new JSON. No failed run reaches encryption or upload in the workflow. Installs and
-daily actives by country come from the telemetry database instead:
-run `bunx wrangler login` from `telemetry/` once, then
-`bun scripts/telemetry-report.ts --out <file.md>` from the repository root
-([telemetry/README.md](../telemetry/README.md#reading-the-counts)).
+The former media, website, release and growth-metrics instructions remain in [Git history](https://github.com/Widal-Inc/factory-web-ui/blob/bb0d0f9b234e1c59b98e3ad01060b8d3dc4bd0e9/docs/development.md). They describe upstream infrastructure, not Widal endpoints, repository secrets or deployed services. Do not collect upstream growth data or deploy inherited service projects for this fork.
 
 ## Pull requests and CI
+
+The sections below describe the inherited workflow implementation and contribution contracts. Repository variables, runner registrations, branch protection, CodeRabbit installation and deployment secrets require separate verification in this fork; do not assume upstream settings or infrastructure were copied. Validation capacity is coordinated through the city witness. Record the exact command/head and all skipped checks.
 
 Contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) is the short version of this section.
 
@@ -1270,5 +1025,5 @@ input regression matrix.
 | [`scripts/`](../scripts/) | Plugin lifecycle, type generation, remote bundles, README media, the film and browser checks |
 | [`public/`](../public/) | PWA manifest, service worker and icons |
 | [`docs/`](.) | Remote PCs, updates, flow control, chat audit, brand assets and README media (`docs/media/`) |
-| [`site/`](../site/) | herdrweb.dev (the installers, the browser demo and pages that forward to ovis.sh), built by `scripts/build-site.ts` and deployed by GitHub Pages |
+| [`site/`](../site/) | Inherited website and isolated demo fixtures, built by `scripts/build-site.ts`; no Widal deployment is established |
 | [`DESIGN.md`](../DESIGN.md) | Design tokens and UI conventions |

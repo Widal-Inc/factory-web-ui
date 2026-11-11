@@ -1,5 +1,7 @@
 # iOS home-screen header checks
 
+Historical upstream audit/test evidence, retained with its original issue links and attribution. These results are not validation of a Widal Factory release or completed sign-in/Setup. See [fork status](fork-status.md).
+
 [PR #199](https://github.com/devswha/ovis/pull/199) addresses
 [#164](https://github.com/devswha/ovis/issues/164) by removing
 `apple-mobile-web-app-status-bar-style="black-translucent"`. The candidate leaves

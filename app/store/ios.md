@@ -1,3 +1,9 @@
+# Historical upstream reference — not Widal deployment guidance
+
+The following document is retained for upstream implementation history and compatibility. Its Ovis names, endpoints, artifacts, deployment commands, store copy and prior test results do not describe supported Widal Factory services or releases. Do not execute its publishing/install instructions for this fork. Follow [current integration status](../../docs/native-app.md) and the repository's source setup instead. Legal notices and authorship remain unchanged.
+
+---
+
 # App Store: TestFlight, then review
 
 Everything for the first App Store release of the iOS app that does not need the owner's Apple
@@ -204,4 +210,4 @@ connect screen, QR pairing, the bundled demo, and push notifications in a coming
   device, not tracking), and so does the privacy manifest.
 - Every upload: raise `CURRENT_PROJECT_VERSION`; raise `MARKETING_VERSION` for each public
   release. Both are the project's build settings, so the app and its extension keep one version
-  ([docs/native-app.md](../../docs/native-app.md#the-app-app)).
+  ([original native-app document](https://github.com/Widal-Inc/factory-web-ui/blob/bb0d0f9b234e1c59b98e3ad01060b8d3dc4bd0e9/docs/native-app.md#the-app-app)).
