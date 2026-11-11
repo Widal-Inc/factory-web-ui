@@ -8,6 +8,7 @@ import { BRIDGE_PROTOCOL, LOCAL_MACHINE, OWN_UPDATE_OFFER, REMOTE_BUNDLE_VERSION
 import type { ServerMessage, SessionSnapshot, HerdrPane } from "../shared/protocol.ts";
 import type { PushService } from "./push.ts";
 import { alertStatus } from "../shared/notify-policy.ts";
+import { alertIdentity, savedAlertIdentity } from "./alert-identity.ts";
 import type { BridgeDescriptor } from "./bridge.ts";
 import { HerdrError, sessionSnapshot } from "./herdr/client.ts";
 import { ConnectionDiagnostics, transportFailureCode } from "./connection-diagnostics.ts";
@@ -32,7 +33,7 @@ import { readMoveOffer } from "./remote-move.ts";
 
 import type { HcMachine, MachineBridge } from "./herdr-core/machine-bridge.ts";
 
-type StoredMachine = { id: string; name: string; enabled: boolean; snapshot?: SessionSnapshot | null; kind?: "ssh"; target: SshTarget };
+type StoredMachine = { id: string; name: string; enabled: boolean; snapshot?: SessionSnapshot | null; kind?: "ssh"; target: SshTarget; server_id?: string };
 interface Runtime {
   machine: Machine;
   ssh?: SshConnection;
@@ -410,6 +411,7 @@ export class MachineManager {
     if (this.bootId) this.local.source_boot_id = this.bootId;
     this.profileState = new HerdrProfileState(stateDir);
     this.statePath = join(stateDir, "machines.json");
+    this.local.server_id = savedAlertIdentity(stateDir);
     this.sshDir = join(stateDir, "ssh");
     this.installer = new PcInstaller({ sshDir: this.sshDir, connect: (request) => this.installConnect(request), onChange: (job) => this.showInstall(job), restore: () => options.restoreReplaced?.() === true });
     this.settingsPath = join(stateDir, "machine-settings.json");
@@ -437,7 +439,7 @@ export class MachineManager {
         if (!Array.isArray(saved)) throw new Error(`Invalid ${basename(path)}; registrations were preserved`);
         for (const item of saved as StoredMachine[]) {
           if (!/^[a-f0-9-]{36}$/.test(item.id) || typeof item.name !== "string" || typeof item.enabled !== "boolean") throw new Error("Invalid machine registration");
-          const machine: Machine = { id: item.id, name: item.name, enabled: item.enabled, state: "disconnected", snapshot: item.snapshot ?? null, error: null, kind: "ssh", target: validateTarget(item.target) };
+          const machine: Machine = { id: item.id, name: item.name, enabled: item.enabled, state: "disconnected", snapshot: item.snapshot ?? null, error: null, kind: "ssh", target: validateTarget(item.target), server_id: alertIdentity(item.server_id) };
           const runtime = this.runtime(machine);
           this.machines.set(item.id, runtime);
           if (item.enabled) queueMicrotask(() => void this.reconnect(runtime));
@@ -797,7 +799,7 @@ export class MachineManager {
   private persist(): void {
     // herdr's saved machines and herdr-core's are their catalogs': read again, never saved here
     const owned = [...this.machines.values()].filter(({ machine }) => !machine.herdr_profile_id && machine.kind !== "hc").map(({ machine }) => machine);
-    const data: StoredMachine[] = owned.map((m) => ({ id: m.id, name: m.name, target: m.target!, enabled: m.enabled, snapshot: m.snapshot }));
+    const data: StoredMachine[] = owned.map((m) => ({ id: m.id, name: m.name, target: m.target!, enabled: m.enabled, snapshot: m.snapshot, ...(m.server_id ? { server_id: m.server_id } : {}) }));
     const text = JSON.stringify(data);
     // the PCs' registrations are written last: a save that fails before them leaves them as they were on disk, so a
     // PC moved to another address (setup) is saved there only when nothing else of its save can still fail (#2075)
@@ -1950,7 +1952,7 @@ export class MachineManager {
       // session-changed queues one follow-up, but lets the active roster publish.
       if (["snapshot", "pane-status", "pane-exited"].includes(message.type)) runtime.snapshotRevision++;
       // a frame may have been overtaken by an HTTP read: it holds its epoch, it proves no other ended
-      if (message.type === "snapshot" && this.admitRemote(runtime, message.snapshot)) { runtime.machine.snapshot = message.snapshot; runtime.finishes.hold(message.snapshot.finish_epoch, message.snapshot.order_epoch); this.push.seed(forAlerts(message.snapshot.panes), runtime.machine.id, runtime.machine.name); this.emit(); }
+      if (message.type === "snapshot" && this.admitRemote(runtime, message.snapshot)) { runtime.machine.snapshot = message.snapshot; runtime.finishes.hold(message.snapshot.finish_epoch, message.snapshot.order_epoch); this.push.seed(forAlerts(message.snapshot.panes), runtime.machine.id, runtime.machine.name, runtime.machine.server_id); this.emit(); }
       // a status names no server: it is the proven one's, or not known while health is asked (the cached roster's
       // order epoch may be another server's)
       if (message.type === "pane-status") {
@@ -2102,9 +2104,11 @@ export class MachineManager {
       try {
         const response = await fetch(`${endpoint.url}/api/health`, { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) });
         if (!current() || !response.ok) { await discard(response); return null; }
-        const webUi = (await readCappedJson<{ web_ui?: { boot_id?: unknown } } | null>(response, REMOTE_LIMITS.health))?.web_ui;
+        const webUi = (await readCappedJson<{ web_ui?: { boot_id?: unknown; server_id?: unknown } } | null>(response, REMOTE_LIMITS.health))?.web_ui;
         const boot = webUi?.boot_id;
         if (!current() || typeof boot !== "string" || boot === "") return null;
+        const identity = alertIdentity(webUi?.server_id);
+        if (identity && runtime.machine.server_id !== identity) { runtime.machine.server_id = identity; this.saveSoon(); }
         this.proved(runtime, boot);
         return boot;
       } catch { return null; }
@@ -2123,7 +2127,7 @@ export class MachineManager {
     runtime.machine.snapshot = snapshot;
     if (settled) runtime.finishes.settle(snapshot); else runtime.finishes.hold(snapshot.finish_epoch, server);
     this.saveSoon();
-    this.push.seed(forAlerts(snapshot.panes), runtime.machine.id, runtime.machine.name);
+    this.push.seed(forAlerts(snapshot.panes), runtime.machine.id, runtime.machine.name, runtime.machine.server_id);
   }
   /** the PC's server proved itself: its epoch is the accepted one, and a held snapshot of it is published */
   private proved(runtime: Runtime, boot: string): void {

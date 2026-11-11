@@ -97,6 +97,55 @@ describe("parseSubscription", () => {
   });
 });
 
+describe("stored subscription ownership compatibility", () => {
+  it("keeps saved server-ID mutes for local and retained SSH PCs, including after a restart", async () => {
+    const localId = "a".repeat(32), remoteId = "b".repeat(32);
+    mkdirSync(join(stateDir, "relay"));
+    writeFileSync(join(stateDir, "relay", "identity.json"), JSON.stringify({ v: 1, server_id: localId }));
+    const prefs = { input: true, done: "always" as const, error: true, pcs_off: [localId, remoteId] };
+    const first = createPushService({ loopbackHttp: true, stateDir });
+    first.subscribe(fake.subscription, prefs);
+    const push = createPushService({ loopbackHttp: true, stateDir, timing: { short: 0, long: 0, longTurn: 0 } });
+    push.seed([pane("w1:p1", "working", "local agent")]);
+    push.seed([pane("w1:p1", "working", "remote agent")], "pc-b", "Renamed remote", remoteId);
+    for (const machineId of ["local", "pc-b"]) {
+      await push.onStatus("w1:p1", "blocked", machineId);
+      await push.onStatus("w1:p1", "done", machineId);
+      await push.onFailed("w1:p1", machineId);
+      await push.onEnded("w1:p1", machineId);
+    }
+    await push.settled();
+    expect(fake.received).toHaveLength(0);
+    push.subscribe(fake.subscription, { ...prefs, pcs_off: [] });
+    await push.onStatus("w1:p1", "working", "pc-b");
+    await push.onStatus("w1:p1", "blocked", "pc-b");
+    await push.settled();
+    expect(fake.received).toHaveLength(1);
+  });
+
+  it.each(["revoked-device", undefined])("suppresses legacy subscriptions left behind by failed revocation cleanup (%s)", async (deviceId) => {
+    const path = join(stateDir, "push-subscriptions.json");
+    const old = JSON.stringify([{ ...fake.subscription, ...(deviceId === undefined ? {} : { device_id: deviceId }) }]);
+    writeFileSync(path, old);
+    const push = createPushService({ loopbackHttp: true, stateDir, timing: { short: 0, long: 0, longTurn: 0 } });
+    expect(await push.sendTest(fake.subscription.endpoint)).toBeNull();
+    push.seed([pane("w1:p1", "working", "agent")]);
+    await push.onStatus("w1:p1", "blocked");
+    await push.settled();
+    expect(fake.received).toHaveLength(0);
+    expect(readFileSync(path, "utf8")).toBe(old);
+    push.subscribe(fake.subscription);
+    expect(JSON.parse(readFileSync(path, "utf8"))[0].device_id).toBeNull();
+    expect(await createPushService({ loopbackHttp: true, stateDir }).sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
+    expect(fake.received).toHaveLength(1);
+  });
+
+  it("keeps subscriptions saved by the previous release's authenticated owner", async () => {
+    writeFileSync(join(stateDir, "push-subscriptions.json"), JSON.stringify([{ ...fake.subscription, device_id: null }]));
+    expect(await createPushService({ loopbackHttp: true, stateDir }).sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
+  });
+});
+
 describe("push state", () => {
   it("keeps one owner-only VAPID key pair across restarts", () => {
     const key = createPushService({ loopbackHttp: true, stateDir }).publicKey();

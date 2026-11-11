@@ -104,7 +104,7 @@ export function useAlertSignals({ settings, selectionRef, drawerOpenRef, splitRe
     const worked = trackTurn(turnStartRef.current, key, previous, status, Date.now());
     if (worked !== null) lastTurnRef.current.set(key, worked);
     // a muted pane (lib/paneMutes.ts), or one on a PC this device turned off, is tracked as every other, and told on no channel
-    const muted = paneAlertsMuted(currentPaneMutes(), machine.id, message.pane_id) || !alertPcAllowed(alertsRef.current, machine.name);
+    const muted = paneAlertsMuted(currentPaneMutes(), machine.id, message.pane_id) || !alertPcAllowed(alertsRef.current, machine.name, machine.server_id);
     if (pane && !muted && shouldNotifyStatus(previous, status) && dropletAllows(alertsRef.current, status, worked, pane.agent_kind)) {
       const kind = status === "blocked" ? "blocked" : "done";
       dropIn(machine, pane, kind);
@@ -115,7 +115,7 @@ export function useAlertSignals({ settings, selectionRef, drawerOpenRef, splitRe
   const onPaneExited = useCallback((machine: Machine, message: PaneExitedMessage, takeNotificationTargetRef: TakeNotificationTargetRef) => {
     const pane = machine.snapshot?.panes.find((p) => p.pane_id === message.pane_id);
     const worked = endedTurn(turnStartRef.current, lastTurnRef.current, paneStorageId(machine.id, message.pane_id), Date.now());
-    if (!alertPcAllowed(alertsRef.current, machine.name)) return;
+    if (!alertPcAllowed(alertsRef.current, machine.name, machine.server_id)) return;
     if (pane && !paneAlertsMuted(currentPaneMutes(), machine.id, message.pane_id) && dropletAllows(alertsRef.current, "done", worked)) {
       dropIn(machine, pane, "ended");
       chime(machine, pane, "done");

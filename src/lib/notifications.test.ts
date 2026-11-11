@@ -72,6 +72,14 @@ describe("alert kinds and PCs", () => {
     expect(alertPcAllowed({ input: true, done: "long", pcs_off: ["Home PC"] }, "Desk")).toBe(true);
   });
 
+  it("keeps server-ID exclusions effective alongside name exclusions", () => {
+    const prefs = { input: true, done: "long" as const, pcs_off: ["a".repeat(32), "Home PC"] };
+    expect(alertPcAllowed(prefs, "Renamed PC", "a".repeat(32))).toBe(false);
+    expect(alertPcAllowed(prefs, "Home PC", "b".repeat(32))).toBe(false);
+    expect(alertPcAllowed(prefs, "Desk", undefined)).toBe(true);
+    expect(alertPcAllowed(prefs, "Desk", "b".repeat(32))).toBe(true);
+  });
+
   it("keeps only known choices from a subscription, so an older device keeps today's alerts", () => {
     expect(parseAlerts({ input: false, done: "always" })).toEqual({ input: false, done: "always" });
     expect(parseAlerts({ input: true, done: "long", permission: false, error: true, pcs_off: ["Desk", "Desk", 7, ""] }))

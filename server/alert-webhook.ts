@@ -31,6 +31,8 @@ const TELEGRAM_TOKEN = /^\d{3,20}:[A-Za-z0-9_-]{20,100}$/;
 const TELEGRAM_CHAT = /^(?:-?\d{1,20}|@[A-Za-z0-9_]{4,64})$/;
 
 interface StoredWebhook {
+  /** Compatibility with the old device registry: only an explicitly saved owner destination is active. */
+  owner: null;
   preset: AlertWebhookPreset;
   /** the URL, or for Telegram the bot token */
   secret: string;
@@ -89,10 +91,14 @@ export class WebhookInputError extends Error {}
 function parseStored(value: unknown): StoredWebhook | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
+  // Device-owned and ownerless legacy destinations depended on the removed registry's authorization.
+  // Keep their bytes, but require the owner to enter the destination again before sending anything.
+  if (record["owner"] !== null) return null;
   const preset = record["preset"];
   const secret = record["secret"];
   if (typeof preset !== "string" || !(ALERT_WEBHOOK_PRESETS as readonly string[]).includes(preset) || typeof secret !== "string" || secret.length === 0) return null;
   return {
+    owner: null,
     preset: preset as AlertWebhookPreset,
     secret,
     ...(typeof record["chat_id"] === "string" ? { chat_id: record["chat_id"] } : {}),
@@ -324,6 +330,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
         } catch { /* keep the one saved */ }
       }
       const saved: StoredWebhook = {
+        owner: null,
         preset: input.preset, secret, ...(chatId ? { chat_id: chatId } : {}),
         alerts: input.alerts === undefined ? same?.alerts ?? DEFAULT_ALERTS : parseAlerts(input.alerts),
         ...(base ? { link_base: base } : {}),

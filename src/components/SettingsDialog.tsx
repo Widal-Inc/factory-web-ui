@@ -800,7 +800,7 @@ function ExperimentalPage() {
 
 /**
  * Which PCs alert this device, the Host first: one turned off here sends it nothing, on any channel.
- * Shown with two PCs or more; kept by the PC's name.
+ * Shown with two PCs or more; keeps saved identity exclusions as well as older name exclusions.
  */
 function AlertPcsGroup({ machines }: { machines: readonly Machine[] }) {
   const t = useT();
@@ -811,8 +811,8 @@ function AlertPcsGroup({ machines }: { machines: readonly Machine[] }) {
     <SettingsGroup title={t("Alerts from")} section="alert-pcs" heading>
       {listed.map((machine) => (
         <SettingsRow key={machine.id} label={machine.name} icon={Monitor}>
-          <Toggle label={t("Alerts from {name}", { name: machine.name })} checked={!pcsOff.includes(machine.name)}
-            onChange={(on) => updateAlertFilters({ pcsOff: on ? pcsOff.filter((item) => item !== machine.name) : [...pcsOff, machine.name] })} />
+          <Toggle label={t("Alerts from {name}", { name: machine.name })} checked={![machine.name, machine.server_id].some((key) => key !== undefined && pcsOff.includes(key))}
+            onChange={(on) => updateAlertFilters({ pcsOff: on ? pcsOff.filter((item) => item !== machine.name && item !== machine.server_id) : [...pcsOff, machine.server_id ?? machine.name] })} />
         </SettingsRow>
       ))}
     </SettingsGroup>

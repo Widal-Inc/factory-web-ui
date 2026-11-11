@@ -6,8 +6,8 @@
  *
  * Kept in a key of its own, as the hidden PCs are (lib/hiddenMachines.ts), never in ovis:settings: a
  * tab still on an older version rewrites that record whole and would erase a field it does not know.
- * A PC is named by its name, never its roster id: every PC calls itself `local`, so the key has to be
- * one the PC's own server knows as well as every roster that lists it.
+ * A PC is named by its saved server identity where available, otherwise its name, never its roster
+ * id: every PC calls itself `local`. Old identity exclusions stay effective after pairing is removed.
  */
 
 import { useSyncExternalStore } from "react";

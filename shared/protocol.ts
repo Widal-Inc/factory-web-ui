@@ -132,7 +132,7 @@ export type { Machine, MachineEvent, MachineRoster, PaneTarget, SetupJob, SetupR
  *  GET    /api/health                    -> { ok: true, herdr: HerdrIdentity (shared/machines.ts; terminal_attach false on a
  *                                          Windows herdr and on a bridge that cannot run the PTY sidecar; terminal_mirror: its
  *                                          terminal lens is the pane's screen, repainted; /api/bridge tells the same herdr), auth: HealthAuth,
- *                                          web_ui: { boot_id: string, revision: string | null },
+ *                                          web_ui: { boot_id: string, revision: string | null, server_id?: string (saved notification identity only) },
  *                                          security?: SecuritySummary (authenticated only, no-store),
  *                                          herdr_core?: HerdrCoreFacts (shared/machines.ts; authenticated only, absent until
  *                                          the server's first look for hc has ended), herdr_runtime?: HerdrRuntimeFacts (a driving owner

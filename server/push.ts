@@ -57,6 +57,7 @@ import { dirname, join } from "node:path";
 import webpush from "web-push";
 
 import { paneStorageId } from "../shared/machines.ts";
+import { savedAlertIdentity } from "./alert-identity.ts";
 import type { AgentStatus, HerdrPane, InteractivePrompt, PushAction, PushDeliveryFailure, PushPayload, PushSubscriptionStatus } from "../shared/protocol.ts";
 import {
   type AlertKind,
@@ -163,7 +164,7 @@ export interface PushService {
    */
   status(subscription: PushSubscriptionRecord): PushSubscriptionStatus | null;
   /** The collector's view of every pane: status baselines and the titles notifications use. */
-  seed(panes: readonly HerdrPane[], machineId?: string, machineName?: string): void;
+  seed(panes: readonly HerdrPane[], machineId?: string, machineName?: string, serverId?: string): void;
   /**
    * After status events were lost, `panes` (every pane on the PC) are the baseline for all
    * but the `newer` ones, which had an event since this snapshot was asked for. A pane
@@ -378,6 +379,9 @@ export function createPushService(options: PushServiceOptions): PushService {
   // each PC's name, which a device's `pcs_off` lists
   const pcNames = new Map<string, string>();
   const pcName = (machineId: string): string => machineId === "local" ? options.localName ?? hostname() : pcNames.get(machineId) ?? machineId;
+  const pcIds = new Map<string, string>();
+  const localId = savedAlertIdentity(options.stateDir);
+  const pcKeys = (machineId: string): readonly (string | undefined)[] => [pcName(machineId), machineId === "local" ? localId : pcIds.get(machineId)];
   const retiredPath = join(options.stateDir, "push-retired.json");
   /**
    * sha256 of each endpoint a push service retired -> when, oldest first; loaded on first need.
@@ -416,6 +420,9 @@ export function createPushService(options: PushServiceOptions): PushService {
     subscriptions = new Map();
     if (Array.isArray(stored)) {
       for (const entry of stored) {
+        // The removed device registry could suppress these even when revocation cleanup failed.
+        // Only subscriptions explicitly registered by the owner (old and new writers use null) survive.
+        if (typeof entry !== "object" || entry === null || entry.device_id !== null) { stale = true; continue; }
         const parsed = parseSubscription(entry, options);
         // retired, but its removal could not be written (#2013): it stays gone, and the next goodbye writes the file without it
         if (parsed && isRetired(parsed.endpoint)) {
@@ -491,7 +498,7 @@ export function createPushService(options: PushServiceOptions): PushService {
 
   /** Writes `next` and only then makes it the subscriptions in use, so a failed write changes nothing. */
   function persist(next: Map<string, PushSubscriptionRecord>): void {
-    writePrivateState(subscriptionsPath, [...next.values()]);
+    writePrivateState(subscriptionsPath, [...next.values()].map((subscription) => ({ ...subscription, device_id: null })));
     subscriptions = next;
     stale = false;
   }
@@ -750,7 +757,7 @@ export function createPushService(options: PushServiceOptions): PushService {
   /** whether the subscription, as it is now, wants this kind of alert from this PC: asked again as an alert goes out */
   const wants = (subscription: PushSubscriptionRecord, kind: AlertKind, machineId: string): boolean => {
     const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-    return alertKindAllowed(prefs, kind) && alertPcAllowed(prefs, pcName(machineId));
+    return alertKindAllowed(prefs, kind) && alertPcAllowed(prefs, ...pcKeys(machineId));
   };
 
   /** How long a device waits before this alert reaches it, or null: it does not want it. */
@@ -844,7 +851,8 @@ export function createPushService(options: PushServiceOptions): PushService {
       return deliver(subscription, { pane_id: null, title: "Ovis", body: "Alerts are on for this device", tag: "herdr-test" }, "normal");
     },
 
-    seed(panes, machineId = "local", machineName) {
+    seed(panes, machineId = "local", machineName, serverId) {
+      if (serverId) pcIds.set(machineId, serverId);
       if (machineName) pcNames.set(machineId, machineName);
       for (const pane of panes) {
         // only fill gaps: an event already seen is newer than any snapshot
@@ -910,7 +918,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       const groups = new Map<number, PushSubscriptionRecord[]>();
       for (const subscription of store().values()) {
         const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-        if (!alertPcAllowed(prefs, pcName(machineId))) continue;
+        if (!alertPcAllowed(prefs, ...pcKeys(machineId))) continue;
         const delay = delayFor(prefs, status, worked);
         if (delay !== null) groups.set(delay, [...(groups.get(delay) ?? []), subscription]);
       }
@@ -956,7 +964,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       if (at === "working" || at === "blocked" || muted(machineId, paneId)) return;
       const to = [...store().values()].filter((subscription) => {
         const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-        return alertKindAllowed(prefs, "error") && alertPcAllowed(prefs, pcName(machineId));
+        return alertKindAllowed(prefs, "error") && alertPcAllowed(prefs, ...pcKeys(machineId));
       });
       const hooked = options.webhook?.wants("error") === true;
       if (to.length === 0 && !hooked) return;
@@ -988,7 +996,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       // an ended terminal is a finish of its own: a device that wants none hears none
       const to = [...store().values()].filter((subscription) => {
         const prefs = subscription.alerts ?? DEFAULT_ALERTS;
-        return alertKindAllowed(prefs, "ended") && alertPcAllowed(prefs, pcName(machineId));
+        return alertKindAllowed(prefs, "ended") && alertPcAllowed(prefs, ...pcKeys(machineId));
       });
       const hook = options.webhook?.wants("ended") === true;
       if ((to.length === 0 && !hook) || options.inUse?.()) return;

@@ -20,6 +20,8 @@ export interface Machine {
   herdr_profile_id?: string;
   id: string;
   name: string;
+  /** Saved identity used only to preserve notification exclusions from before device pairing was removed. */
+  server_id?: string;
   /** hc: another machine of this PC's herdr-core (`hc machine add`), reached through that core */
   kind: "local" | "ssh" | "hc";
   target?: SshTarget;

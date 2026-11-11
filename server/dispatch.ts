@@ -36,7 +36,8 @@ import { RUNTIME_MOVE_PATH, RUNTIME_MOVE_ROUTE } from "./runtime-move.ts";
 import { MOVE_LOCK_UNSAFE, moveLockPath } from "./runtime-move-lock.ts";
 import type { StopRefusal } from "./runtime-move-service.ts";
 import type { MoveService } from "./runtime-move-service.ts";
-import { handlePushRequest } from "./push.ts";
+import { defaultStateDir, handlePushRequest } from "./push.ts";
+import { savedAlertIdentity } from "./alert-identity.ts";
 import { handlePromptRequest, type OpenCodePromptState } from "./prompt.ts";
 import { attachableIdentity } from "./pty/sidecar.ts";
 import { runtime } from "./herdr-core/runtime.ts";
@@ -324,16 +325,19 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     const owner = ownerAccess(access);
     // the connection server that reaches this PC with its bridge token shows its move badge from them
     const herdr_runtime = owner || bridgeAuthorized ? options.runtimeService?.facts() : undefined;
+    // Compatibility only: connected PCs keep saved notification exclusions by this public ID.
+    const alertIdentity = owner || bridgeAuthorized ? savedAlertIdentity(options.stateDir ?? defaultStateDir()) : undefined;
+    const alertKey = alertIdentity ? { server_id: alertIdentity } : {};
     // the boot id lets the launcher know its own new bridge without waiting on herdr (server/supervisor.ts);
     // the runtime facts ride along, so Settings can switch back while herdr's TUI is stopped
-    if (url.searchParams.get("scope") === "bridge") return jsonResponse({ ok: true, auth, bridge_protocol: BRIDGE_PROTOCOL, ...(security ? { security } : {}), web_ui: { boot_id: bootId }, runtime: runtime(), ...(options.launchAccepted ? { accepted: options.launchAccepted() } : {}), ...(herdr_runtime ? { herdr_runtime } : {}) }, 200, securityHeaders);
+    if (url.searchParams.get("scope") === "bridge") return jsonResponse({ ok: true, auth, bridge_protocol: BRIDGE_PROTOCOL, ...(security ? { security } : {}), web_ui: { boot_id: bootId, ...alertKey }, runtime: runtime(), ...(options.launchAccepted ? { accepted: options.launchAccepted() } : {}), ...(herdr_runtime ? { herdr_runtime } : {}) }, 200, securityHeaders);
     const herdr_core = owner ? options.herdrCoreFacts?.() : undefined;
     try {
       const info = await ping();
       // a forced answer (tests) and a runtime without the PTY sidecar are told the way a Windows herdr's own would be
       const herdr = attachableIdentity(info, sidecar);
       return jsonResponse({ ok: true, herdr, auth, ...(security ? { security } : {}), ...(herdr_core ? { herdr_core } : {}), ...(herdr_runtime ? { herdr_runtime } : {}),
-        web_ui: { boot_id: bootId, revision: process.env["OVIS_REVISION"] ?? null } }, 200, securityHeaders);
+        web_ui: { boot_id: bootId, revision: process.env["OVIS_REVISION"] ?? null, ...alertKey } }, 200, securityHeaders);
     } catch (error) {
       return errorResponse(error);
     }
