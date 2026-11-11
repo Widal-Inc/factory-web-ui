@@ -1497,7 +1497,12 @@ try {
   });
   await page.locator('input[type="file"]').setInputFiles([hugeFile, ...manyFiles]);
   try {
-    await until(async () => (await ready.count()) === readyBefore + 6 + 99, "the files within both limits uploaded");
+    // This checks the 100-file limit, not aggregate throughput. Keep the same stall deadline
+    // for each completion: three active uploads can keep progressing beyond one 15s batch.
+    for (let completed = 1; completed <= 99; completed++) {
+      await until(async () => (await ready.count()) >= readyBefore + 6 + completed, `upload ${completed} of 99 within both limits`);
+    }
+    assert.equal(await ready.count(), readyBefore + 6 + 99, "every accepted file is attached once");
   } catch (error) {
     console.error("UPLOAD_COMPLETION_EVIDENCE", JSON.stringify({ started: limitedUploads.length, responses: uploadResponses, ready: await ready.count(), expected: readyBefore + 6 + 99,
       attachments: await page.locator(".composer-attachment").evaluateAll((tiles) => tiles.map((tile) => ({ state: tile.className, text: tile.textContent }))),
