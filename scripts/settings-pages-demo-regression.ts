@@ -388,6 +388,7 @@ interface HeldVoice { voiceAsked: () => number; releaseVoice: () => void; groupO
 async function heldGroupLanding(browser: import("playwright-core").Browser, url: string): Promise<void> {
   // short enough that the OpenAI key's group starts below the fold, so a landing has to scroll to it
   const context = await browser.newContext({ viewport: { width: 390, height: 480 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: "en" });
+  context.setDefaultTimeout(10_000);
   try {
     await context.addInitScript((settings) => localStorage.setItem("ovis:settings", settings), JSON.stringify(SETTINGS));
     const page = await context.newPage();
@@ -872,6 +873,9 @@ try {
   try {
     const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? chromium.executablePath(), headless: true, args: ["--no-sandbox"] });
     try {
+      if (process.env["SETTINGS_FOCUSED"] === "held") {
+        await heldGroupLanding(browser, devUrl);
+      } else {
       // Resume the search and following matrices after a completed page/theme prefix.
       if (process.env["SETTINGS_FOCUSED"] !== "search") {
       for (const [width, language] of [[390, "en"], [320, "en"], [320, "ko"], [320, "ja"], [320, "zh"]] as const) {
@@ -1467,6 +1471,7 @@ try {
       await alertChipsReset(browser, url);
       await installedNotes(browser, url);
       await heldGroupLanding(browser, devUrl);
+      }
     } finally {
       await browser.close();
       console.log("CLEANUP browser closed");

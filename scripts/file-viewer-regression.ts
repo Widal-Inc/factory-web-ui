@@ -52,6 +52,7 @@ const previewContexts: BrowserContext[] = [];
 const previewResponses: Array<{ url: string; status: number }> = [];
 async function previewContext(browser: Browser, options?: Parameters<Browser["newContext"]>[0]): Promise<BrowserContext> {
   const context = await browser.newContext(options);
+  context.setDefaultTimeout(10_000);
   if (evidence) {
     previewContexts.push(context);
     // These pages contain only this script's synthetic transcript and files.
