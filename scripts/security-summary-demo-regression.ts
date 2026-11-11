@@ -92,7 +92,7 @@ async function open(context: BrowserContext, variant: string, settings = true, l
   await page.locator(SECTION).waitFor();
   await page.locator(SECTION).scrollIntoViewIfNeeded();
   if (variant in STATUS) await page.locator(`${SECTION} [role='status']`, { hasText: label(STATUS[variant]!) }).waitFor();
-  else await page.locator(`${SECTION} .settings-fact`).nth(4).waitFor();
+  else await page.locator(`${SECTION} .settings-fact`).nth(Object.keys(FACTS[variant]!).length - 1).waitFor();
   return page;
 }
 
@@ -130,7 +130,7 @@ async function check(browser: Browser, width: 390 | 1440): Promise<void> {
     await refresh("older");
     await page.locator(`${SECTION} [role='status']`, { hasText: STATUS["older"]! }).waitFor();
     await refresh("known");
-    await page.locator(`${SECTION} .settings-fact`).nth(4).waitFor();
+    await page.locator(`${SECTION} .settings-fact`).nth(Object.keys(known).length - 1).waitFor();
     assert.deepEqual((await read(page)).facts, known);
     // an earlier check that answers after a newer one failed never brings its facts back: hold a
     // successful read, let the next one fail, then release the first
