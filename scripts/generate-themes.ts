@@ -22,6 +22,7 @@
  * order, no timestamps), and src/styles.css is only ever read.
  */
 
+import { BRAND } from "../shared/brand.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseThemeBlocks, resolveEntry } from "../src/lib/themeCss.ts";
@@ -36,7 +37,7 @@ export const OUTPUTS = {
 } as const;
 
 /** src/lib/themes.ts DEFAULT_THEME, kept apart so this script reads no generated module (settings.test.ts holds them equal) */
-export const DEFAULT_ID = "codex";
+export const DEFAULT_ID = BRAND.theme;
 
 export const DESIGN_BEGIN = "<!-- BEGIN GENERATED THEMES -->";
 export const DESIGN_END = "<!-- END GENERATED THEMES -->";
@@ -276,12 +277,12 @@ export function renderManifest(css: string, json: string, theme = resolveTheme(p
   return text;
 }
 
-export function renderAll(root: string): { path: string; content: string }[] {
+export function renderAll(root: string, defaultId: string = DEFAULT_ID): { path: string; content: string }[] {
   const at = (file: string): string => join(root, file);
   const css = readFileSync(at(SOURCE), "utf8");
   const blocks = parseThemeBlocks(css);
   const amber = resolveAmber(blocks);
-  const fallback = resolveTheme(blocks, DEFAULT_ID);
+  const fallback = resolveTheme(blocks, defaultId);
   return [
     { path: OUTPUTS.module, content: renderModule(css, blocks, amber) },
     { path: OUTPUTS.design, content: renderDesign(css, readFileSync(at(OUTPUTS.design), "utf8"), amber) },

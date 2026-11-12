@@ -2198,11 +2198,21 @@ button {
   }
 }
 
-/* the Ovis wordmark at the head of the sidebar (App.tsx SidebarBrand), the theme's own pair */
+/* Product mark and name in the sidebar's existing header. */
+.sidebar-brand {
+  gap: var(--space-2);
+  min-width: 0;
+}
+.sidebar-brand .brand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sidebar-brand img {
   display: block;
-  width: auto;
+  width: 24px;
   height: 24px;
+  flex: none;
 }
 
 /* the pane's tools at the end of the header's row: Chat/Terminal, Files (and More beside them) as

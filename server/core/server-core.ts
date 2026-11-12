@@ -10,6 +10,8 @@
  * listens once this returns, and calls `start` after that.
  */
 import type { WebSocketHandler } from "bun";
+import type { FactoryAuth } from "../factory-auth.ts";
+import { factorySocket } from "./factory-socket.ts";
 import type { SessionSnapshot } from "../../shared/protocol.ts";
 import { ping } from "../herdr/client.ts";
 import { servingCore } from "../herdr-core/runtime.ts";
@@ -32,6 +34,7 @@ import { createTerminalRegistry } from "./terminals.ts";
 /** What the core reads of createServer's options (their meaning is told there). */
 type CoreOptions = Parameters<typeof createTerminalRegistry>[0]["options"] & Parameters<typeof createSubmitText>[0]["options"]
   & Parameters<typeof createPendingDelivery>[0]["options"] & Parameters<typeof createStatusHub>[0]["options"] & {
+    factoryAuth?: FactoryAuth;
     terminalAttach?: boolean | (() => Promise<boolean>);
     sidecar?: boolean | (() => boolean);
     attachRetryForMs?: number;
@@ -92,7 +95,7 @@ export function createCore({ options, preferences, usage, usageLogin, browserSna
   const { push, alertWebhook, omo, gjc, letta, claudeAgents, opencodeAgents, plans, clientSnapshot, currentHerdrLifetime, queueHeld, countVisit, machines, broadcastAll, logPushError, collector, waitTimer } = createStatusHub({ options, preferences, clients, present, pending, drainPending, holdPendingPane, usage, usageLogin,
     // the messages first: the old ID's terminal closing holds what it still leases
     paneMoved: (from, to) => { movePendingPane(from, to); paneMoved(from, to); } });
-  const socketHandlers = createSocket({
+  const baseSocketHandlers = createSocket({
     clients, present, stopped: () => stopped, setRole, watchable: () => !servingCore(), terminalHistory: () => servingCore(), watchPane, unwatchPane, end, holdPending, attachments, clientSnapshot, herdrLifetime: currentHerdrLifetime, browserSnapshot, countVisit, drainOutput,
     // each frame type by name, with the handler of the module that owns it: anything else on a frame object never
     // becomes a frame a client can send, and a type named twice fails the build instead of replacing a handler
@@ -113,6 +116,7 @@ export function createCore({ options, preferences, usage, usageLogin, browserSna
       "pending-action": pendingFrames["pending-action"],
     },
   });
+  const socketHandlers = options.factoryAuth ? factorySocket(baseSocketHandlers, options.factoryAuth) : baseSocketHandlers;
   const websocket: WebSocketHandler<SocketData> = {
     ...socketHandlers,
     open: (ws) => socketHandlers.open(ws),

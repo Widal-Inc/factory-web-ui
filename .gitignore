@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-hub/
 *.log
 .env
 evidence/

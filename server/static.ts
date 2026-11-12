@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * Serves the built client out of dist/.
  *
@@ -231,7 +232,9 @@ export async function serveStatic(pathname: string, acceptEncoding?: string | nu
   const indexPath = join(DIST_DIR, "index.html");
   if (!existsSync(indexPath)) {
     return new Response(
-      "Ovis server is running, but the browser client has not been built yet.\nRun: bun run build\n",
+      `${BRAND.name} server is running, but the browser client has not been built yet.
+Run: bun run build
+`,
       { status: 200, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }

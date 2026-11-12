@@ -14,6 +14,7 @@ import type { DirectoryCreated, PendingMessage, ServerMessage, TabMoved, TabMove
 import type { MoveReceipt } from "./order-sequence.ts";
 import { agentFault, agentLaunch, type AgentPayload } from "./agent-launch.ts";
 import { createDirectory, listDirectories } from "./directories.ts";
+import { factoryOriginAllowed } from "./factory-context.ts";
 import { HerdrError, paneMoveToNewTab, sessionSnapshot, tabClose, tabCreate, tabMove, tabRename, workspaceClose, workspaceCreate, workspaceMove, workspaceRename, worktreeCreate, worktreeList, worktreeOpen, worktreeRemove } from "./herdr/client.ts";
 import { badRequest, conflictResponse, errorResponse, isJsonObject, jsonResponse, readJsonObject, setRequestRoute } from "./http.ts";
 import { paneContext } from "./pane-context.ts";
@@ -100,6 +101,10 @@ export async function handleWorkspaceRequest(request: Request, url: URL, pathnam
   workspaceMoved: () => MoveReceipt, shellAgents?: ShellAgentLocator,
   /** false: the folders are another machine's, which hc checks as it starts the shell there */
   localFolders = true): Promise<Response | null> {
+  // Only signed, current-owner dispatch supplies factory origins. Cross-site
+  // repository requests still need an explicit configured Origin, even for GET.
+  const crossSiteRepositoryRead = request.headers.get("sec-fetch-site") === "cross-site"
+    && (request.headers.get("origin") === null || factoryOriginAllowed(request) !== true);
   if (pathname === "/api/workspace/directories" && request.method === "POST") {
     setRequestRoute(pathname);
     let payload: unknown;
@@ -135,7 +140,7 @@ export async function handleWorkspaceRequest(request: Request, url: URL, pathnam
     setRequestRoute(pathname);
     if (request.method !== "GET") return badRequest("method_not_allowed", "use GET");
     // file contents, like /api/fs/file: this app reads them, another site's page does not
-    if (request.headers.get("sec-fetch-site") === "cross-site") return jsonResponse({ error: { code: "cross_site", message: "A repository's changes are read from this app" } }, 403);
+    if (crossSiteRepositoryRead) return jsonResponse({ error: { code: "cross_site", message: "A repository's changes are read from this app" } }, 403);
     const cwd = await routeFolder(url.searchParams.get("pane_id"), (url.searchParams.get("directory") ?? "").trim());
     if (cwd instanceof Response) return cwd;
     return repoDiffResponse(pathname.endsWith("/files") ? "files" : pathname.endsWith("/refs") ? "refs" : "file", cwd, url.searchParams);
@@ -145,7 +150,7 @@ export async function handleWorkspaceRequest(request: Request, url: URL, pathnam
     setRequestRoute(pathname);
     if (request.method !== "GET") return badRequest("method_not_allowed", "use GET");
     // commit messages and branch names are the repository's contents, read like its changes
-    if (request.headers.get("sec-fetch-site") === "cross-site") return jsonResponse({ error: { code: "cross_site", message: "A repository's history is read from this app" } }, 403);
+    if (crossSiteRepositoryRead) return jsonResponse({ error: { code: "cross_site", message: "A repository's history is read from this app" } }, 403);
     const cwd = await routeFolder(url.searchParams.get("pane_id"), (url.searchParams.get("directory") ?? "").trim());
     if (cwd instanceof Response) return cwd;
     return repoLogResponse(pathname.endsWith("/log") ? "log" : pathname.endsWith("/branches") ? "branches" : "show", cwd, url.searchParams);
@@ -157,7 +162,7 @@ export async function handleWorkspaceRequest(request: Request, url: URL, pathnam
     const merging = pathname.endsWith("/merge");
     if (request.method !== (merging ? "POST" : "GET")) return badRequest("method_not_allowed", merging ? "use POST" : "use GET");
     // review comments and job logs are the repository's contents: this app reads them, another site's page does not
-    if (request.headers.get("sec-fetch-site") === "cross-site") return jsonResponse({ error: { code: "cross_site", message: "A pull request is read from this app" } }, 403);
+    if (crossSiteRepositoryRead) return jsonResponse({ error: { code: "cross_site", message: "A pull request is read from this app" } }, 403);
     let paneId = url.searchParams.get("pane_id");
     let directory = (url.searchParams.get("directory") ?? "").trim();
     let merge = null;

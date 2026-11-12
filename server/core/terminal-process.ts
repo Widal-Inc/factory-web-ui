@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 /**
  * Starting a pane's terminal: the `herdr terminal attach` pty (or, where herdr cannot attach here,
  * the mirrored screen) shared by every client of the pane, its retries while herdr refuses, the
@@ -9,6 +10,7 @@ import { HerdrError, herdrSocketPath, paneRead, paneSendText, sessionSnapshot } 
 import { CoreAttachSession } from "../herdr-core/attach-session.ts";
 import { coreConnection, HC_MOVED, hcBin, runtime } from "../herdr-core/runtime.ts";
 import { MirrorSession } from "../mirror.ts";
+import { withoutFactoryAuthority } from "../factory-context.ts";
 import { ReplayBuffer } from "../output-window.ts";
 import { PtySession, type PtySessionOptions } from "../pty/session.ts";
 import { type Client, connectionOf } from "./connections.ts";
@@ -296,7 +298,7 @@ export function createSpawnAttachment({ attachments, retiringAttachments, termin
         cols: spawnCols,
         rows: spawnRows,
         size: async () => {
-          const now = (await terminalInfoFor(paneId)).rect;
+          const now = (await withoutFactoryAuthority(() => terminalInfoFor(paneId))).rect;
           return now ? { cols: now.width, rows: now.height } : null;
         },
         // the grid follows herdr's layout: the clients adopt the new size before the screen
@@ -306,7 +308,7 @@ export function createSpawnAttachment({ attachments, retiringAttachments, termin
           attachment.rows = rows;
           broadcast(paneId, { type: "pane-geometry", pane_id: paneId, cols, rows, fixed: true });
         },
-        read: async () => (await paneRead({ paneId, source: "visible", format: "ansi" })).text,
+        read: async () => (await withoutFactoryAuthority(() => paneRead({ paneId, source: "visible", format: "ansi" }))).text,
         write: (data) => paneSendText(paneId, data),
         onData: (frame) => {
           if (attachments.get(paneId) !== attachment) return;
@@ -629,7 +631,7 @@ export function createSpawnAttachment({ attachments, retiringAttachments, termin
       if (!Bun.which(command, { PATH: process.env["PATH"] ?? "", cwd: process.env["HOME"] ?? "/" })) {
         throw new HerdrError("attach_failed", onCore
           ? command === HC_MOVED
-            ? "herdr-core moved (an update?), and Ovis is looking for it again: try again in a moment"
+            ? `herdr-core moved (an update?), and ${BRAND.name} is looking for it again: try again in a moment`
             : `hc could not be started: ${command} is not an executable on the server's PATH (set OVIS_HC_BIN to hc's full path)`
           : `herdr could not be started: ${command} is not an executable on the server's PATH (set OVIS_HERDR_BIN to herdr's full path)`);
       }

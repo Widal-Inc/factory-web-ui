@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import { chmodSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { startHerdrCoreAdapter, type HerdrCoreAdapter } from "./adapter.ts";
 import { HcConnection, spawnHcConnect } from "./connection.ts";
@@ -28,7 +29,7 @@ export function runtime(): Runtime {
   const value = process.env["OVIS_RUNTIME"];
   if (value === undefined || value === "" || value === "herdr") return "herdr";
   if (value === "herdr-core") return "herdr-core";
-  throw new Error(`OVIS_RUNTIME=${value} is not a runtime Ovis knows: use herdr (the default) or herdr-core`);
+  throw new Error(`OVIS_RUNTIME=${value} is not a runtime ${BRAND.name} knows: use herdr (the default) or herdr-core`);
 }
 
 /** the hc startRuntime found (server/herdr-core/discovery.ts); null before it ran */

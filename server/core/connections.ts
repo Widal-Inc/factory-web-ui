@@ -1,3 +1,4 @@
+import type { FactoryIdentity } from "../factory-auth.ts";
 import { subscribeMachineEvents, type MachineEventDocument } from "../machine-events.ts";
 /**
  * A browser's WebSocket connection: what the upgrade records on it, what it may do, how a frame is
@@ -14,6 +15,10 @@ import { PaneWatch } from "../watch.ts";
 import type { TelemetryIngress, TelemetrySurface } from "../../shared/telemetry.ts";
 
 export interface SocketData {
+  factoryIdentity?: FactoryIdentity;
+  factoryRevoked?: boolean;
+  /** Fresh check, also used when delayed work outlives its frame handler. */
+  factoryAuthorize?: () => Promise<void>;
   /** Only the connection server grants this document; remote terminal relays do not. */
   machineEvents?: MachineEventDocument;
   relay?: MachineRelay;
@@ -67,7 +72,7 @@ function stateOf(client: Client): ConnectionState {
 }
 
 /** The data for a connection's upgrade: it starts to interact. */
-export function connectionData(fields: { machineEvents?: MachineEventDocument; relay?: MachineRelay; bridge?: boolean; surface?: TelemetrySurface; ingress?: TelemetryIngress }): SocketData {
+export function connectionData(fields: { factoryIdentity?: FactoryIdentity; machineEvents?: MachineEventDocument; relay?: MachineRelay; bridge?: boolean; surface?: TelemetrySurface; ingress?: TelemetryIngress }): SocketData {
   const data: SocketData = { connectionId: crypto.randomUUID(), attached: new Map<string, { keepSize: boolean }>(), conversationInterests: new Set<string>(), conversationWatches: new Set<string>(), promptWatches: new Set<string>(), output: new Map(), ...fields };
   states.set(data, { closing: false, mode: "interact", roles: 0, watches: new Map<string, PaneWatch>() });
   return data;
@@ -249,6 +254,7 @@ export function createConnections({ clients, present, pending, detachClaimed, dr
 
   function authorizeSocket(client: Client): void {
     const state = stateOf(client);
+    if (client.data.factoryRevoked) throw new HerdrError("forbidden", "Factory access refused");
     if (state.mode === "observe") throw new HerdrError("read_only", "this connection can only watch");
   }
 

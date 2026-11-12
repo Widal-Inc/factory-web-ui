@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import "./AccessGate.css";
 
 import { type FormEvent, useRef, useState } from "react";
@@ -43,9 +44,9 @@ export function AccessGate({ onUnlocked }: AccessGateProps) {
   return (
     <main className="access-gate-screen">
       <div className="access-gate" data-testid="token-gate">
-        <img src="/icons/icon-192.png?v=sheep1" alt="" width="44" height="44" className="access-gate-mark" />
+        <img src={BRAND.icon} alt="" width="44" height="44" className="access-gate-mark" />
         <h1 id="access-gate-title" className="access-gate-title">
-          Ovis
+          {BRAND.name}
         </h1>
         <p className="access-gate-copy">{t("This server requires an access token.")}</p>
         <form aria-labelledby="access-gate-title" onSubmit={(event) => void submitToken(event)}>

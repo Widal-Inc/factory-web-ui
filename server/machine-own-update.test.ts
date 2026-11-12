@@ -270,7 +270,7 @@ describe("a PC whose own Ovis is away (#2047)", () => {
       await until((machine) => machine.state === "reconnecting" && machine.error === "SSH bridge connection interrupted");
       // its next try, without waiting out the delay
       clock += 10_000; manager.retryNow(MACHINE_ID);
-      const waiting = await until((machine) => machine.state === "reconnecting" && /own Ovis is not running/.test(machine.error ?? ""));
+      const waiting = await until((machine) => machine.state === "reconnecting" && /own Widal Factory is not running/.test(machine.error ?? ""));
       expect(waiting.action_required ?? null).toBeNull();
       ovis.start();
       clock += 10_000; manager.retryNow(MACHINE_ID);
@@ -303,7 +303,7 @@ describe("a PC whose own Ovis is away (#2047)", () => {
       const waiting = await until((machine) => !!machine.error && !machine.updating);
       expect(operations).toEqual([]);
       // its next try was at its own address, and waits there for its own Ovis
-      expect(waiting).toMatchObject({ state: "reconnecting", target: { destination: "fixture@pc.invalid" }, error: expect.stringContaining("own Ovis is not running") });
+      expect(waiting).toMatchObject({ state: "reconnecting", target: { destination: "fixture@pc.invalid" }, error: expect.stringContaining("own Widal Factory is not running") });
       expect(new Set(destinations)).toEqual(new Set(["fixture@pc.invalid"]));
       manager.patch(MACHINE_ID, { name: "Home server" });
       expect(saved()).toEqual({ destination: "fixture@pc.invalid" });
@@ -324,7 +324,7 @@ describe("a PC whose own Ovis is away (#2047)", () => {
     clock += 10_000; manager.retryNow(MACHINE_ID);
     const waiting = await until((machine) => !!machine.error && !machine.updating);
     expect(operations).toEqual([]);
-    expect(waiting).toMatchObject({ state: "reconnecting", error: expect.stringContaining("own Ovis is not running") });
+    expect(waiting).toMatchObject({ state: "reconnecting", error: expect.stringContaining("own Widal Factory is not running") });
   });
 
   it("leaves the PC at its own address when a setup at another one fails after its approval, and tries only its own again", async () => {
@@ -347,10 +347,10 @@ describe("a PC whose own Ovis is away (#2047)", () => {
     expect(left.action_required ?? null).toBeNull();
     destinations.length = 0;
     clock += 10_000; manager.retryNow(MACHINE_ID);
-    await until((machine) => machine.state === "reconnecting" && /own Ovis is not running/.test(machine.error ?? ""));
+    await until((machine) => machine.state === "reconnecting" && /own Widal Factory is not running/.test(machine.error ?? ""));
     // an update that asks nobody goes there too
     manager.updateBridge(MACHINE_ID);
-    await until((machine) => !machine.updating && /own Ovis is not running/.test(machine.error ?? ""));
+    await until((machine) => !machine.updating && /own Widal Factory is not running/.test(machine.error ?? ""));
     expect(new Set(destinations)).toEqual(new Set(["fixture@pc.invalid"]));
     expect(operations).toEqual(approved);
     manager.patch(MACHINE_ID, { name: "Home server" });
@@ -457,7 +457,7 @@ describe("a PC whose own Ovis is away (#2047)", () => {
     await until((machine) => machine.state === "reconnecting");
     destinations.length = 0;
     clock += 10_000; manager.retryNow(MACHINE_ID);
-    await until((machine) => machine.state === "reconnecting" && /own Ovis is not running/.test(machine.error ?? ""));
+    await until((machine) => machine.state === "reconnecting" && /own Widal Factory is not running/.test(machine.error ?? ""));
     expect(new Set(destinations)).toEqual(new Set(["other@second.invalid"]));
     expect(operations).toEqual([]);
   });
@@ -537,7 +537,7 @@ describe("a PC whose own Ovis is away (#2047)", () => {
     ovis.stop("removed");
     await until((machine) => machine.state === "reconnecting");
     clock += 10_000; manager.retryNow(MACHINE_ID);
-    await until((machine) => machine.state === "reconnecting" && /own Ovis is not running/.test(machine.error ?? ""));
+    await until((machine) => machine.state === "reconnecting" && /own Widal Factory is not running/.test(machine.error ?? ""));
     expect(operations).toEqual([]);
   });
 
@@ -549,7 +549,7 @@ describe("a PC whose own Ovis is away (#2047)", () => {
       method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager);
     expect(response.status).toBeLessThan(300);
     // the PC waits for it as for one that cannot be reached, and asks again once it answers
-    const waiting = await until((machine) => machine.state === "reconnecting" && !machine.updating && /own Ovis is not running/.test(machine.error ?? ""));
+    const waiting = await until((machine) => machine.state === "reconnecting" && !machine.updating && /own Widal Factory is not running/.test(machine.error ?? ""));
     expect(waiting.action_required ?? null).toBeNull();
     expect(operations).toEqual([]);
     expect(installs).toEqual([]);
@@ -805,6 +805,8 @@ describe("a PC whose own Ovis is older than this app", () => {
   const refusals: [string, Remote, RegExp, "replace" | "restart" | null][] = [
     ["not started by its updater", { status: { ...unmanagedUpdateStatus() } }, /does not update itself: Start with bun run start/, "replace"],
     ["the desktop app's server", { status: { ...unmanagedUpdateStatus(true) } }, /updates come with the app/, null],
+    // An older remote sends this literal; deriving it from our helper would hide a wire-compatibility break.
+    ["an older desktop app's server", { status: { ...unmanagedUpdateStatus(), blocked_reason: "This server is part of the Ovis app, which updates them together: updates come with the app, not from here." } }, /updates come with the app/, null],
     ["blocked there", { status: managedOffer({ blocked_reason: "The source checkout changed. Restart the app before updating." }) }, /cannot update itself now: The source checkout changed/, null],
     ["asks for its own token", { status: null }, /OVIS_TOKEN/, null],
     ["too old to install a named revision", { status: managedOffer({ revision_bound_install: undefined }) }, /too old to take an update/, "restart"],
@@ -850,7 +852,7 @@ describe("a PC whose own Ovis is older than this app", () => {
     // its next connect, as on this server's start or the PC turned on again: a PC waiting for setup has no retry of its own
     const internals = manager as unknown as { machines: Map<string, unknown>; reconnect(runtime: unknown): Promise<void> };
     clock += 10_000; void internals.reconnect(internals.machines.get(MACHINE_ID));
-    const away = await until((machine) => /own Ovis is not running/.test(machine.error ?? ""));
+    const away = await until((machine) => /own Widal Factory is not running/.test(machine.error ?? ""));
     expect(away.ovis_update).toMatchObject({ how: "install", updatable: true, revision: OFFERED });
   });
 

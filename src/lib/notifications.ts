@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import type { AgentStatus } from "../../shared/protocol.ts";
 import { ENDED_NOTIFICATION_BODY, paneNotificationTag, statusNotificationBody } from "../../shared/notify-policy.ts";
 
@@ -37,7 +38,7 @@ async function show(paneId: string, title: string, body: string, onClick?: () =>
   if (typeof document !== "undefined" && !document.hidden) return; // visible tab: the UI already shows it
   const tag = paneNotificationTag(paneId, machineId);
   const alertId = crypto.randomUUID();
-  const options: NotificationOptions = { body, tag, data: { pane_id: paneId, machine_id: machineId, ...(workspaceId ? { workspace_id: workspaceId } : {}), alert_id: alertId }, icon: "/icons/icon-192.png?v=sheep1" };
+  const options: NotificationOptions = { body, tag, data: { pane_id: paneId, machine_id: machineId, ...(workspaceId ? { workspace_id: workspaceId } : {}), alert_id: alertId }, icon: BRAND.icon };
   try {
     const registration = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : undefined;
     if (registration?.active) {

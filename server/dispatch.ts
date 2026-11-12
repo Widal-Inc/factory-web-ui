@@ -1,3 +1,7 @@
+import { BRAND } from "../shared/brand.ts";
+import { factoryAuthResponse, type FactoryIdentity } from "./factory-auth.ts";
+import { withFactoryAuthority } from "./factory-context.ts";
+import { protectFactoryResponse } from "./factory-http.ts";
 import { handleWorkspaceRequest } from "./workspace-routes.ts";
 import { handleAlertWebhookRequest } from "./alert-webhook.ts";
 import { connectionData, type createCore, type SocketData } from "./core/index.ts";
@@ -114,6 +118,33 @@ export interface ServerContext {
 const OTHER_MACHINE_FILES = /^\/api\/(?:fs\/|pane\/(?:files|docs|image)$|workspace\/(?:diff\/|git\/|directories$|pr(?:$|\/)))/;
 
 export async function handleRequest(request: Request, ctx: ServerContext): Promise<Response | undefined> {
+  const auth = ctx.services.options.factoryAuth;
+  if (!auth) return handleAuthorizedRequest(request, ctx);
+  const preflight = auth.preflight(request, ctx.requestIP(request)?.address ?? null);
+  if (preflight) return preflight;
+  const health = auth.health(request, ctx.requestIP(request)?.address ?? null);
+  if (health) return health;
+  let identity: FactoryIdentity | undefined;
+  let response: Response | undefined;
+  const action = `http.${["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].includes(request.method) ? request.method : "OTHER"}`;
+  try {
+    identity = await auth.admit(request, ctx.requestIP(request)?.address ?? null);
+    const admitted = identity;
+    const check = () => auth.checkOwner(admitted);
+    response = await withFactoryAuthority(check, () => handleAuthorizedRequest(request, ctx, identity), { factory: auth.origin, hub: auth.browserOrigin });
+    // An upgraded socket owns its own checks and can no longer receive an HTTP response.
+    if (response === undefined) { auth.audit(identity, action); return undefined; }
+    await check();
+    auth.audit(identity, action);
+    return protectFactoryResponse(request, response, auth, check);
+  } catch (error) {
+    await response?.body?.cancel().catch(() => {});
+    auth.audit(identity, action, "denied");
+    return factoryAuthResponse(error);
+  }
+}
+
+async function handleAuthorizedRequest(request: Request, ctx: ServerContext, factoryIdentity?: FactoryIdentity): Promise<Response | undefined> {
   const { options, hostname, token, bridgeToken, bootId, preferences, herdrSidebar, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog } = ctx.services;
   const { sidecar, serialize, push, alertWebhook, omo, claudeAgents, opencodeAgents, plans, clientSnapshot, machines, broadcastAll, collector, queueFirstMessage } = core;
   return requestLog.handle(request, async (headers) => {
@@ -121,7 +152,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   return compressResponse(request, await (async (): Promise<Response | undefined> => {
   const url = new URL(request.url);
   let { pathname } = url;
-  const bridgeAuthorized = isAuthenticated(request, bridgeToken);
+  const bridgeAuthorized = !factoryIdentity && isAuthenticated(request, bridgeToken);
   // the connection server that reaches this one as its PC reads its update status and asks for the
   // update on offer: an Ovis run on this PC by itself is updated through its own updater, never
   // replaced (server/machines.ts ownOffer). An install still names the offered revision and the
@@ -140,13 +171,13 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   const requestHost = request.headers.get("host");
   // the guessing budget of the address that asks (auth.ts): a token presented while it waits is not compared
   const client = authClient(ip?.address ?? null, request.headers);
-  const presented = presentedToken(request, token, client);
+  const presented = factoryIdentity ? "none" : presentedToken(request, token, client);
   // counted at once, before any await below lets a concurrent guess pass the same check. Every
   // wrong token counts; the connection server's own bridge token does not
   if (presented === "wrong" && !bridgeAuthorized) recordPresentedTokenFailure(client);
   const tokenMatched = presented === "match";
   const requestShape = { loopback, forwarded, funnel };
-  const access = decideAccess({
+  const access = factoryIdentity ? { level: "full" as const, via: "alb" as const } : decideAccess({
     ...requestShape,
     forwardingHeaders: proxyHeaders,
     tokenMatched,
@@ -165,13 +196,15 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   // who started a followed sign-in: only that signed-in browser reaches it again
   const loginOwner = access.level === "full" ? access.via : null;
   const mutating = !["GET", "HEAD", "OPTIONS"].includes(request.method);
-  if (pathname.startsWith("/api/") && mutating && !sameOrigin(request)) {
+  if (!factoryIdentity && pathname.startsWith("/api/") && mutating && !sameOrigin(request)) {
     setRequestRoute("origin-refusal");
     return jsonResponse({ error: { code: "invalid_origin", message: "Use controls from this app" } }, 403);
   }
   // An empty segment ("//", or a trailing "/") or an encoded separator reads as another route to
   // the checks below, while the PC proxy drops empty segments before forwarding:
   // `/api/machines/<id>//fs/file` would pass as not a file read, `<id>/sessions/history/` as no history.
+  if (factoryIdentity && pathname === "/api/auth") return jsonResponse({ error: { code: "not_found", message: "not found" } }, 404);
+  if (factoryIdentity && request.method === "OPTIONS") return new Response(null, { status: 204 });
   if (pathname.startsWith("/api/") && nonCanonicalPath(pathname)) return jsonResponse({ error: { code: "not_found", message: "not found" } }, 404);
   // a text file is edited (read for it and saved) only by whoever got in, here or through this PC on another PC (file-edit.ts)
   const textEdit = /^\/api\/(?:machines\/[^/]+\/)?fs\/text$/.test(pathname);
@@ -190,7 +223,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   // the panes' files are on another machine: this disk's would be shown, listed, diffed or written as theirs
   if (options.localFiles === false && OTHER_MACHINE_FILES.test(pathname)) {
     setRequestRoute(pathname);
-    return jsonResponse({ error: { code: "unsupported", message: "Files on another machine of herdr-core are not reachable from Ovis yet" } }, 501);
+    return jsonResponse({ error: { code: "unsupported", message: `Files on another machine of herdr-core are not reachable from ${BRAND.name} yet` } }, 501);
   }
 
   if (pathname === "/api/bridge") {
@@ -219,7 +252,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   }
   if (pathname === "/ws") {
     setRequestRoute(pathname);
-    if (!sameOrigin(request)) return new Response("invalid origin", { status: 403 });
+    if (!factoryIdentity && !sameOrigin(request)) return new Response("invalid origin", { status: 403 });
     const machineId = url.searchParams.get("machine_id");
     if (machineId && machineId !== "local") {
       if (access.level === "none") return unauthorizedJson();
@@ -229,7 +262,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
         relay = new MachineRelay(machines, machineId, browserSnapshot,
           (browser) => ctx.services.relayReceiptIds.scope(machineId, browser));
         await relay.ready;
-        const upgraded = ctx.upgrade(request, { headers, data: connectionData({ relay }) });
+        const upgraded = ctx.upgrade(request, { headers, data: connectionData({ relay, factoryIdentity }) });
         if (upgraded) return undefined;
         relay.close();
       } catch { relay?.close(); return new Response("remote websocket unavailable", { status: 502 }); }
@@ -244,7 +277,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     // A server-side switch keeps the old SSE path available for immediate transport rollback.
     const useMachineEvents = machines && !bridgeAuthorized && process.env["OVIS_MACHINE_EVENTS_WS"] !== "0";
     const machineEvents = useMachineEvents ? { manager: machines, preferences, herdrSidebar, seen } : undefined;
-    const upgraded = ctx.upgrade(request, { headers, data: connectionData({ machineEvents, bridge: bridgeAuthorized, ...(surface ? { surface } : {}), ...(surface === false ? {} : { ingress }) }) });
+    const upgraded = ctx.upgrade(request, { headers, data: connectionData({ factoryIdentity, machineEvents, bridge: bridgeAuthorized, ...(surface ? { surface } : {}), ...(surface === false ? {} : { ingress }) }) });
     if (upgraded) return undefined;
     return new Response("websocket upgrade required", { status: 426 });
   }
@@ -377,7 +410,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     try {
       const refused = await move.install();
       if (refused === null) return jsonResponse({ installed: true });
-      return jsonResponse({ error: { code: refused, message: refused === "installing" ? "herdr-core is already being installed" : "Ovis offers no herdr-core install here" } }, 409);
+      return jsonResponse({ error: { code: refused, message: refused === "installing" ? "herdr-core is already being installed" : `${BRAND.name} offers no herdr-core install here` } }, 409);
     } catch (error) {
       return jsonResponse({ error: { code: "install_failed", message: error instanceof Error ? error.message : String(error) } }, 502);
     }
@@ -453,7 +486,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
       const refused = await move.start(revision);
       if (refused === null) return jsonResponse({ accepted: true }, 202);
       // another Ovis server of this herdr session (the PC's own, or a connection server's bridge) moves it
-      if (refused === "locked") return jsonResponse({ error: { code: "already_moving", message: `Another Ovis on this PC is moving this herdr session already. If none is (one that stopped without telling), delete ${moveLockPath(herdrSocketPath())} on this PC and try again.` } }, 409);
+      if (refused === "locked") return jsonResponse({ error: { code: "already_moving", message: `Another ${BRAND.name} on this PC is moving this herdr session already. If none is (one that stopped without telling), delete ${moveLockPath(herdrSocketPath())} on this PC and try again.` } }, 409);
       if (refused === "lock_unsafe") return jsonResponse({ error: { code: "move_lock_unsafe", message: MOVE_LOCK_UNSAFE } }, 409);
       return jsonResponse({ error: { code: refused, message: refused === "plan_changed" ? "the panes changed since the plan was shown: look again" : refused === "already_moving" ? "a move is already waiting or running" : refused === "runtime_switching" ? "the server is switching its runtime: try again once it is back" : "no move to herdr-core is offered here" } }, 409);
     } catch (error) {
@@ -571,9 +604,9 @@ function stopRefusalText(refused: StopRefusal): string {
     case "not_waiting": return "no move is waiting";
     case "not_running": return "that pane is not a shell running a command";
     case "changed": return "the panes changed since you looked: look again";
-    case "own_server": return "that pane runs this Ovis server";
-    case "own_group_unknown": return "Ovis cannot tell its own process group here, so it ends nothing";
+    case "own_server": return `that pane runs this ${BRAND.name} server`;
+    case "own_group_unknown": return `${BRAND.name} cannot tell its own process group here, so it ends nothing`;
     case "not_tried": return "send Ctrl+C first, and force only once it has had a few seconds";
-    case "not_local": return "this PC does not show that command in front of its shell, so Ovis does not signal it";
+    case "not_local": return `this PC does not show that command in front of its shell, so ${BRAND.name} does not signal it`;
   }
 }

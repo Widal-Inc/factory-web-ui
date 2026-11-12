@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * Starting the agent a create request names in the pane herdr just made: the request's own check
  * of `agent`, then the start, which retries a pane whose shell is not up yet and a name another
@@ -38,7 +39,7 @@ export async function agentLaunch(paneId: string, agent: AgentPayload, launched?
     const args = agent.args as string[] | undefined;
     if (isShellAgentKind(kind)) {
       // another machine of the core: its path would be this PC's, and its start is never seen there (no pids)
-      if (hcMachine() !== null) return { agent_started: false, error: { code: "other_machine", message: `${kind} starts only on the PC that runs Ovis` } };
+      if (hcMachine() !== null) return { agent_started: false, error: { code: "other_machine", message: `${kind} starts only on the PC that runs ${BRAND.name}` } };
       const pid = await startShellAgent(kind, paneId, args, locator ? { locator } : {});
       if (pid !== null) launched?.(pid);
     }

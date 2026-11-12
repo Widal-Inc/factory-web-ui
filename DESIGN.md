@@ -8,6 +8,15 @@ Current tokens and UI conventions are retained while Widal branding is integrate
 
 ## 1. Atmosphere & Identity
 
+### Configured product identity
+
+The web app's name, mark, install metadata and default theme come from `shared/brand.json`
+([configuration and regeneration](docs/branding.md)). Colours stay in the theme blocks of
+`src/styles.css`. This follows [T3 Code's environment theme defaults](https://github.com/pingdotgg/t3code/blob/main/docs/user/appearance.md):
+an installation selects the starting appearance while saved device preferences win. The existing
+sidebar header keeps its layout and displays the configured mark and name. No third-party code
+or artwork was copied for this change. Hub email and page integration remain separate work.
+
 The herdr look (amber) is a warm terminal: an amber-phosphor console on lamp-lit graphite (dark) or ledger paper (light),
 with chat-app clarity. Tonal surfaces and hairlines keep the chrome out of the way. There is ONE
 chrome color, amber: focus, the chosen lens, the terminal cursor and the user's own action (Send, primary
@@ -430,6 +439,11 @@ blocks of `src/styles.css`.
 
 ### File viewer
 
+- Remote media previews follow [T3 Code's environment file links](https://github.com/pingdotgg/t3code/blob/main/docs/user/composer.md):
+  the file stays on the machine it came from, and rendered HTML cannot access the app's session.
+  Video, audio and PDF URLs resolve through the selected transport just like images and HTML.
+  The factory server admits only the configured hub after signed-owner checks, and HTML keeps
+  its opaque sandbox. This changes delivery of the existing viewer, with no copied code or pixels.
 - Edit text files (off by default, Settings → File viewer): a pencil **Edit file** button in the header
   turns the body into a text box (`.file-editor-text`, the source's mono size, never under
   `--fs-input` on a touch screen so iOS does not zoom) under one bar: what is going on on the left
@@ -2494,6 +2508,12 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   Markdown files use the same renderer in the file viewer. **Open in a new tab** opens an
   app link to the resolved absolute file on its own PC, independent of the originating pane.
   **Open raw file** (Code glyph) opens the original bytes; Download still saves those bytes.
+  In the hub owner view, the reader link also names the factory. The new document rechecks signed
+  identity and its registered owner origin before reading; relative links, reload and Back keep
+  that factory context. Desktop and mobile raw-file actions resolve through the same transport.
+  This follows [T3 Code's environment-specific file previews](https://github.com/pingdotgg/t3code/blob/main/docs/user/composer.md),
+  with fresh hub registration because the hub can address several factories. No UI layout changes
+  or third-party code are needed.
   The reader page and dialog share **Show source** (Braces glyph, pressed while the source shows, so it
   never looks like Open raw file), highlighted source with CSS-counter line
   numbers (past 2 000 lines, the virtualizer's numbered rows; see File viewer under Typography),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Braces, Check, Code, Copy, Download, Ellipsis, ExternalLink, Link2, Maximize2, PanelRight, Pencil, TableOfContents, TriangleAlert, X } from "lucide-react";
 
 import "./FileViewer.css";
@@ -34,7 +34,7 @@ import { hasPreview, type TextViewMode } from "../lib/textPreview.ts";
 import { useSheetSwipe } from "../lib/sheets.ts";
 import { useSettings } from "../lib/settings.ts";
 import { readFilePreviewText, SOURCE_PREVIEW_LINES, type FilePreviewText } from "../lib/filePreviewText.ts";
-import { readerHref } from "../lib/fileReader.ts";
+import { ReaderFactoryContext, readerHref } from "../lib/fileReader.ts";
 import type { FilePresentation } from "../lib/filePresentation.ts";
 import { getTransport } from "../lib/transport.ts";
 import { useResourceUrl, useResourceUrlState } from "../lib/useResourceUrl.ts";
@@ -343,6 +343,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
   const htmlPage = info !== null && info.kind === "text" && info.mime === "text/html";
   const pageUrl = `${url}&render=1`;
   const pageSrc = useResourceUrl(htmlPage && !source ? pageUrl : null);
+  const media = useResourceUrlState(info?.kind === "video" || info?.kind === "audio" || info?.kind === "pdf" ? url : null);
   // an image past the inline limit is only offered as a download: the body never loads it
   const image = useResourceUrlState(info?.kind === "image" && info.size <= MAX_INLINE_IMAGE_BYTES ? `${url}&revision=${encodeURIComponent(`${info.modified}:${info.size}`)}` : null);
   const imageSrc = image.url;
@@ -433,7 +434,8 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
   useEffect(() => { if (draftWaits) setEditing(true); }, [draftWaits]);
   const markdown = info?.kind === "text" && /\.(?:md|markdown)$/i.test(info.name);
   // a page of just the document, not the app over it (FileReader)
-  const previewUrl = readerHref(machineId, shownPath + (target.line === null ? "" : `#L${target.line}`));
+  const readerFactory = useContext(ReaderFactoryContext);
+  const previewUrl = readerHref(machineId, shownPath + (target.line === null ? "" : `#L${target.line}`), window.location.pathname, readerFactory);
   // images of a markdown file load through the file endpoint, as the file itself does
   const imagePreview = useCallback((src: string) => markdownImagePreview(
     src, shownPath, (target) => fetchFileInfo(target, paneId), (target, download) => fileUrl(target, paneId, download),
@@ -454,18 +456,18 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
     </div>;
     if (info === null) return null;
     // the download link's own request never replaces a body that loaded (a ranged text preview, an image)
-    if (image.error) return <p className="file-viewer-note" role="alert">{t("The file could not be opened.")}</p>;
+    if (image.error || media.error) return <p className="file-viewer-note" role="alert">{t("The file could not be opened.")}</p>;
     switch (info.kind) {
       case "image":
         return info.size > MAX_INLINE_IMAGE_BYTES
           ? <p className="file-viewer-note">{t("This image is {size}; download it to view.", { size: formatBytes(info.size) })}</p>
           : <img className="file-viewer-media" src={imageSrc ?? undefined} alt={info.name} />;
       case "video":
-        return <video ref={(node) => { mediaRef.current = node; }} className="file-viewer-media" src={url} controls playsInline preload="metadata" />;
+        return <video ref={(node) => { mediaRef.current = node; }} className="file-viewer-media" src={media.url ?? undefined} controls playsInline preload="metadata" />;
       case "audio":
-        return <audio ref={(node) => { mediaRef.current = node; }} className="file-viewer-audio" src={url} controls preload="metadata" />;
+        return <audio ref={(node) => { mediaRef.current = node; }} className="file-viewer-audio" src={media.url ?? undefined} controls preload="metadata" />;
       case "pdf":
-        return <iframe className="file-viewer-pdf" src={url} title={info.name} />;
+        return <iframe className="file-viewer-pdf" src={media.url ?? undefined} title={info.name} />;
       case "text":
         if (editing && paneId !== null) return <TextFileEditor path={info.path} paneId={paneId} name={info.name} onChanged={setEditChanged}
           onDone={(saved) => { setEditing(false); setEditChanged(false); if (saved) setSaves((count) => count + 1); }} />;
@@ -511,6 +513,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
   // the file itself: a Markdown tab is the reader; raw and download keep the original bytes
   const newTabHref = htmlPage && !source ? pageUrl : markdown ? previewUrl : url;
   const newTabSrc = useResourceUrl(newTabHref);
+  const rawSrc = useResourceUrl(page || markdown ? url : null);
   const fileActions = <>
     {!page && onTogglePresentation && <button type="button" className="icon-button file-viewer-action" aria-label={docked ? t("Show as a popup") : t("Show beside the pane")} title={docked ? t("Show as a popup") : t("Show beside the pane")} onClick={onTogglePresentation}>
       {docked ? <Maximize2 aria-hidden="true" /> : <PanelRight aria-hidden="true" />}
@@ -518,7 +521,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
     {/* new tab, raw and download: buttons in the row, and on a phone in the More menu after Copy */}
     {/* in the installed app's window a new tab would be another app window: Copy link takes their place */}
     {!page && !appWindow && <a className="icon-button file-viewer-action file-viewer-wide" href={newTabSrc ?? undefined} target="_blank" rel="noopener" aria-label={t("Open in a new tab")} title={t("Open in a new tab")}><ExternalLink aria-hidden="true" /></a>}
-    {(page || markdown) && !appWindow && <a className="icon-button file-viewer-action file-viewer-wide" href={url} target="_blank" rel="noopener" aria-label={t("Open raw file")} title={t("Open raw file")}><Code aria-hidden="true" /></a>}
+    {(page || markdown) && !appWindow && <a className="icon-button file-viewer-action file-viewer-wide" href={rawSrc ?? undefined} target="_blank" rel="noopener" aria-label={t("Open raw file")} title={t("Open raw file")}><Code aria-hidden="true" /></a>}
     {!page && appWindow && <CopyLinkButton href={newTabHref} />}
     <a className="icon-button file-viewer-action file-viewer-wide" href={downloadHref ?? undefined} download={info?.name ?? true} aria-label={t("Download")} title={t("Download")}><Download aria-hidden="true" /></a>
     {canEdit && !editing && <button type="button" className="icon-button file-viewer-action" aria-label={t("Edit file")} title={t("Edit file")} onClick={() => setEditing(true)}><Pencil aria-hidden="true" /></button>}
@@ -527,7 +530,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
       <button type="button" className="icon-button file-viewer-action" aria-label={t("More")} title={t("More")} aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}><Ellipsis aria-hidden="true" /></button>
       {moreOpen && <div className="file-viewer-more-menu" role="menu" aria-label={t("More")} onKeyDown={moveInMore}>
         {!page && !appWindow && <a role="menuitem" className="file-viewer-more-item" href={newTabSrc ?? undefined} target="_blank" rel="noopener" onClick={() => closeMore(true)}><ExternalLink aria-hidden="true" />{t("Open in a new tab")}</a>}
-        {(page || markdown) && !appWindow && <a role="menuitem" className="file-viewer-more-item" href={url} target="_blank" rel="noopener" onClick={() => closeMore(true)}><Code aria-hidden="true" />{t("Open raw file")}</a>}
+        {(page || markdown) && !appWindow && <a role="menuitem" className="file-viewer-more-item" href={rawSrc ?? undefined} target="_blank" rel="noopener" onClick={() => closeMore(true)}><Code aria-hidden="true" />{t("Open raw file")}</a>}
         {!page && appWindow && <CopyLinkButton href={newTabHref} menuItem onDone={() => closeMore(true)} />}
         <a role="menuitem" className="file-viewer-more-item" href={downloadHref ?? undefined} download={info?.name ?? true} onClick={() => closeMore(true)}><Download aria-hidden="true" />{t("Download")}</a>
       </div>}

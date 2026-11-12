@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 /**
  * The key bar's keyboard control (#1046) on the real client over the demo's fixture transport, as a
  * phone: Show focuses the field of the current input mode inside the tap, Hide blurs this pane's
@@ -987,7 +988,7 @@ async function captureSet(browser: Browser, dir: string): Promise<Capture[]> {
       // connection is down (a bare Shift, so nothing is typed into the held draft)
       await page.keyboard.press("Shift");
       await page.waitForFunction(() => document.querySelector(".conn-reconnecting") !== null && document.querySelector(".conn-live") === null);
-      await page.getByText("Reconnecting to Ovis…").waitFor();
+      await page.getByText(brandedExpected("Reconnecting to Ovis…")).waitFor();
       await page.clock.resume();
       await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('.pane-frame:not(.is-hidden) .key-bar [data-key="keyboard"]')?.disabled === false, undefined, { timeout: 20_000 });
       await role(page, "observe");

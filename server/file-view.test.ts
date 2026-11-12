@@ -7,11 +7,33 @@ import * as fileView from "./file-view.ts";
 import { crossSiteFileRead, fileInfo, fileResponse, forgetPageMedia, locateFile, locateFileInFolder, PAGE_MEDIA_LIFETIME_MS, PAGE_MEDIA_PER_RENDER, pageFileHooks, pageMediaResponse, pageMediaSource, resolveFilePath, STREAM_CHUNK_BYTES, watchPageMedia } from "./file-view.ts";
 import { setFilePoolOptions } from "./file-pool.ts";
 import { runFileTask } from "./file-tasks.ts";
+import { withFactoryAuthority } from "./factory-context.ts";
 import { clearFileCache, filesNamed } from "./files.ts";
 
 // pageFileHooks reach the thread they are set on alone: the tasks here run on it, not on file threads
 beforeAll(() => setFilePoolOptions({ inline: runFileTask }));
 afterAll(() => setFilePoolOptions());
+
+it("allows browser file reads only inside the configured owner's authenticated hub context", async () => {
+  const hub = "https://hub.example.test";
+  const factory = "https://owner.example.test";
+  const request = (headers: Record<string, string>) => new Request(`${factory}/api/fs/file?path=/fixture`, { headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", ...headers } });
+  const cors = request({ origin: hub });
+  const media = request({ "sec-fetch-mode": "no-cors", referer: `${hub}/factory` });
+  expect(crossSiteFileRead(cors)).toBe(true);
+  expect(crossSiteFileRead(media)).toBe(true);
+  await withFactoryAuthority(async () => {}, async () => {
+    await Promise.resolve();
+    expect(crossSiteFileRead(cors)).toBe(false);
+    expect(crossSiteFileRead(media)).toBe(false);
+    expect(crossSiteFileRead(request({}))).toBe(true);
+    expect(crossSiteFileRead(request({ origin: "null", referer: hub, "sec-fetch-mode": "no-cors" }))).toBe(true);
+    expect(crossSiteFileRead(request({ "sec-fetch-mode": "no-cors", referer: `${factory}/api/fs/file?render=1` }))).toBe(true);
+    expect(crossSiteFileRead(request({ origin: "https://unrelated.example.test", referer: hub }))).toBe(true);
+  }, { factory, hub });
+  expect(crossSiteFileRead(cors)).toBe(true);
+  expect(crossSiteFileRead(media)).toBe(true);
+});
 
 /** Every descriptor a page's file was read through: open now, and any closed twice. */
 const live = new Set<number>();

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { brandedExpected } from "./brand-test-helpers.ts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -404,7 +405,7 @@ try {
         [NEXT.update]: "실행 중인 에이전트의 작업을 보려면 이\u00a0PC의\u00a0브리지를\u00a0업데이트하세요.",
         [NEXT.error]: "새로\u00a0고쳐\u00a0보세요. 계속 실패하면 PC에서 Ovis를\u00a0다시\u00a0시작하세요.",
       };
-      const say = (view: View, text: string): string => view.language === "ko" ? korean[text] ?? text : text;
+      const say = (view: View, text: string): string => brandedExpected(view.language === "ko" ? korean[text] ?? text : text);
       for (const view of [{ width: 1440, theme: "dark" }, { width: 390, theme: "light" }, { width: 390, theme: "light", language: "ko" }] as View[]) {
         const frames: Record<string, string> = {};
         for (const [state, demo, text, next] of states) {

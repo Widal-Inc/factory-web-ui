@@ -124,6 +124,7 @@ export function createInputLane({ TYPED_SETTLE_MS, KEY_SETTLE_MS, clients, sight
           if (!typingGuards.herdrTyping(sighting.facts())) { inputFailed(); return; }
           // nothing typed outlives its connection
           if (!clients.has(client)) return;
+          await client.data.factoryAuthorize?.();
           authorizeSocket(client);
           await paneSendText(message.pane_id, shaped, undefined, allowed);
           receipt(true);
@@ -171,6 +172,7 @@ export function createInputLane({ TYPED_SETTLE_MS, KEY_SETTLE_MS, clients, sight
           if (!typingGuards.queuedTyping(sighting.facts())) { inputFailed(); return; }
           // nothing typed outlives its connection
           if (!clients.has(client)) return;
+          await client.data.factoryAuthorize?.();
           authorizeSocket(client);
           if (viaAttach) {
             if (!allowed() || !sighting.write(text, message.automatic === true)) { inputFailed(); return; }
@@ -299,6 +301,7 @@ export function createInputLane({ TYPED_SETTLE_MS, KEY_SETTLE_MS, clients, sight
           // A viewport scrolled into history can still show an old password prompt.
           // Validate the live screen before typing a secret into the current program.
           const screen = await paneRead({ paneId: message.pane_id, source: "detection", format: "text" });
+          await client.data.factoryAuthorize?.();
           if (connectionOf(client).closing || connectionOf(client).mode === "observe" || connectionOf(client).roles !== roles) { result(false, "read_only"); return; }
           authorizeSocket(client);
           const facts = sighting.facts();
@@ -391,6 +394,7 @@ export function createInputLane({ TYPED_SETTLE_MS, KEY_SETTLE_MS, clients, sight
           lost = standing();
           if (lost) { refuse(lost); return; }
           if (secretPrompt(screen.text, sighting.facts().cols) !== null) { result(false, "secret_prompt", "The terminal is asking for a password; nothing was typed"); return; }
+          await client.data.factoryAuthorize?.();
           authorizeSocket(client);
           const allowed = () => mayType(client) && standing() === null && typingGuards.queuedTyping(sighting.facts());
           try {

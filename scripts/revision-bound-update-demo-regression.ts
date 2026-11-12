@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -204,7 +205,7 @@ async function behaviour(browser: Browser, url: string): Promise<Record<string, 
     const line = page.locator(".update-notice");
 
     // happy: the header's Update names A, and the install's steps are shown as they are told
-    await line.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
+    await line.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor();
     await line.getByRole("button", { name: "What's new", exact: true }).waitFor();
     const statusReceipts: Array<{ surface: string; phase: string; shown: string }> = [];
     const deliver = async (surface: string, scope: Page | ReturnType<Page["locator"]>, status: Partial<UpdateStatus>, shown: string) => {
@@ -247,13 +248,13 @@ async function behaviour(browser: Browser, url: string): Promise<Record<string, 
     fixture.status = offer();
     fixture.notes = notesFor(A, "9.9.9");
     await page.goto(url);
-    await line.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
+    await line.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor();
     const other = await context.newPage();
     await other.goto(url);
     fixture.held.set("tab-1", offer());
     fixture.status = offer(B, "9.9.10");
     fixture.notes = notesFor(B, "9.9.10");
-    await other.locator(".update-notice").getByText("Ovis v9.9.10 is available.", { exact: true }).waitFor();
+    await other.locator(".update-notice").getByText(brandedExpected("Ovis v9.9.10 is available."), { exact: true }).waitFor();
     const before = fixture.posts.length;
     sent = fixture.next("/api/updates/install");
     await line.getByRole("button", { name: "Update", exact: true }).click();
@@ -264,7 +265,7 @@ async function behaviour(browser: Browser, url: string): Promise<Record<string, 
     sent = fixture.next("/api/updates/check");
     await line.getByRole("button", { name: "Try again", exact: true }).click();
     assert.equal((await sent).path, "/api/updates/check", "Try again after a moved offer checks, never installs");
-    await line.getByText("Ovis v9.9.10 is available.", { exact: true }).waitFor();
+    await line.getByText(brandedExpected("Ovis v9.9.10 is available."), { exact: true }).waitFor();
     sent = fixture.next("/api/updates/install");
     await other.locator(".update-notice").getByRole("button", { name: "Update", exact: true }).click();
     const fresh = await sent;
@@ -280,7 +281,7 @@ async function behaviour(browser: Browser, url: string): Promise<Record<string, 
     fixture.status = offer();
     fixture.notes = notesFor(A, "9.9.9");
     await page.goto(url);
-    await line.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
+    await line.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor();
     sent = fixture.next("/api/updates/install");
     await line.getByRole("button", { name: "Update", exact: true }).click();
     assert.deepEqual((await sent).body, { expected_revision: A });
@@ -326,7 +327,7 @@ async function behaviour(browser: Browser, url: string): Promise<Record<string, 
     fixture.status = offer();
     fixture.notes = notesFor(A, "9.9.9");
     await page.goto(url);
-    await line.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
+    await line.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor();
     fixture.held.set("tab-1", offer());
     fixture.status = offer(A, "9.9.9", { revision_bound_install: undefined });
     sent = fixture.next("/api/updates/install");

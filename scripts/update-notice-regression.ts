@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -65,7 +66,7 @@ export async function checkUpdateNotice(browser: Browser, origin: string, shots?
     }), "one", `${label}: the line is one row`);
 
     // one button, and no detour through Settings
-    await page.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
+    await page.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: "View update", exact: true }).count(), 0, "the line has no View update button");
     // the line is the pane column's, never a bar across the window between the header and the sidebar
     assert.ok(await page.locator(".pane-column > .update-notice").count() > 0, "the notice is drawn in the pane column");
@@ -112,10 +113,10 @@ export async function checkUpdateNotice(browser: Browser, origin: string, shots?
     await page.getByRole("button", { name: "Details", exact: true }).waitFor();
     // the server refuses an install with nothing available: Try again looks for the release again
     await page.getByRole("button", { name: "Try again", exact: true }).click();
-    await page.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
+    await page.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor();
     assert.deepEqual([checks, installs], [1, 2], "Try again after a failed check asks for a check, not an install");
     status = { ...status, phase: "idle", available: false, error: null };
-    await page.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor({ state: "hidden" });
+    await page.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor({ state: "hidden" });
     assert.equal(await page.locator(".update-notice").count(), 0, "an installed update leaves no line");
     console.log("PASS a release installs from its line with one button and shows its steps");
 

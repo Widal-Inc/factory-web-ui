@@ -2,13 +2,18 @@
  * A markdown file opened in a tab of its own (the file viewer's "Open in a new tab"): a page of
  * just the document, never the whole app over it. Its address names the file and the PC it is on.
  */
+import { createContext } from "react";
 
 export interface ReaderTarget { machine: string; path: string }
 
+/** A hub reader link names the selected factory, never its origin or credentials. */
+export const ReaderFactoryContext = createContext<string | null>(null);
+
 const PARAM = "read";
 
-export function readerHref(machine: string, path: string, pathname = window.location.pathname): string {
+export function readerHref(machine: string, path: string, pathname = window.location.pathname, factory: string | null = null): string {
   const query = new URLSearchParams({ [PARAM]: path, machine });
+  if (factory !== null) query.set("factory", factory);
   return `${pathname}?${query.toString()}`;
 }
 

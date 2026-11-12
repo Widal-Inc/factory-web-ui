@@ -1,17 +1,19 @@
-import { buildXtermSource } from "./scripts/build-xterm.ts";
 import { compressedAssets } from "./scripts/compressed-assets.ts";
 import { serviceWorkerBuild } from "./scripts/service-worker-build.ts";
 import { themeBootstrapBuild } from "./scripts/theme-bootstrap-build.ts";
-import { defineConfig, normalizePath, type Plugin } from "vite";
+import { buildTarget, clientAliases, clientDefines, gitRevision } from "./scripts/vite-shared.ts";
+import { renderBrandMetadata } from "./scripts/brand-metadata.ts";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const xtermSource = normalizePath(buildXtermSource(fileURLToPath(new URL(".", import.meta.url))));
+// A config-only identity change must not ship a stale install sheet or notification worker.
+for (const { path, content } of renderBrandMetadata(fileURLToPath(new URL(".", import.meta.url)))) {
+  if (readFileSync(new URL(path, import.meta.url), "utf8") !== content) throw new Error(`Stale brand metadata: ${path}. Run bun scripts/brand-metadata.ts`);
+}
 
-let revision: string | null = null;
-try { revision = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* non-Git build */ }
+const revision = gitRevision();
 
 // agentSvgMarks.ts carries LobeHub Icons paths (MIT): their notice ships with every built client
 const thirdPartyNotices: Plugin = {
@@ -33,12 +35,7 @@ const buildRevision: Plugin = {
 export default defineConfig({
   // the theme boot script is emitted before compressedAssets and serviceWorkerBuild read the bundle
   plugins: [react(), thirdPartyNotices, buildRevision, themeBootstrapBuild(), compressedAssets(), serviceWorkerBuild()],
-  define: {
-    __APP_REVISION__: JSON.stringify(revision),
-    __APP_VERSION__: JSON.stringify((JSON.parse(readFileSync("package.json", "utf8")) as { version: string }).version),
-    // test hooks (src/lib/crashProbe.ts): on only in the browser lane's demo build (scripts/demo-build.ts)
-    __HERDR_TEST_HOOKS__: JSON.stringify(process.env["HERDR_TEST_HOOKS"] === "1"),
-  },
+  define: clientDefines(revision),
   server: {
     port: 5173,
     proxy: {
@@ -49,15 +46,8 @@ export default defineConfig({
     },
   },
   // Keep Vite 6's syntax targets when changing the bundler, including installed mobile clients.
-  build: { outDir: "dist", target: ["es2020", "edge88", "firefox78", "chrome87", "safari14"] },
+  build: { outDir: "dist", target: buildTarget },
   // The Bun patch targets xterm's readable source, not its minified distribution. Build that
   // source so dev, production and the website use the same reviewed IME backport.
-  resolve: { alias: [
-    { find: /^@xterm\/xterm$/, replacement: `${xtermSource}/browser/public/Terminal.js` },
-    { find: /^browser\//, replacement: `${xtermSource}/browser/` },
-    { find: /^common\//, replacement: `${xtermSource}/common/` },
-    { find: /^vs\/nls$/, replacement: `${xtermSource}/vs/patches/nls.js` },
-    { find: /^vs\//, replacement: `${xtermSource}/vs/` },
-    { find: "@shared", replacement: new URL("./shared", import.meta.url).pathname },
-  ] },
+  resolve: { alias: clientAliases() },
 });

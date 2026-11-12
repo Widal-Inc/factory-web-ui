@@ -4,13 +4,34 @@ import { NOTICE_VERSION } from "../../shared/telemetry.ts";
 import { AttachmentTooLargeError, ApiError, cancelUsageLogin, changeTelemetry, fetchAgentKinds, fetchTelemetry, movePaneBeside, swapPaneWith, uploadPaneImage, verifySourceBoot } from "./api.ts";
 import { movingHerdrFocusOn } from "./followFocus.ts";
 import { DEFAULT_SETTINGS, telemetrySettingsSnapshot } from "./settings.ts";
+import { nativeTransport, setTransport } from "./transport.ts";
+import { directTransport } from "../hub/directTransport.ts";
 
 const realFetch = globalThis.fetch;
 const abortSignalStatics = Object.getOwnPropertyDescriptors(AbortSignal);
 afterEach(() => {
   globalThis.fetch = realFetch;
+  setTransport(nativeTransport);
   Object.defineProperties(AbortSignal, { any: abortSignalStatics.any!, timeout: abortSignalStatics.timeout! });
   jest.useRealTimers();
+});
+
+it("cancels a followed sign-in at its owner factory, preserving unload delivery and refusal", async () => {
+  const sent: { url: string; init?: RequestInit }[] = [];
+  globalThis.fetch = (async () => { throw new Error("must not cancel at the hub"); }) as unknown as typeof fetch;
+  setTransport(directTransport("https://owner.example.com", "https://hub.example.com", {
+    fetch: (async (url: string, init?: RequestInit) => {
+      sent.push({ url, init });
+      return Response.json({ error: { code: "login_not_found", message: "Not found" } }, { status: 404 });
+    }) as typeof fetch,
+    socket: () => { throw new Error("no socket"); },
+    events: () => { throw new Error("no events"); },
+  }));
+  await expect(cancelUsageLogin("fixture-login")).rejects.toMatchObject({ status: 404, code: "login_not_found" });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.url).toBe("https://owner.example.com/api/usage/login/cancel");
+  expect(sent[0]!.init).toMatchObject({ method: "POST", keepalive: true, credentials: "include", redirect: "error", cache: "no-store", body: JSON.stringify({ login: "fixture-login" }) });
+  expect(new Headers(sent[0]!.init?.headers).get("x-herdr-machine")).toBe("1");
 });
 
 it("reports a refused cancellation instead of allowing a terminal handoff", async () => {

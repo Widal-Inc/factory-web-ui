@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 /**
  * The page says it is loading while the app's script is on its way (#2329): on a slow link the entry
  * module takes seconds, and a page that shows nothing until it runs looks frozen. Per case the entry
@@ -83,7 +84,7 @@ try {
         return getComputedStyle(node).opacity === "1" && box.width > 0 && box.height > 0;
       }, undefined, { timeout: 10_000 });
       // a status is announced by its words, not its name: the ring is decoration
-      assert.equal((await status.textContent())?.trim(), "Loading Ovis", `${item.name}: the status says what is loading`);
+      assert.equal((await status.textContent())?.trim(), brandedExpected("Loading Ovis"), `${item.name}: the status says what is loading`);
       assert.equal(await status.locator(".boot-spinner").getAttribute("aria-hidden"), "true", `${item.name}: the ring is hidden from screen readers`);
       const shown = await page.evaluate(() => {
         const node = document.querySelector("#root > [role='status']")!;

@@ -1,3 +1,6 @@
+import { brandedExpected } from "../../scripts/brand-test-helpers.ts";
+import { OWN_UPDATE_OFFER } from "../../shared/machines.ts";
+import { BRAND } from "../../shared/brand.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { ApiError, fetchSession } from "./api.ts";
 import { withChatReadDeadline } from "./chatReadDeadline.ts";
@@ -36,8 +39,8 @@ describe("userErrorMessage", () => {
   });
 
   it("says the PC could not do it for any other 5xx", () => {
-    expect(userErrorMessage(api(500))).toEqual({ message: "The PC could not do that. Try again; if it keeps failing, restart Ovis on the PC.", detail: "herdr said no" });
-    expect(userErrorMessage(api(502)).message).toBe("The PC could not do that. Try again; if it keeps failing, restart Ovis on the PC.");
+    expect(userErrorMessage(api(500))).toEqual({ message: brandedExpected("The PC could not do that. Try again; if it keeps failing, restart Ovis on the PC."), detail: "herdr said no" });
+    expect(userErrorMessage(api(502)).message).toBe(brandedExpected("The PC could not do that. Try again; if it keeps failing, restart Ovis on the PC."));
   });
 
   it("names the next step when the server's code says its state folder refused the save", () => {
@@ -84,6 +87,12 @@ describe("saysHerdrAway", () => {
 });
 
 describe("machineErrorText", () => {
+  it("brands the legacy offer prefix while preserving the discriminator and remote detail", () => {
+    const original = `${OWN_UPDATE_OFFER} v0.4.1: project Ovis research`;
+    expect(machineErrorText(original, (key) => key)).toBe(`This PC runs its own ${BRAND.name} v0.4.1: project Ovis research`);
+    expect(OWN_UPDATE_OFFER).toBe("This PC runs its own Ovis");
+    expect(machineErrorText("Project Ovis research", (key) => key)).toBe("Project Ovis research");
+  });
   const inKorean = (key: string) => translate("ko", key);
 
   it("shows the server's sentences for an unusable PC answer in the UI language", () => {
@@ -147,14 +156,14 @@ describe("userFailure", () => {
   });
 
   it("takes the cause from the server's own words when they name one, keeping the words", () => {
-    expect(userFailure(api(500, "disk full"))).toEqual({ kind: "refused", cause: "PC disk is full", advice: "Try again; if it keeps failing, restart Ovis on the PC.", detail: "disk full" });
+    expect(userFailure(api(500, "disk full"))).toEqual({ kind: "refused", cause: "PC disk is full", advice: brandedExpected("Try again; if it keeps failing, restart Ovis on the PC."), detail: "disk full" });
     expect(userFailure(api(500, "ENOSPC: no space left on device, write")).cause).toBe("PC disk is full");
     expect(userFailure(api(500, "EACCES: permission denied, open '/x'")).cause).toBe("No permission on the PC");
     expect(userFailure(new Error("EPERM: operation not permitted")).cause).toBe("No permission on the PC");
   });
 
   it("knows no cause for any other 5xx or anything else, so the surface offers Try again", () => {
-    expect(userFailure(api(500))).toEqual({ kind: "refused", cause: null, advice: "Try again; if it keeps failing, restart Ovis on the PC.", detail: "herdr said no" });
+    expect(userFailure(api(500))).toEqual({ kind: "refused", cause: null, advice: brandedExpected("Try again; if it keeps failing, restart Ovis on the PC."), detail: "herdr said no" });
     expect(userFailure(api(400, "label too long"))).toEqual({ kind: "unknown", cause: null, advice: null, detail: "label too long" });
     expect(userFailure("plain string")).toEqual({ kind: "unknown", cause: null, advice: null, detail: "plain string" });
     expect(userFailure(new Error("  ")).detail).toBeNull();
