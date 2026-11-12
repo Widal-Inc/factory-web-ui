@@ -7,15 +7,15 @@ export type Brand = typeof BRAND;
 
 export function brandIndex(html: string, brand: Brand = BRAND): string {
   return new HTMLRewriter()
-    .on("title", { element: (element) => element.setInnerContent(brand.name) })
-    .on('meta[name="description"], meta[property="og:description"]', { element: (element) => element.setAttribute("content", brand.description) })
-    .on('meta[property="og:title"], meta[name="apple-mobile-web-app-title"]', { element: (element) => element.setAttribute("content", brand.name) })
-    .on('meta[property="og:image"]', { element: (element) => element.setAttribute("content", brand.largeIcon) })
-    .on('meta[property="og:image:alt"]', { element: (element) => element.setAttribute("content", brand.name) })
-    .on('meta[property="og:image:width"], meta[property="og:image:height"]', { element: (element) => element.setAttribute("content", "512") })
-    .on('link[rel="icon"]', { element: (element) => element.setAttribute("href", brand.favicon) })
-    .on('link[rel="apple-touch-icon"]', { element: (element) => element.setAttribute("href", brand.appleTouchIcon) })
-    .on("#root .visually-hidden", { element: (element) => element.setInnerContent(`Loading ${brand.name}`) })
+    .on("title", { element: (element) => { element.setInnerContent(brand.name); } })
+    .on('meta[name="description"], meta[property="og:description"]', { element: (element) => { element.setAttribute("content", brand.description); } })
+    .on('meta[property="og:title"], meta[name="apple-mobile-web-app-title"]', { element: (element) => { element.setAttribute("content", brand.name); } })
+    .on('meta[property="og:image"]', { element: (element) => { element.setAttribute("content", brand.largeIcon); } })
+    .on('meta[property="og:image:alt"]', { element: (element) => { element.setAttribute("content", brand.name); } })
+    .on('meta[property="og:image:width"], meta[property="og:image:height"]', { element: (element) => { element.setAttribute("content", "512"); } })
+    .on('link[rel="icon"]', { element: (element) => { element.setAttribute("href", brand.favicon); } })
+    .on('link[rel="apple-touch-icon"]', { element: (element) => { element.setAttribute("href", brand.appleTouchIcon); } })
+    .on("#root .visually-hidden", { element: (element) => { element.setInnerContent(`Loading ${brand.name}`); } })
     .transform(html);
 }
 
