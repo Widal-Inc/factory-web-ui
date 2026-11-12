@@ -2,12 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { HubError, itemPath, ownerOrigin, parseAdmin, parseBootstrap, parseItem, parseOverview, parseQuality, parseToday, readHub, routeFor } from "./contract.ts";
 import type { Admin, Bootstrap, Card, Cost, Item, Overview, Quality, Route, Today } from "./contract.ts";
 import "./hub.css";
+import { readerFromSearch, type ReaderTarget } from "../lib/fileReader.ts";
 
 // These slots are integration boundaries, not alternate backends. The brand comes from the shared
 // brand config; the owner view reuses the fork's chat/terminal/answer cards with a direct transport.
 export interface HubSlots {
   brand: { name: string; logo: string };
-  ownerView?: (connection: { factory: string; origin: string }) => ReactNode;
+  ownerView?: (connection: { factory: string; origin: string; reader?: ReaderTarget }) => ReactNode;
   setup?: (identity: Bootstrap["me"]) => ReactNode;
   onboarding?: (identity: Bootstrap["me"]) => ReactNode;
 }
@@ -55,6 +56,16 @@ export function HubApp(slots: HubSlots) {
   // A normal link navigation mounts a new document. Retries deliberately re-read identity too.
   }, [attempt]);
   const boot = bootstrap.state === "ready" ? bootstrap.data : null;
+  const reader = readerFromSearch(window.location.search);
+  if (reader !== null) {
+    if (bootstrap.state === "loading" || page.state === "loading") return <p role="status">Loading your document…</p>;
+    if (bootstrap.state === "error") return <section role="alert"><h1>{bootstrap.status === 401 ? "Sign in again" : "Document unavailable"}</h1><p>{bootstrap.message}</p>{bootstrap.status === 401 ? <a className="btn" href={window.location.pathname + window.location.search}>Reload and sign in</a> : <button className="btn" onClick={() => retry((n) => n + 1)}>Try again</button>}</section>;
+    const factory = new URLSearchParams(window.location.search).get("factory");
+    const origin = factory && boot && route.page === "my" && page.state === "ready" && page.data?.page === "my" ? ownerOrigin(page.data.data, boot.me.person, factory) : null;
+    // A link carries an ID only. Every new document rechecks identity and registration before it
+    // installs a transport; query parameters never supply an origin or grant an admin live access.
+    return origin && factory && slots.ownerView ? slots.ownerView({ factory, origin, reader }) : <Notice title="Document unavailable">This document's factory is not available to your current sign-in.</Notice>;
+  }
   return <div className="hub-app">
     <a className="hub-skip" href="#hub-main">Skip to content</a>
     <header className="hub-header"><a className="hub-brand" href="/my-factory"><img src={slots.brand.logo} alt="" />{slots.brand.name}</a><span>{boot?.me.person}</span></header>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Braces, Check, Code, Copy, Download, Ellipsis, ExternalLink, Link2, Maximize2, PanelRight, Pencil, TableOfContents, TriangleAlert, X } from "lucide-react";
 
 import "./FileViewer.css";
@@ -34,7 +34,7 @@ import { hasPreview, type TextViewMode } from "../lib/textPreview.ts";
 import { useSheetSwipe } from "../lib/sheets.ts";
 import { useSettings } from "../lib/settings.ts";
 import { readFilePreviewText, SOURCE_PREVIEW_LINES, type FilePreviewText } from "../lib/filePreviewText.ts";
-import { readerHref } from "../lib/fileReader.ts";
+import { ReaderFactoryContext, readerHref } from "../lib/fileReader.ts";
 import type { FilePresentation } from "../lib/filePresentation.ts";
 import { getTransport } from "../lib/transport.ts";
 import { useResourceUrl, useResourceUrlState } from "../lib/useResourceUrl.ts";
@@ -434,7 +434,8 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
   useEffect(() => { if (draftWaits) setEditing(true); }, [draftWaits]);
   const markdown = info?.kind === "text" && /\.(?:md|markdown)$/i.test(info.name);
   // a page of just the document, not the app over it (FileReader)
-  const previewUrl = readerHref(machineId, shownPath + (target.line === null ? "" : `#L${target.line}`));
+  const readerFactory = useContext(ReaderFactoryContext);
+  const previewUrl = readerHref(machineId, shownPath + (target.line === null ? "" : `#L${target.line}`), window.location.pathname, readerFactory);
   // images of a markdown file load through the file endpoint, as the file itself does
   const imagePreview = useCallback((src: string) => markdownImagePreview(
     src, shownPath, (target) => fetchFileInfo(target, paneId), (target, download) => fileUrl(target, paneId, download),
@@ -512,6 +513,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
   // the file itself: a Markdown tab is the reader; raw and download keep the original bytes
   const newTabHref = htmlPage && !source ? pageUrl : markdown ? previewUrl : url;
   const newTabSrc = useResourceUrl(newTabHref);
+  const rawSrc = useResourceUrl(page || markdown ? url : null);
   const fileActions = <>
     {!page && onTogglePresentation && <button type="button" className="icon-button file-viewer-action" aria-label={docked ? t("Show as a popup") : t("Show beside the pane")} title={docked ? t("Show as a popup") : t("Show beside the pane")} onClick={onTogglePresentation}>
       {docked ? <Maximize2 aria-hidden="true" /> : <PanelRight aria-hidden="true" />}
@@ -519,7 +521,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
     {/* new tab, raw and download: buttons in the row, and on a phone in the More menu after Copy */}
     {/* in the installed app's window a new tab would be another app window: Copy link takes their place */}
     {!page && !appWindow && <a className="icon-button file-viewer-action file-viewer-wide" href={newTabSrc ?? undefined} target="_blank" rel="noopener" aria-label={t("Open in a new tab")} title={t("Open in a new tab")}><ExternalLink aria-hidden="true" /></a>}
-    {(page || markdown) && !appWindow && <a className="icon-button file-viewer-action file-viewer-wide" href={url} target="_blank" rel="noopener" aria-label={t("Open raw file")} title={t("Open raw file")}><Code aria-hidden="true" /></a>}
+    {(page || markdown) && !appWindow && <a className="icon-button file-viewer-action file-viewer-wide" href={rawSrc ?? undefined} target="_blank" rel="noopener" aria-label={t("Open raw file")} title={t("Open raw file")}><Code aria-hidden="true" /></a>}
     {!page && appWindow && <CopyLinkButton href={newTabHref} />}
     <a className="icon-button file-viewer-action file-viewer-wide" href={downloadHref ?? undefined} download={info?.name ?? true} aria-label={t("Download")} title={t("Download")}><Download aria-hidden="true" /></a>
     {canEdit && !editing && <button type="button" className="icon-button file-viewer-action" aria-label={t("Edit file")} title={t("Edit file")} onClick={() => setEditing(true)}><Pencil aria-hidden="true" /></button>}
@@ -528,7 +530,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
       <button type="button" className="icon-button file-viewer-action" aria-label={t("More")} title={t("More")} aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}><Ellipsis aria-hidden="true" /></button>
       {moreOpen && <div className="file-viewer-more-menu" role="menu" aria-label={t("More")} onKeyDown={moveInMore}>
         {!page && !appWindow && <a role="menuitem" className="file-viewer-more-item" href={newTabSrc ?? undefined} target="_blank" rel="noopener" onClick={() => closeMore(true)}><ExternalLink aria-hidden="true" />{t("Open in a new tab")}</a>}
-        {(page || markdown) && !appWindow && <a role="menuitem" className="file-viewer-more-item" href={url} target="_blank" rel="noopener" onClick={() => closeMore(true)}><Code aria-hidden="true" />{t("Open raw file")}</a>}
+        {(page || markdown) && !appWindow && <a role="menuitem" className="file-viewer-more-item" href={rawSrc ?? undefined} target="_blank" rel="noopener" onClick={() => closeMore(true)}><Code aria-hidden="true" />{t("Open raw file")}</a>}
         {!page && appWindow && <CopyLinkButton href={newTabHref} menuItem onDone={() => closeMore(true)} />}
         <a role="menuitem" className="file-viewer-more-item" href={downloadHref ?? undefined} download={info?.name ?? true} onClick={() => closeMore(true)}><Download aria-hidden="true" />{t("Download")}</a>
       </div>}

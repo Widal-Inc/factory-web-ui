@@ -10,6 +10,14 @@ describe("file reader links", () => {
     expect(readerFromSearch("?read=")).toBeNull();
   });
 
+  it("carries the selected hub factory while keeping standalone links unchanged", () => {
+    const link = new URL(readerHref("local", "/repo/a #1.md", "/my-factory", "sample-factory"), "https://hub.example.com");
+    expect(link.pathname).toBe("/my-factory");
+    expect(link.searchParams.get("factory")).toBe("sample-factory");
+    expect(readerFromSearch(link.search)).toEqual({ machine: "local", path: "/repo/a #1.md" });
+    expect(readerHref("local", "/a.md", "/")).toBe("/?read=%2Fa.md&machine=local");
+  });
+
   it("resolves a document's links from its folder", () => {
     expect(resolveFromDocument("/repo/README.md", "README.ko.md")).toBe("/repo/README.ko.md");
     expect(resolveFromDocument("/repo/README.md", "docs/guide.md")).toBe("/repo/docs/guide.md");

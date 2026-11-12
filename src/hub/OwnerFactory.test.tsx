@@ -1,12 +1,14 @@
 import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
-import { useEffect } from "react";
+import { StrictMode, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { getTransport, nativeTransport, setTransport, type Transport } from "../lib/transport.ts";
+import type { ReaderTarget } from "../lib/fileReader.ts";
 
 // the fork's App is not what this checks: a stub stands in for the lazily loaded view. Like the real
 // App it may still reach its server while it is being torn down, so it records the transport it sees then.
 const seenOnTeardown: Transport[] = [];
-mock.module("./FactoryApp.tsx", () => ({ default: () => { useEffect(() => () => { seenOnTeardown.push(getTransport()); }, []); return <p>live view</p>; } }));
+const documents: { factory: string; reader?: ReaderTarget }[] = [];
+mock.module("./FactoryApp.tsx", () => ({ default: (props: { factory: string; reader?: ReaderTarget }) => { documents.push(props); useEffect(() => () => { seenOnTeardown.push(getTransport()); }, []); return <p>live view</p>; } }));
 const { OwnerFactory } = await import("./OwnerFactory.tsx");
 
 const savedWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -15,14 +17,15 @@ beforeAll(() => { Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", 
 afterEach(() => {
   for (const renderer of renderers.splice(0)) act(() => renderer.unmount());
   seenOnTeardown.length = 0;
+  documents.length = 0;
   setTransport(nativeTransport);
   if (savedWindow) Object.defineProperty(globalThis, "window", savedWindow);
   else Reflect.deleteProperty(globalThis, "window");
 });
-function mount(origin: string) {
+function mount(origin: string, reader?: ReaderTarget) {
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { origin: "https://hub.example.com", pathname: "/my-factory" } } });
   let renderer!: ReactTestRenderer;
-  act(() => { renderer = create(<OwnerFactory factory="sample-factory" origin={origin} />); });
+  act(() => { renderer = create(<StrictMode><OwnerFactory factory="sample-factory" origin={origin} reader={reader} /></StrictMode>); });
   renderers.push(renderer);
   const text = () => JSON.stringify(renderer.toJSON());
   const open = async () => { await act(async () => { renderer.root.findByType("button").props.onClick(); }); };
@@ -35,6 +38,17 @@ describe("owner factory view", () => {
   it("connects to nothing until the person opens it", () => {
     const view = mount("https://ada.factory.example.com");
     expect(view.text()).toContain("Open sample-factory");
+    expect(getTransport()).toBe(nativeTransport);
+  });
+
+  it("opens a verified document immediately and retains transport after StrictMode effect replay", async () => {
+    const reader = { machine: "local", path: "/repo/a.md" };
+    const view = mount("https://ada.factory.example.com", reader);
+    await act(async () => {});
+    expect(view.text()).toContain("live view");
+    expect(documents.at(-1)).toEqual({ factory: "sample-factory", reader });
+    expect(getTransport().resourceUrl("/api/health")).toBe("https://ada.factory.example.com/api/health");
+    await view.unmount();
     expect(getTransport()).toBe(nativeTransport);
   });
 
@@ -68,7 +82,7 @@ describe("owner factory view", () => {
     const owner = getTransport();
     await first.unmount();
     // the App's own teardown still ran against the owner's transport, not the browser's
-    expect(seenOnTeardown).toEqual([owner]);
+    expect(seenOnTeardown.at(-1)).toBe(owner);
     expect(getTransport()).toBe(nativeTransport);
     const second = mount("https://ada.factory.example.com");
     await second.open();

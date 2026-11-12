@@ -3,7 +3,7 @@
  * and download above it. Not the app: no sidebar, no panes, no connection to a PC's session.
  * Its links to other files open here, from the document's folder, and Back returns.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 
 import { AccessGate } from "./AccessGate.tsx";
 import { FileViewer } from "./FileViewer.tsx";
@@ -12,12 +12,13 @@ import { fetchBridgeHealth } from "../lib/api.ts";
 import { OpenFileContext } from "../lib/filePaths.ts";
 import { MachineContext } from "../lib/machineContext.tsx";
 import { useT } from "../lib/i18n.ts";
-import { readerFromSearch, readerHref, resolveFromDocument, type ReaderTarget } from "../lib/fileReader.ts";
+import { ReaderFactoryContext, readerFromSearch, readerHref, resolveFromDocument, type ReaderTarget } from "../lib/fileReader.ts";
 
 const close = (): void => {};
 
 export function FileReader({ target }: { target: ReaderTarget }) {
   const t = useT();
+  const factory = useContext(ReaderFactoryContext);
   const [path, setPath] = useState(target.path);
   // the same gate as the app's: a tab opened from a bookmark or another browser signs in here, and
   // the document is read once the server has set its cookie
@@ -50,9 +51,9 @@ export function FileReader({ target }: { target: ReaderTarget }) {
 
   const open = useCallback((linked: string) => {
     const next = resolveFromDocument(path, linked);
-    window.history.pushState(null, "", readerHref(target.machine, next));
+    window.history.pushState(null, "", readerHref(target.machine, next, window.location.pathname, factory));
     setPath(next);
-  }, [path, target.machine]);
+  }, [path, target.machine, factory]);
 
   if (locked === null) return <main className="file-reader"><p className="file-viewer-note" role="status">{t("Opening…")}</p></main>;
   if (locked) return <AccessGate onUnlocked={() => setLocked(false)} />;

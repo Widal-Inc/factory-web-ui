@@ -100,11 +100,23 @@ connection. Team exposes no factory-address links. Work-item and PR links allow 
 `BRAND` export; there is no second product-name constant here. Colours stay in `src/styles.css`.
 The hub pages are not an installable app, so they ship no web manifest.
 
-The optional `ownerView({factory, origin})` is called only for a ready, registered factory owned by
+The optional `ownerView({factory, origin, reader?})` is called only for a ready, registered factory owned by
 the signed-in person, whose live origin matches its registered HTTPS address. The slot must reuse
 the existing fork chat, terminal, answer cards and state grouping with the protected direct factory
 transport. This local check only limits rendering; the factory server must enforce current ownership
 for every HTTP/WebSocket operation. No socket path is invented here. Missing adapters show unavailable.
+
+A Markdown tab keeps the selected factory ID in its `factory` query parameter alongside `read`
+and `machine`. The hub entry rereads bootstrap and My Factory registration before rendering the
+existing FileReader through the owner's transport. It never accepts an origin from the link,
+guesses a factory for an old link without an ID, or grants an admin access to someone else's files.
+Relative document navigation, reload and Back retain the factory ID. Standalone reader links keep
+their existing format. This follows [T3 Code's environment-specific file previews](https://github.com/pingdotgg/t3code/blob/main/docs/user/composer.md#files-outside-the-workspace),
+with fresh hub registration required because this artifact can connect to several factories.
+
+Raw-file links use the same resource transport as downloads on desktop and in the phone's More
+menu. Followed Claude/Codex sign-in cancellation also uses the selected HTTP transport, retaining
+`keepalive` for page exit and reporting refusals before a terminal handoff can start.
 
 `directTransport.ts` prepares the custom transport using the protected server contract in
 `docs/factory-auth.md` at web UI checkpoint `bcf280a8d9e27148b1fcf17a9a8a5e2a12cb74fc`.
@@ -130,8 +142,12 @@ Credentialed CORS exposes `content-range`, which text previews need to validate 
 
 `bun scripts/factory-file-view.ts` exercises the actual FileViewer and direct transport against two
 local HTTPS fixture origins, with synthetic ALB identity and registry answers. It checks image,
-video, audio, PDF and sandboxed HTML requests with Chromium's real Fetch Metadata and rejects a
-revoked admin. The file viewer mobile regression also runs it. This is local integration evidence;
+video, audio, PDF, sandboxed HTML and desktop/mobile raw-file navigation with Chromium's real Fetch
+Metadata, and rejects a revoked admin. Synthetic CLI operations behind the signed/current-owner
+dispatch exercise Close, terminal handoff and page-exit cancellation for Claude and Codex without
+starting a real CLI. With `FACTORY_HUB_UI_DIR` set to a freshly built `dist-hub`, it also opens the
+production hub entry as a Markdown tab and checks relative links, reload, Back and denied identity.
+The file viewer mobile regression also runs the checks that need no hub artifact. This is local integration evidence;
 it does not establish deployment sign-in, real ALB cookies, proxy configuration or cross-site cookie
 availability.
 

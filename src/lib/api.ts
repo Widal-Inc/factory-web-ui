@@ -133,7 +133,7 @@ export async function sendUsageLoginCode(request: UsageLoginCode): Promise<void>
  */
 export async function cancelUsageLogin(login: string): Promise<void> {
   const url = "/api/usage/login/cancel";
-  const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-machine": "1" }, body: JSON.stringify({ login }), keepalive: true });
+  const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-machine": "1" }, body: JSON.stringify({ login }), keepalive: true });
   if (!response.ok) throw await errorFrom(url, response);
 }
 

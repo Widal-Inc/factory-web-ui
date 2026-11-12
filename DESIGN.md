@@ -2508,6 +2508,12 @@ Alert rows of the table above from the `--droplet-*` roles in `src/styles.css`.
   Markdown files use the same renderer in the file viewer. **Open in a new tab** opens an
   app link to the resolved absolute file on its own PC, independent of the originating pane.
   **Open raw file** (Code glyph) opens the original bytes; Download still saves those bytes.
+  In the hub owner view, the reader link also names the factory. The new document rechecks signed
+  identity and its registered owner origin before reading; relative links, reload and Back keep
+  that factory context. Desktop and mobile raw-file actions resolve through the same transport.
+  This follows [T3 Code's environment-specific file previews](https://github.com/pingdotgg/t3code/blob/main/docs/user/composer.md),
+  with fresh hub registration because the hub can address several factories. No UI layout changes
+  or third-party code are needed.
   The reader page and dialog share **Show source** (Braces glyph, pressed while the source shows, so it
   never looks like Open raw file), highlighted source with CSS-counter line
   numbers (past 2 000 lines, the virtualizer's numbered rows; see File viewer under Typography),
