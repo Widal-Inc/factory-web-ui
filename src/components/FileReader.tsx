@@ -8,6 +8,7 @@ import { useCallback, useContext, useEffect, useState } from "react";
 import { AccessGate } from "./AccessGate.tsx";
 import { FileViewer } from "./FileViewer.tsx";
 import { ChunkFailureNotice } from "./UpdateControls.tsx";
+import { BRAND } from "../../shared/brand.ts";
 import { fetchBridgeHealth } from "../lib/api.ts";
 import { OpenFileContext } from "../lib/filePaths.ts";
 import { MachineContext } from "../lib/machineContext.tsx";
@@ -46,7 +47,7 @@ export function FileReader({ target }: { target: ReaderTarget }) {
   }, []);
 
   useEffect(() => {
-    document.title = `${path.split("/").pop() || path} · Ovis`;
+    document.title = `${path.split("/").pop() || path} · ${BRAND.name}`;
   }, [path]);
 
   const open = useCallback((linked: string) => {

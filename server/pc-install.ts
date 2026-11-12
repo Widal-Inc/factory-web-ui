@@ -31,7 +31,7 @@ const STOP_WAIT_MS = 15_000;
 
 /** what installerRun says when the installer could not even be downloaded: none of it ran */
 // Compatibility marker emitted by older installers; do not brand parsed output.
-const DOWNLOAD_FAILED = "Ovis: could not download the installer of";
+const DOWNLOAD_FAILED = `${BRAND.name}: could not download the installer of`;
 const CHANGED_WORDS = `That PC's ${BRAND.name} changed since it was looked at, so nothing was stopped. Reconnect it and try again.`;
 const NOT_REGISTERED_WORDS = (pid: number) => `The process ${pid} on that PC started after that ${BRAND.name} registered, so it may be another program that took its process id; nothing was stopped. Reconnect it and try again.`;
 /** a folder captureServer made: only such a path is ever put back into a command (quoted) */
