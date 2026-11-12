@@ -15,7 +15,7 @@ The archive is the fork's Linux x64 remote bundle, the format `widal install --f
 installs at `/opt/widal`, plus the hub UI and a small record of what it was built from.
 
 | Path | What it is | Who uses it |
-| --- | --- |
+| --- | --- | --- |
 | `bundle.json` | `version` (the remote bundle version, `REMOTE_BUNDLE_VERSION`), `platform: linux-x64`, the Bun version | the factory install checks version and platform against its pin |
 | `bin/bun`, `bin/node`, `bin/herdr` | the runtimes, pinned by checksum in `scripts/build-remote-bundle.ts` | every factory host |
 | `server/index.ts`, `shared/`, `integrations/`, `dist/`, `node_modules/` | the owner server and the personal client it serves | every factory host runs `bin/bun server/index.ts` behind the load balancer |

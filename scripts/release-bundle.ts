@@ -189,7 +189,9 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
         if ((manifest as { files?: unknown[] } | undefined)?.files?.length !== release.hubUi.files) problems.push(`${HUB_UI_DIR} lists another number of files than the pin`);
       }
       const build = files.find((file) => file.path === BUILD_FILE);
-      if (!build || (JSON.parse(new TextDecoder().decode(build.bytes)) as { revision?: unknown }).revision !== release.source.commit) problems.push(`${HUB_UI_DIR}/${BUILD_FILE} does not name the pinned commit`);
+      let buildInfo: unknown;
+      try { buildInfo = build ? JSON.parse(new TextDecoder().decode(build.bytes)) : undefined; } catch { buildInfo = undefined; }
+      if ((buildInfo as { revision?: unknown } | undefined)?.revision !== release.source.commit) problems.push(`${HUB_UI_DIR}/${BUILD_FILE} does not name the pinned commit`);
     }
     return problems;
   } finally {
@@ -198,6 +200,28 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
 }
 
 // ---- build -----------------------------------------------------------------------------------------------
+
+/** What the build copies or bundles from the checkout: the remote bundle copies these folders whole, and Vite copies public/. */
+const BUILD_READS = ["server", "shared", "integrations", "public", "src", "scripts", "index.html", "vite.config.ts", "vite.hub.config.ts"] as const;
+
+/**
+ * Why `root` cannot be built into a release, or null. The pin names a commit, so nothing outside it may reach the
+ * archive: no change, no untracked file, and no ignored file (an `.env`, say) where the build reads. The type
+ * declarations typecheck emits under shared/vendor are never bundled.
+ */
+export function checkoutProblem(root: string): string | null {
+  const gitIn = (...args: string[]): string => {
+    const result = Bun.spawnSync(["git", ...args], { cwd: root, stderr: "pipe" });
+    if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString().trim()}`);
+    return result.stdout.toString();
+  };
+  const changed = gitIn("status", "--porcelain=v1", "--untracked-files=all").split("\n").filter(Boolean);
+  if (changed.length > 0) return `A release is built from a clean checkout: the pin names a commit, and these are not in it:\n  ${changed.join("\n  ")}`;
+  const ignored = gitIn("ls-files", "--others", "--ignored", "--exclude-standard", "--", ...BUILD_READS).split("\n")
+    .filter((path) => path !== "" && !/^shared\/vendor\/[^/]+\/dist\/.+(?:\.d\.ts(?:\.map)?|\.tsbuildinfo)$/.test(path));
+  if (ignored.length > 0) return `A release takes nothing git ignores from where the build reads; remove these first:\n  ${ignored.join("\n  ")}`;
+  return null;
+}
 
 const root = resolve(import.meta.dir, "..");
 
@@ -218,7 +242,8 @@ async function build(): Promise<void> {
   // the Linux bundle carries the builder's own Bun binary (build-remote-bundle.ts), so the builder's Bun is the release's Bun
   if (!pinnedBun || Bun.version !== pinnedBun) throw new Error(`A release is built with the pinned Bun ${String(pinnedBun)}; this is ${Bun.version}.`);
   if (`${process.platform}-${process.arch}` !== RELEASE_PLATFORM) throw new Error(`A release is built on ${RELEASE_PLATFORM}; this is ${process.platform}-${process.arch}.`);
-  if (git("status", "--porcelain", "--untracked-files=no") !== "") throw new Error("A release is built from a clean checkout: the pin names a commit, and uncommitted changes are not in it.");
+  const unclean = checkoutProblem(root);
+  if (unclean !== null) throw new Error(unclean);
   const commit = git("rev-parse", "HEAD");
   const epoch = Number(git("show", "-s", "--format=%ct", "HEAD"));
   const builtAt = new Date(epoch * 1000);
@@ -254,7 +279,14 @@ async function build(): Promise<void> {
     const file = archiveName(REMOTE_BUNDLE_VERSION, commit);
     mkdirSync(output, { recursive: true });
     const temporary = join(output, `${file}.tmp`);
-    packDeterministic(stage, temporary, epoch);
+    // nothing is left under the archive's name, or a pin beside it, unless the archive verifies
+    rmSync(join(output, RELEASE_PIN_FILE), { force: true });
+    try {
+      packDeterministic(stage, temporary, epoch);
+    } catch (error) {
+      rmSync(temporary, { force: true });
+      throw error;
+    }
     renameSync(temporary, join(output, file));
 
     const pin = buildPin({
@@ -267,9 +299,12 @@ async function build(): Promise<void> {
       bun: bundle.bun,
       rustPtyHost: bundle.pty_sidecar === true,
     });
-    writeFileSync(join(output, RELEASE_PIN_FILE), `${JSON.stringify(pin, null, 2)}\n`);
     const problems = verifyRelease(join(output, file), pin);
-    if (problems.length > 0) throw new Error(`The release just built does not verify:\n${problems.map((problem) => `  ${problem}`).join("\n")}`);
+    if (problems.length > 0) {
+      rmSync(join(output, file), { force: true });
+      throw new Error(`The release just built does not verify:\n${problems.map((problem) => `  ${problem}`).join("\n")}`);
+    }
+    writeFileSync(join(output, RELEASE_PIN_FILE), `${JSON.stringify(pin, null, 2)}\n`);
     console.log(`${file} sha256:${pin.archive.sha256} (${pin.archive.bytes} bytes)\ncommit ${commit}\npin ${join(output, RELEASE_PIN_FILE)}`);
     if (!pin.ownerServer.rustPtyHost) console.log("This release has no Rust PTY host (HERDR_BUNDLE_PTY_SIDECAR was not set): terminals use the bundled Node fallback.");
   } finally {

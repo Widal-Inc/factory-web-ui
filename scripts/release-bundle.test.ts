@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { BUILD_FILE, HUB_MANIFEST_FILE, buildManifest } from "./hub-artifact.ts";
-import { HUB_UI_DIR, OWNER_SERVER, RELEASE_INFO_FILE, RELEASE_INFO_SCHEMA, archiveName, buildPin, packDeterministic, pinProblem, verifyRelease, type ReleasePin } from "./release-bundle.ts";
+import { HUB_UI_DIR, OWNER_SERVER, RELEASE_INFO_FILE, RELEASE_INFO_SCHEMA, archiveName, buildPin, checkoutProblem, packDeterministic, pinProblem, verifyRelease, type ReleasePin } from "./release-bundle.ts";
 
 const commit = "a".repeat(40);
 const other = "b".repeat(40);
@@ -112,6 +112,45 @@ describe("deterministic archive", () => {
   });
 });
 
+describe("checkoutProblem", () => {
+  function checkout(): string {
+    const root = join(temp, "checkout");
+    put(root, ".gitignore", "dist/\n.env\nnode_modules\n");
+    put(root, "server/index.ts", "export {};\n");
+    const git = (...args: string[]) => {
+      const result = Bun.spawnSync(["git", "-c", "user.name=Example", "-c", "user.email=example@example.test", "-c", "commit.gpgsign=false", ...args], { cwd: root, stderr: "pipe" });
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    };
+    git("init", "-q");
+    git("add", ".");
+    git("commit", "-q", "-m", "fixture");
+    return root;
+  }
+
+  test("a clean checkout builds, and the declarations typecheck emits under shared/vendor do not count", () => {
+    const root = checkout();
+    put(root, "node_modules/pkg/index.js", "");
+    put(root, "shared/vendor/example/dist/index.d.ts", "");
+    expect(checkoutProblem(root)).toBeNull();
+  });
+
+  test("nothing outside the commit reaches a release: no change, no untracked file, no ignored file where the build reads", () => {
+    const changed = checkout();
+    put(changed, "server/index.ts", "export const changed = true;\n");
+    expect(checkoutProblem(changed)).toContain("server/index.ts");
+    rmSync(changed, { recursive: true, force: true });
+
+    const untracked = checkout();
+    put(untracked, "server/extra.ts", "");
+    expect(checkoutProblem(untracked)).toContain("server/extra.ts");
+    rmSync(untracked, { recursive: true, force: true });
+
+    const ignored = checkout();
+    put(ignored, "server/.env", "SECRET=example\n");
+    expect(checkoutProblem(ignored)).toContain("server/.env");
+  });
+});
+
 describe("verifyRelease", () => {
   test("a whole release verifies", () => {
     const { archive, pin } = release(stageRelease("good"));
@@ -145,6 +184,7 @@ describe("verifyRelease", () => {
       ["a hub file the manifest does not list", (stage) => put(stage, "hub-ui/assets/extra.js", "x"), "hub-ui: assets/extra.js is not in the manifest"],
       ["a source map in the hub UI", (stage) => put(stage, "hub-ui/assets/app.js.map", "{}"), "hub-ui:"],
       ["no hub UI", (stage) => rmSync(join(stage, "hub-ui"), { recursive: true }), "hub-ui/ is missing"],
+      ["a hub build record that is not JSON", (stage) => put(stage, `hub-ui/${BUILD_FILE}`, "not json"), "hub-ui/build.json does not name the pinned commit"],
     ];
     for (const [name, damage, expected] of cases) {
       const stage = stageRelease(`case-${name.replace(/\W+/g, "-")}`);
