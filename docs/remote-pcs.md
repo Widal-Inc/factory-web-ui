@@ -4,7 +4,7 @@ Widal Factory inherits SSH discovery, setup and routing from its upstream browse
 
 ## Current development boundary
 
-Use the [local source workflow](../INSTALL.md) first. The remote bundle resolver in [server/remote-bundle.ts](../server/remote-bundle.ts) still has an upstream release-manifest fallback. Do not use automatic installation, **Install and connect**, **Install app**, or update-all controls as Widal setup instructions. Fork-owned runtime distribution and update integration need implementation and verification.
+Use the [local source workflow](../INSTALL.md) first. The remote bundle resolver in [server/remote-bundle.ts](../server/remote-bundle.ts) no longer falls back to the upstream release manifest: with no local bundle and no `OVIS_BUNDLE_MANIFEST` it refuses and says so. The remote-PC installer (`server/pc-install.ts`) and the inherited launchers still fetch the upstream installer and are not a supported path. Do not use automatic installation, **Install and connect**, **Install app**, or update-all controls as Widal setup instructions. Fork-owned runtime distribution and update integration need implementation and verification.
 
 Developers working on remote support can inspect [scripts/build-remote-bundle.ts](../scripts/build-remote-bundle.ts), `bun run build:remote`, and the `OVIS_BUNDLE_MANIFEST` override. A locally built manifest is not a published or supported Widal runtime release. Review its paths and artifacts before any remote mutation.
 

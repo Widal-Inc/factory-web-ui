@@ -18,7 +18,9 @@ export async function bundleManifestSource(platform: string, options: BundleSour
   const local = join(options.directory ?? join(import.meta.dir, "..", "remote-bundles"), `manifest-${platform}.json`);
   try { await access(local); return local; }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  return `https://github.com/devswha/ovis/releases/download/remote-v${REMOTE_BUNDLE_VERSION}/manifest.json`;
+  // No release channel is built in: this fork downloads nothing from the project it came from. An operator names one
+  // (OVIS_BUNDLE_MANIFEST, an https address or a file), or builds the bundles beside this server.
+  throw new Error(`No remote PC bundle is configured for ${platform}: this server has no release channel to download one from. Build it with bun run build:remote ${platform}, or set OVIS_BUNDLE_MANIFEST to a manifest.`);
 }
 export interface BundleFile { path: string; sha256: string; size: number }
 interface BundleFileOptions extends BundleSourceOptions {

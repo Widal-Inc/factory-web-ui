@@ -47,8 +47,7 @@ import { attachableIdentity } from "./pty/sidecar.ts";
 import { runtime } from "./herdr-core/runtime.ts";
 import { handleUpdateRequest, updateRequestAllowed } from "./update-api.ts";
 import { handleHerdrUpdateRequest } from "./herdr-update.ts";
-import { handleTelemetryRequest, visitSurface } from "./telemetry.ts";
-import type { TelemetryIngress } from "../shared/telemetry.ts";
+import { handleTelemetryRequest } from "./telemetry.ts";
 import { handleStatuslineRequest, handleUsageRequest } from "./usage.ts";
 import { handleSystemRequest, type SystemSampler } from "./system-stats.ts";
 import { handleUserFontsRequest } from "./user-fonts.ts";
@@ -272,16 +271,11 @@ async function handleAuthorizedRequest(request: Request, ctx: ServerContext, fac
       } catch { relay?.close(); return new Response("remote websocket unavailable", { status: 502 }); }
       return new Response("websocket upgrade required", { status: 426 });
     }
-    // what the daily active message counts of this visit: the page's kind of screen and the way it came in;
-    // nothing for another server's bridge, or for a surface no page names (visitSurface)
-    const observed = observedIngress({ ...requestShape, peerKnown: ip !== null, forwardingHeaders: proxyHeaders });
-    const surface = bridgeAuthorized ? false : visitSurface(url.searchParams.get("surface"));
-    const ingress: TelemetryIngress = observed === "direct" ? (loopback ? "local" : "lan") : observed;
     // Reuse the terminal socket for the same authorized event document as /api/machines/events.
     // A server-side switch keeps the old SSE path available for immediate transport rollback.
     const useMachineEvents = machines && !bridgeAuthorized && process.env["OVIS_MACHINE_EVENTS_WS"] !== "0";
     const machineEvents = useMachineEvents ? { manager: machines, preferences, herdrSidebar, seen } : undefined;
-    const upgraded = ctx.upgrade(request, { headers, data: connectionData({ factoryIdentity, machineEvents, bridge: bridgeAuthorized, ...(surface ? { surface } : {}), ...(surface === false ? {} : { ingress }) }) });
+    const upgraded = ctx.upgrade(request, { headers, data: connectionData({ factoryIdentity, machineEvents, bridge: bridgeAuthorized }) });
     if (upgraded) return undefined;
     return new Response("websocket upgrade required", { status: 426 });
   }
@@ -586,7 +580,7 @@ async function handleAuthorizedRequest(request: Request, ctx: ServerContext, fac
 
   if (pathname.startsWith("/api/pane/prompt")) {
     try {
-      const response = await handlePromptRequest(request, url, { serialize, codexHome: options.codexHome, claudeTranscript: (paneId) => claudeAgents.sessionOf(paneId)?.path ?? null, openCodeStateDir: options.openCodeStateDir, openCodeState, onAnswered: () => options.telemetry?.tally("prompt_answers") });
+      const response = await handlePromptRequest(request, url, { serialize, codexHome: options.codexHome, claudeTranscript: (paneId) => claudeAgents.sessionOf(paneId)?.path ?? null, openCodeStateDir: options.openCodeStateDir, openCodeState });
       if (response) return response;
     } catch (error) {
       return errorResponse(error);

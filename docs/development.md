@@ -536,7 +536,7 @@ visibility/online flags, socket states, probe timing, pending counts and numeric
 The browser's online flag is not proof of network reachability; reports are marked client-reported.
 
 Reports never include message/secret text, payloads, terminal output, close reasons, URLs,
-credentials or PC names. They are unrelated to anonymous install/update telemetry and never leave
+credentials or PC names. They are unrelated to the version and crash reports of [telemetry](guide.md#version-and-crash-reports) and never leave
 this server. Browser storage is not used. Reports are best effort: a failed HTTP attempt retains
 bounded metadata for a later connection event, but a full app/page restart can lose unsent records.
 The HTTP attempt is bounded to five seconds and uses same-origin credentials, no redirects and
@@ -989,7 +989,7 @@ do; measure setup, test execution and retries separately when comparing speed. S
 [scripts/self-hosted-runner/README.md](../scripts/self-hosted-runner/README.md).
 
 `scripts/ci-tests.ts` discovers all `.test.ts` and `.test.tsx` files under
-src/shared/server/scripts/telemetry/push-relay/relay/integrations.
+src/shared/server/scripts/push-relay/relay/integrations.
 Files named `*.contract.test.ts`, tests under `server/herdr/` and `server/pty/`, and
 `server/updater.test.ts` (which includes real bridge restart/rollback cases) belong
 to integration; everything else belongs to unit. Name new live-server tests

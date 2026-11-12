@@ -15,9 +15,9 @@ No shared Widal brand configuration exists on this base. The docs use the reques
 | Factory pages and Setup | Not delivered by the current browser bridge or these docs |
 | Shared sign-in and authorization | Still pending; arbitrary proxy headers are not authenticated Factory identity |
 | Upstream account, relay, pairing, Portal and Tailscale-owner login | Removed from this fork's browser/server integration and retired as setup guidance. Inherited native-app source (`app/`) and store notes remain; they are not a supported Widal distribution path |
-| Telemetry | The base still has the upstream collector and schema; source commands set `OVIS_TELEMETRY=0`. A configurable Widal endpoint and restricted schema are separate work |
+| Telemetry | Done: the server sends only its version and a crash's kind, to the address in `WIDAL_TELEMETRY_URL` and to nothing when that is unset. The upstream collector, its Worker and its report scripts are removed ([what is sent](guide.md#version-and-crash-reports)). Any further field waits for the owners' decision on what may be collected |
 | Installers and updates | No supported Widal install URL or release channel is established; inherited launchers and feeds must be adapted |
-| Remote-PC runtimes | The bundle resolver retains an upstream manifest fallback; do not use automatic setup/update as Widal onboarding |
+| Remote-PC runtimes | The bundle resolver no longer falls back to an upstream manifest: it needs a local bundle or `OVIS_BUNDLE_MANIFEST`. The remote-PC installer (`server/pc-install.ts`) still runs the upstream installer; do not use automatic setup/update as Widal onboarding |
 | Native apps and public demo | Source, workflows and legacy assets do not prove published Widal artifacts, signing or hosting |
 
 ## Audit coverage

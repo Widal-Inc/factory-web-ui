@@ -92,11 +92,11 @@ export function createCore({ options, preferences, usage, usageLogin, browserSna
 
   const { mayType, authorizeSocket, setRole, watchPane, unwatchPane, killWatches, end } = createConnections({ clients, present, pending: { close: closeConnection }, detachClaimed,
     dropClaims: (client) => { dropClaims(client); promptWatch.drop(client); } });
-  const { push, alertWebhook, omo, gjc, letta, claudeAgents, opencodeAgents, plans, clientSnapshot, currentHerdrLifetime, queueHeld, countVisit, machines, broadcastAll, logPushError, collector, waitTimer } = createStatusHub({ options, preferences, clients, present, pending, drainPending, holdPendingPane, usage, usageLogin,
+  const { push, alertWebhook, omo, gjc, letta, claudeAgents, opencodeAgents, plans, clientSnapshot, currentHerdrLifetime, queueHeld, machines, broadcastAll, logPushError, collector, waitTimer } = createStatusHub({ options, preferences, clients, present, pending, drainPending, holdPendingPane, usage, usageLogin,
     // the messages first: the old ID's terminal closing holds what it still leases
     paneMoved: (from, to) => { movePendingPane(from, to); paneMoved(from, to); } });
   const baseSocketHandlers = createSocket({
-    clients, present, stopped: () => stopped, setRole, watchable: () => !servingCore(), terminalHistory: () => servingCore(), watchPane, unwatchPane, end, holdPending, attachments, clientSnapshot, herdrLifetime: currentHerdrLifetime, browserSnapshot, countVisit, drainOutput,
+    clients, present, stopped: () => stopped, setRole, watchable: () => !servingCore(), terminalHistory: () => servingCore(), watchPane, unwatchPane, end, holdPending, attachments, clientSnapshot, herdrLifetime: currentHerdrLifetime, browserSnapshot, drainOutput,
     // each frame type by name, with the handler of the module that owns it: anything else on a frame object never
     // becomes a frame a client can send, and a type named twice fails the build instead of replacing a handler
     frames: {

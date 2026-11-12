@@ -3,7 +3,6 @@ import { MAX_ATTACHMENT_BYTES } from "../../shared/attachments.ts";
 import { NOTICE_VERSION } from "../../shared/telemetry.ts";
 import { AttachmentTooLargeError, ApiError, cancelUsageLogin, changeTelemetry, fetchAgentKinds, fetchTelemetry, movePaneBeside, swapPaneWith, uploadPaneImage, verifySourceBoot } from "./api.ts";
 import { movingHerdrFocusOn } from "./followFocus.ts";
-import { DEFAULT_SETTINGS, telemetrySettingsSnapshot } from "./settings.ts";
 import { nativeTransport, setTransport } from "./transport.ts";
 import { directTransport } from "../hub/directTransport.ts";
 
@@ -126,20 +125,14 @@ it("refuses a 40 MiB file in the browser with the 32 MB limit named, before uplo
   expect(MAX_ATTACHMENT_BYTES).toBe(32 * 1024 * 1024);
 });
 
-it("posts the full safe telemetry snapshot and current notice version", async () => {
-  const settings = telemetrySettingsSnapshot({
-    ...DEFAULT_SETTINGS,
-    terminalFontFamily: "Private Font Name",
-    chatFontFamily: "Private Chat Font",
-    usageHidden: ["account-identifier"],
-  });
-  const change = { notice_seen: true as const, notice_version: NOTICE_VERSION, settings };
+it("posts the notice acknowledgement with the current notice version, and nothing from the browser's settings", async () => {
+  const change = { notice_seen: true as const, notice_version: NOTICE_VERSION };
   let requestUrl = "";
   let requestInit: RequestInit | undefined;
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     requestUrl = url;
     requestInit = init;
-    return Response.json({ enabled: true, blocked_by_env: false, notice_seen: true, next: null });
+    return Response.json({ enabled: true, blocked_by_env: false, notice_seen: true, next: [], error_kinds: ["uncaught_exception"] });
   }) as typeof fetch;
 
   await changeTelemetry(change);
@@ -151,16 +144,7 @@ it("posts the full safe telemetry snapshot and current notice version", async ()
   expect(new Headers(requestInit?.headers).get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
   const body = JSON.parse(String(requestInit?.body)) as Record<string, unknown>;
   expect(body).toEqual(change);
-  expect(body).not.toHaveProperty("changed_settings");
-  expect(Object.keys(body.settings as object)).toHaveLength(50);
-  expect(body.settings).toHaveProperty("darkTheme", "codex");
-  expect(body.settings).toHaveProperty("lightTheme", "codex");
-  expect(body.settings).toHaveProperty("statusIndicators", "classic");
-  expect(body.settings).not.toHaveProperty("terminalFontFamily");
-  expect(body.settings).not.toHaveProperty("chatFontFamily");
-  expect(body.settings).not.toHaveProperty("usageHidden");
-  expect((body.settings as Record<string, unknown>).terminalFontCustom).toBe(true);
-  expect((body.settings as Record<string, unknown>).usageHiddenCount).toBe(1);
+  expect(body).not.toHaveProperty("settings");
 });
 
 it("preserves telemetry API errors", async () => {

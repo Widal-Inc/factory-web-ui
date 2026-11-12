@@ -77,9 +77,16 @@ describe("remote bundle sources", () => {
     await expect(bundleFile("darwin-arm64", new AbortController().signal, { directory: local.directory, manifest: join(local.directory, "missing.json") })).rejects.toThrow("ENOENT");
   });
 
-  it("uses the release only when the requested platform has no local manifest", async () => {
+  it("names no release to download when the requested platform has no local manifest and none is configured", async () => {
     const { directory } = fixture("linux-x64");
-    expect(await bundleManifestSource("darwin-arm64", { directory, manifest: "" })).toBe(`https://github.com/devswha/ovis/releases/download/remote-v${REMOTE_BUNDLE_VERSION}/manifest.json`);
+    const before = process.env["OVIS_BUNDLE_MANIFEST"];
+    delete process.env["OVIS_BUNDLE_MANIFEST"];
+    try {
+      const refused = await bundleManifestSource("darwin-arm64", { directory, manifest: "" }).catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(Error);
+      expect((refused as Error).message).toContain("No remote PC bundle is configured for darwin-arm64");
+      expect((refused as Error).message).not.toMatch(/https?:\/\//);
+    } finally { if (before !== undefined) process.env["OVIS_BUNDLE_MANIFEST"] = before; }
     await expect(bundleManifestSource("../linux-x64", { directory })).rejects.toThrow("Unsupported bundle platform");
   });
 

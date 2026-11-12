@@ -3,8 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { BUNDLE_PLATFORMS, BUNDLE_WORKFLOW, bundleInput, bundleProblems, check, DEPLOYED_FILE, type Get, manifestUrl, publishedProblems, releaseCheck, WORKER_SOURCES, workerFingerprint, workerProblems } from "./release-guards.ts";
-import { bundleManifestSource } from "../server/remote-bundle.ts";
+import { BUNDLE_PLATFORMS, BUNDLE_WORKFLOW, bundleInput, bundleProblems, check, type Get, manifestUrl, publishedProblems, releaseCheck } from "./release-guards.ts";
 import { REMOTE_BUNDLE_VERSION } from "../shared/machines.ts";
 
 const made: string[] = [];
@@ -57,10 +56,7 @@ describe("publishedProblems", () => {
   const manifest = (version: string, platforms = BUNDLE_PLATFORMS) => ({ version, assets: Object.fromEntries(platforms.map((platform) => [platform, { url: asset(platform), sha256: "a".repeat(64) }])) });
   const archives: Record<string, number> = Object.fromEntries(BUNDLE_PLATFORMS.map((platform) => [asset(platform), 214_845_782]));
 
-  it("reads the manifest URL remote PCs download, for every platform the bundle workflow publishes", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "hwc-bundles-"));
-    made.push(directory);
-    for (const platform of BUNDLE_PLATFORMS) expect(await bundleManifestSource(platform, { directory, manifest: "" })).toBe(manifestUrl(Number(REMOTE_BUNDLE_VERSION)));
+  it("checks every platform the bundle workflow publishes", () => {
     const published = /assert len\(result\['assets'\]\) == (\d+)/.exec(readFileSync(join(import.meta.dir, "..", BUNDLE_WORKFLOW), "utf8"))?.[1];
     expect(BUNDLE_PLATFORMS).toHaveLength(Number(published));
   });
@@ -117,18 +113,8 @@ describe("publishedProblems", () => {
   });
 });
 
-describe("workerProblems", () => {
-  it("passes the recorded deploy and tells how to deploy and record any other source", () => {
-    const current = workerFingerprint(["worker", "schema"]);
-    expect(workerProblems(current, current)).toEqual([]);
-    expect(workerFingerprint(["worker", "schema\r\n"])).toBe(workerFingerprint(["worker", "schema\n"]));
-    expect(workerProblems(workerFingerprint(["worker", "schema with attachLimit"]), current)[0]).toContain("bun scripts/release-guards.ts --worker-deployed");
-    expect(workerProblems(current, undefined)).toHaveLength(1);
-  });
-});
-
 describe("check", () => {
-  /** a repository released as 1.0.0 with remote bundle 1 and a recorded Worker, then changed by `edit` */
+  /** a repository released as 1.0.0 with remote bundle 1, then changed by `edit` */
   function released(edit: Record<string, string>): string {
     const dir = mkdtempSync(join(tmpdir(), "hwc-release-"));
     made.push(dir);
@@ -142,9 +128,7 @@ describe("check", () => {
       "CHANGELOG.md": `## [Unreleased]\n\n## [${version}]\n\n- Fixed.\n`,
       "release-summaries.json": JSON.stringify({ [version]: Object.fromEntries(["en", "ko", "ja", "zh"].map((language) => [language, { fixed: ["Fixed."] }])) }),
     });
-    const worker = { "telemetry/worker.ts": "worker", "shared/telemetry.ts": "schema" };
-    write({ ...metadata("1.0.0"), ...worker, "shared/machines.ts": 'export const REMOTE_BUNDLE_VERSION = "1";\n', "server/index.ts": "a", "src/App.tsx": "a",
-      [DEPLOYED_FILE]: JSON.stringify({ sha256: workerFingerprint(WORKER_SOURCES.map((path) => worker[path as keyof typeof worker])) }) });
+    write({ ...metadata("1.0.0"), "shared/machines.ts": 'export const REMOTE_BUNDLE_VERSION = "1";\n', "server/index.ts": "a", "src/App.tsx": "a" });
     git("init", "-q");
     git("add", "-A");
     git("commit", "-qm", "1.0.0");
@@ -165,7 +149,7 @@ describe("check", () => {
   };
 
   it("leaves any tree whose version is already released alone, whatever it changed", () => {
-    expect(check(released({ "server/index.ts": "b", "telemetry/worker.ts": "new" }), false)).toEqual({ version: null, problems: [] });
+    expect(check(released({ "server/index.ts": "b", "src/App.tsx": "new" }), false)).toEqual({ version: null, problems: [] });
   });
 
   it("passes a release PR that changed only the client", () => {
@@ -242,13 +226,10 @@ describe("check", () => {
     expect(check(dir, false).problems[0]).toContain(`${BUNDLE_WORKFLOW} bun-version`);
   });
 
-  it("fails a release whose Worker changed without a recorded deploy, and one without patch notes", () => {
-    // shared/telemetry.ts is also a bundle input, so the Worker's own file shows this one alone
-    const dir = released({ "telemetry/worker.ts": "worker with a new field" });
+  it("fails a release without patch notes", () => {
+    const dir = released({ "src/App.tsx": "b" });
     releasePr(dir);
-    const { problems } = check(dir, false);
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toStartWith("telemetry/worker.ts or shared/telemetry.ts changed");
+    expect(check(dir, false).problems).toEqual([]);
     writeFileSync(join(dir, "release-summaries.json"), "{}");
     expect(check(dir, false).problems[0]).toContain("release-summaries.json must tell this version in: en, ko, ja, zh.");
   });

@@ -12,7 +12,7 @@ function socket(stopped: boolean) {
   const handler = createSocket({
     clients: new Set(), present: new Set(), stopped: () => stopped, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
     end: (_client, reason) => { ended.push(reason); }, holdPending() {}, attachments: new Map(),
-    clientSnapshot: async () => ({}) as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
+    clientSnapshot: async () => ({}) as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, drainOutput() {}, frames: {} as never,
   });
   const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: () => 1, close: () => {} };
   return { handler, client, ended };
@@ -26,7 +26,7 @@ it("tells a new connection its features before its snapshot, which waits on herd
     const handler = createSocket({
       clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
       end() {}, holdPending() {}, attachments: new Map(),
-      clientSnapshot: () => held, herdrLifetime: () => outcome === "read" ? "herdr-a" : undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
+      clientSnapshot: () => held, herdrLifetime: () => outcome === "read" ? "herdr-a" : undefined, browserSnapshot: (snapshot) => snapshot, drainOutput() {}, frames: {} as never,
     });
     const frames: { type: string; features?: string[]; code?: string; connection?: string; herdr_lifetime?: string }[] = [];
     const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
@@ -54,7 +54,7 @@ it("names the folder OVIS_PASTE_DIR sends uploads to in the features frame, and 
       const handler = createSocket({
         clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
         end() {}, holdPending() {}, attachments: new Map(),
-        clientSnapshot: async () => ({ workspaces: [], panes: [], agents: [], layouts: [] }) as unknown as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
+        clientSnapshot: async () => ({ workspaces: [], panes: [], agents: [], layouts: [] }) as unknown as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, drainOutput() {}, frames: {} as never,
       });
       const frames: { type: string; paste_dir?: string }[] = [];
       const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
@@ -73,7 +73,7 @@ it("offers no watch where none can be drawn (herdr-core), and ends a watch sent 
     clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => false, terminalHistory: () => true,
     watchPane: (_client, paneId) => { watched.push(paneId); }, unwatchPane() {},
     end() {}, holdPending() {}, attachments: new Map(),
-    clientSnapshot: async () => ({ workspaces: [], panes: [], agents: [], layouts: [] }) as unknown as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
+    clientSnapshot: async () => ({ workspaces: [], panes: [], agents: [], layouts: [] }) as unknown as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, drainOutput() {}, frames: {} as never,
   });
   const frames: { type: string; features?: string[]; pane_id?: string; code?: string }[] = [];
   const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
@@ -103,7 +103,7 @@ it("delivers a session snapshot larger than the transport budget to a socket wit
   const handler = createSocket({
     clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
     end() {}, holdPending() {}, attachments: new Map(),
-    clientSnapshot: async () => snapshot, herdrLifetime: () => undefined, browserSnapshot: (read) => read, countVisit() {}, drainOutput() {}, frames: {} as never,
+    clientSnapshot: async () => snapshot, herdrLifetime: () => undefined, browserSnapshot: (read) => read, drainOutput() {}, frames: {} as never,
   });
   // a real Bun socket with the production limits, so Bun's own backpressure cap is in play as well
   const server = Bun.serve({
@@ -153,7 +153,7 @@ for (const arrives of ["before the browser's socket opens", "after the browser's
     const handler = createSocket({
       clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
       end() {}, holdPending() {}, attachments: new Map(),
-      clientSnapshot: async () => snapshot, herdrLifetime: () => undefined, browserSnapshot: (read) => read, countVisit() {}, drainOutput() {}, frames: {} as never,
+      clientSnapshot: async () => snapshot, herdrLifetime: () => undefined, browserSnapshot: (read) => read, drainOutput() {}, frames: {} as never,
     });
     const relays: MachineRelay[] = [];
     // this PC's server, relaying /ws?machine_id= as dispatch.ts does

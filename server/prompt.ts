@@ -1329,7 +1329,7 @@ export interface PromptRequestOptions {
   openCodeStateDir?: string;
   /** Each server owns its drafts and clears them when stopped. */
   openCodeState?: OpenCodePromptState;
-  /** an answer reached the agent (a 2xx that sent it on, not a saved step or a navigation), for the daily active message's usage */
+  /** an answer reached the agent (a 2xx that sent it on, not a saved step or a navigation) */
   onAnswered?: () => void;
   /** how long an answer or a move may take, from its first read to its last key (ms); tests shorten it */
   answerDeadlineMs?: number;

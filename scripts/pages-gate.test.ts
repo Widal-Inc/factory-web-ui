@@ -285,11 +285,11 @@ describe("Extracted UI checks", () => {
     "checkTerminalPinch", "checkMobileTabs", "checkTabMenu", "checkDefaultView",
     "checkComposerReconnect", "checkDroplet", "checkTakeOver", "checkAlertSound",
     "checkChatKeepsTerminalSize", "checkPaneSwitchKeepsTerminalSize", "checkFocusedWindowReclaimsTerminalSize",
-    "checkUpdateNotice", "checkTelemetrySettings",
+    "checkUpdateNotice",
   ];
   const calls = (source: string) => [...source.matchAll(/\b(check[A-Z]\w*)\(/g)].map((match) => match[1]!);
 
-  it("moves all 24 existing checks exactly once, in order, without removing the remaining core checks", () => {
+  it("moves all 23 existing checks exactly once, in order, without removing the remaining core checks", () => {
     const core = calls(readFileSync(new URL("./ui-regression.ts", import.meta.url), "utf8"));
     const contexts = calls(readFileSync(new URL("./ui-contexts-checks.ts", import.meta.url), "utf8"));
     expect(contexts.filter((name) => moved.includes(name))).toEqual(moved);
