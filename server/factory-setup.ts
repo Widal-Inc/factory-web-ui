@@ -48,6 +48,11 @@ export interface FactorySetupOptions {
   readonly apps: (identity: FactoryIdentity) => Promise<{ githubClientId: string | null; linearClientId: string | null }>;
   /** Whether Claude Code is signed in on this host; null when that cannot be told. */
   readonly claudeSignedIn: () => Promise<boolean | null>;
+  /**
+   * The factory's configured owner (WIDAL_FACTORY_OWNER), the only person its gate admits. The timer renews
+   * nothing of anyone else's: a record left by a previous owner is cleared instead.
+   */
+  readonly owner?: string;
   readonly fetch?: typeof fetch;
   readonly now?: () => number;
   readonly random?: (bytes: number) => Buffer;
@@ -146,6 +151,13 @@ export class FactorySetup {
    */
   maintain(): Promise<void> {
     return this.serial(async () => {
+      const owner = this.options.owner?.trim();
+      const previous = this.store.read();
+      // the factory changed owner: the previous person's token is never renewed and their `ready` never kept
+      if (owner && previous && previous.owner.trim().toLowerCase() !== owner.toLowerCase()) {
+        try { this.takeOver(owner); } catch { /* the next turn tries again */ }
+        return;
+      }
       await this.renewLinear(null);
       const stored = this.store.read();
       if (!stored?.ready || this.usable(stored, this.store.secrets())) return;

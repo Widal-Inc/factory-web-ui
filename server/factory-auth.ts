@@ -58,6 +58,8 @@ export class FactoryAuth {
   readonly factory: string;
   readonly origin: string;
   readonly browserOrigin: string;
+  /** The configured owner, the only person admitted. */
+  readonly owner: string;
   private readonly hubMe: string;
   private readonly hubSetupUrl: string;
   private readonly peers = new BlockList();
@@ -73,6 +75,7 @@ export class FactoryAuth {
     this.origin = origin(options.origin, "Factory origin", true);
     if (!/^[^\s\x00-\x1f\x7f/]{1,254}$/.test(options.owner)) throw new Error("Invalid factory owner");
     this.browserOrigin = origin(options.hubOrigin, "Hub browser origin", true);
+    this.owner = options.owner;
     const registry = origin(options.registryOrigin, "Registry origin", false);
     this.hubMe = `${registry}/api/app/me`;
     this.hubSetupUrl = `${registry}/api/app/setup`;

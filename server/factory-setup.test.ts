@@ -329,6 +329,27 @@ describe("owner Setup", () => {
     expect(record().linear).toBeUndefined();
   });
 
+  it("renews only the configured owner's Linear token on its own, and clears a previous owner's", async () => {
+    up.state.tokenLifetime = null;
+    await completeAsAda();
+    writeFileSync(secrets, `${readFileSync(secrets, "utf8")}OTHER_SETTING=kept\n`);
+    const timer = (owner: string) => new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: async () => { throw new Error("the timer asks no hub"); }, claudeSignedIn: async () => true, owner, fetch: up.fetcher, now: () => clock });
+    // the owner's own token is renewed, however the configured address is cased
+    clock += 86_400_000 - 60_000;
+    await timer(" ADA@example.test").maintain();
+    expect(renewals().length).toBe(1);
+    expect(record()).toMatchObject({ owner: "ada@example.test", ready: true });
+    // the factory is redeployed for another owner on the same state folder, and she has not opened Setup yet
+    clock += 86_400_000 - 60_000;
+    await timer("grace@example.test").maintain();
+    expect(renewals().length).toBe(1);
+    const file = readFileSync(secrets, "utf8");
+    for (const name of ["GH_TOKEN", "LINEAR_ACCESS_TOKEN", "LINEAR_REFRESH_TOKEN"]) expect(file).not.toContain(`${name}=`);
+    expect(file).toContain("OTHER_SETTING=kept\n");
+    expect(record()).toMatchObject({ owner: "grace@example.test", ready: false });
+    expect(record().linear).toBeUndefined();
+  });
+
   it("reports and persists one answer when a status races a Linear renewal, and loses neither the renewal nor a settings write", async () => {
     up.state.tokenLifetime = null; // a GitHub token that does not expire, so only Linear's renewal is in play
     await completeAsAda();

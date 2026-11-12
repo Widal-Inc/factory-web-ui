@@ -418,7 +418,7 @@ export function createServer(
     }) : null,
     ...(factoryAuth ? { factorySetup: new FactorySetup({
       stateDir, secretsPath: options.factorySecretsPath ?? defaultSecretsPath(), hubOrigin: factoryAuth.browserOrigin,
-      apps: (identity) => factoryAuth.setupApps(identity),
+      apps: (identity) => factoryAuth.setupApps(identity), owner: factoryAuth.owner,
       claudeSignedIn: async () => (await usageLogin.signedInAccounts("claude")).length > 0,
       ...(options.factorySetupFetch ? { fetch: options.factorySetupFetch } : {}),
     }) } : {}),
