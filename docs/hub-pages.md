@@ -1,8 +1,9 @@
 # Hub page components and integration boundary
 
 The new components in `src/hub/` prepare the fork's My Factory, Team and Admin pages. They are
-independent of the current factory app entry. They are not selected by the production build yet.
-`mountHub(container, slots)` is the integration entry; it imports the existing fonts and theme tokens.
+independent of the personal factory app entry (`src/main.tsx`), which is unchanged. `src/hub/main.tsx`
+is their production entry: it calls `mountHub(container, slots)` with the name and logo from the shared
+`BRAND` config and the owner view below. See [the artifact](#the-hub-ui-artifact).
 
 We decided to keep dashboard requests separate from the personal factory transport. The hub owns
 work-item and registration data. The personal factory owns sessions, chat, terminal, prompts and
@@ -14,6 +15,39 @@ The navigation and work summaries follow the status-and-context approach in
 [agent management](https://docs.warp.dev/platform/managing-cloud-agents/). Here Team deliberately
 shows work-item context only, because personal sessions are private. These components use the fork's
 existing colour and typography tokens; no third-party code or pixels were copied.
+
+## The hub UI artifact
+
+`bun run build:hub` runs `vite build --config vite.hub.config.ts` and writes `dist-hub/`, which the
+factory hub serves from its origin root with `--ui-dir`. It is separate from `bun run build`
+(`dist/`), so the personal factory client and its service worker are untouched.
+
+| Part | Where |
+| --- | --- |
+| Source page | `hub-app/index.html`; name, description and icon addresses are stamped from `shared/brand.json` |
+| Entry | `src/hub/main.tsx`; output `dist-hub/index.html`, base `/`, absolute `/assets/` paths |
+| Theme | the classic blocking boot script, emitted as `assets/theme-bootstrap-<hash>.js` |
+| Brand images | the files `BRAND` names, copied by name from `public/` (the whole folder is never copied) |
+| Freshness | `build.json` holds the commit the build came from; it is absent in a build outside Git |
+| Integrity | `hub-manifest.json` |
+
+The artifact holds public files only: the entry, its hashed bundle, the brand images,
+`THIRD_PARTY_NOTICES.md`, `build.json` and the manifest. The build fails if anything else is in it,
+and it writes no source maps, service worker, web manifest or offline cache. The hub must not serve
+`/api`, `/healthz`, `/join`, `/factories` or a missing asset from it, and it checks the signed
+identity for the page and its assets on every request.
+
+`hub-manifest.json` has `schema` (1), `kind` (`factory-hub-ui`), `hubApiVersion` (1, the
+`/api/app/*` version in the table below), `revision` (the commit, or null), `appVersion`, `entry`,
+`brand`, `files` (path, sha256 and size of each file, sorted) and `digest`, the sha256 of the sorted
+`path`, NUL, `sha256` lines. A consumer should call `verifyManifest` (`scripts/hub-artifact.ts`)
+or do the same: refuse a release whose manifest has another schema or API version, lists a file
+that is missing or changed, or leaves a file unlisted, and swap a release in as a whole directory.
+
+The owner view (`OwnerFactory`) is the fork's own App, loaded on demand when the person opens their
+factory, behind `directTransport` for the registered owner origin. A page holds one such view,
+because the App reaches its server through one process-wide transport. The Setup and Admin
+onboarding slots stay empty until the reviewed onboarding services are composed.
 
 ## Published producer contract
 
@@ -44,10 +78,9 @@ connection. Team exposes no factory-address links. Work-item and PR links allow 
 
 ## Integration slots
 
-`HubSlots` requires `{brand: {name, logo}}`. The artifact entry must pass these from the branding
-owner's shared `BRAND` export; there is no second product-name constant here. Colours stay in
-`src/styles.css`. Production entry, manifest metadata and installable phone navigation still need
-composition with the published branding implementation.
+`HubSlots` requires `{brand: {name, logo}}`. The artifact entry passes these from the shared
+`BRAND` export; there is no second product-name constant here. Colours stay in `src/styles.css`.
+The hub pages are not an installable app, so they ship no web manifest.
 
 The optional `ownerView({factory, origin})` is called only for a ready, registered factory owned by
 the signed-in person, whose live origin matches its registered HTTPS address. The slot must reuse
@@ -59,10 +92,10 @@ for every HTTP/WebSocket operation. No socket path is invented here. Missing ada
 `docs/factory-auth.md` at web UI checkpoint `bcf280a8d9e27148b1fcf17a9a8a5e2a12cb74fc`.
 It maps the existing App's supplied HTTP, WebSocket, EventSource and resource paths to the verified
 owner origin. HTTP uses credentialed, uncached requests without redirects; EventSource also includes
-cookies. It rejects third-party origins and hub page requests and never retries a write. It is not
-installed globally or connected to App yet. That composition requires the groundwork/protected-server
-stack, its current-owner enforcement and actual ALB/CORS acceptance. This branch does not modify or
-stack those unpublished branches.
+cookies. It rejects third-party origins and hub page requests and never retries a write. `OwnerFactory`
+installs it, once per page, when the person opens their factory, and the protected server
+(`docs/factory-auth.md`) enforces current ownership for every request. Real ALB and CORS behaviour
+is not yet accepted.
 
 The Setup and Admin onboarding slots receive the current identity. They must consume the reviewed
 onboarding services, including the browser-to-factory secret/OAuth flow. They do not create a second
@@ -90,8 +123,9 @@ then checks 1280×900 and 390×844 layouts with one browser. It exercises naviga
 Team's request boundary, revocation and non-admin deep links. It is fixture QA, not a deployed hub
 or personal factory. Run it only within the applicable browser-capacity policy.
 
-These are component checks. They do not establish production artifact serving, shared-brand
-composition, installed-app behaviour, direct owner HTTP/WebSocket integration, subscription limits,
-the real Admin/setup services or second-engineer onboarding. Production entry/build integration,
-real served contracts, sign-in/revocation for each role, and phone/laptop browser acceptance remain.
+These are component checks plus a successful `bun run build:hub` and the artifact manifest tests
+(`bun test scripts/hub-artifact.test.ts`). They do not establish serving of the artifact by the
+hub, the direct owner HTTP/WebSocket path against a real ALB, subscription limits, the real
+Admin/setup services or second-engineer onboarding. Real served contracts, sign-in/revocation for
+each role, and phone/laptop browser acceptance remain.
 Required Fast checks and browser gates need their separate shared-capacity admission before push.

@@ -64,7 +64,11 @@
     "scripts/windows-terminal-browser-qa.ts",
     "scripts/terminal-cjk-punctuation-regression.ts",
     "scripts/pane-paging-demo-regression.ts",
-    "scripts/omp-question-compat.ts"
+    "scripts/omp-question-compat.ts",
+    "scripts/hub-artifact.ts",
+    "scripts/hub-artifact.test.ts",
+    "scripts/vite-shared.ts",
+    "vite.hub.config.ts"
   ],
   "include": []
 }
