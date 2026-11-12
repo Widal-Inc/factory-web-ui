@@ -421,6 +421,14 @@ export class UsageLoginService {
     }
   }
 
+  /** The accounts signed in on this host for one provider, as GET /api/usage/login?provider= lists them. */
+  async signedInAccounts(id: UsageProviderId): Promise<(string | null)[]> {
+    const provider = USAGE_PROVIDERS.find((candidate) => candidate.id === id);
+    if (!provider) return [];
+    const found = await provider.signIns(this.context);
+    return found.map((signIn) => signIn.account?.label ?? signIn.account?.id ?? null);
+  }
+
   async handle(request: Request, trackPane?: (paneId: string) => void, owner: string | null = null): Promise<Response> {
     const executableFor = (id: UsageProviderId) => LOGIN[id].binaries.map((cli) => Bun.which(cli, { PATH: this.env["PATH"] ?? "" })).find(Boolean);
     if (request.method === "GET") {
@@ -428,10 +436,7 @@ export class UsageLoginService {
       if (id !== null) {
         const provider = USAGE_PROVIDERS.find((provider) => provider.id === id);
         if (!provider) return badRequest("invalid_provider", "Unknown usage provider");
-        try {
-          const found = await provider.signIns(this.context);
-          return jsonResponse({ accounts: found.map((signIn) => signIn.account?.label ?? signIn.account?.id ?? null) });
-        } catch (error) { return errorResponse(error); }
+        try { return jsonResponse({ accounts: await this.signedInAccounts(provider.id) }); } catch (error) { return errorResponse(error); }
       }
       return jsonResponse({ providers: USAGE_PROVIDERS.map(({ id }) => ({
         id, cli: LOGIN[id].cli, installed: Boolean(executableFor(id)), local: LOGIN[id].args !== null,

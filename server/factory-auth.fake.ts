@@ -7,6 +7,8 @@ export function factoryFixture() {
   let now = 1_800_000_000_000;
   let me: unknown = { person: "ada@example.test", role: "engineer", factories: [{ factory: "ada-factory", owner: "ada@example.test", address: "https://ada.factory.example.test", state: "ready" }] };
   let status = 200;
+  // the hub's own Setup answer for this person: the organization's public app client IDs
+  let setup: unknown = { version: 1, factories: [], invitation: null, github: { clientId: "Iv1.fixture-github" }, linear: { clientId: "fixture-linear-client" } };
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const audits: FactoryAudit[] = [];
   const options: FactoryAuthOptions = {
@@ -20,6 +22,7 @@ export function factoryFixture() {
       calls.push({ url, init });
       if (url.startsWith("https://public-keys.auth.elb.us-east-1.amazonaws.com/")) return new Response(keys.publicKey.export({ type: "spki", format: "pem" }));
       if (url === "http://10.1.2.5:7373/api/app/me") return Response.json(me, { status });
+      if (url === "http://10.1.2.5:7373/api/app/setup") return Response.json(setup, { status });
       throw new Error("Unexpected fixture fetch");
     }) as typeof fetch,
   };
@@ -31,6 +34,7 @@ export function factoryFixture() {
   };
   return {
     options, auth: new FactoryAuth(options), calls, audits, token,
+    setSetup: (value: unknown) => { setup = value; },
     setMe: (value: unknown, code = 200) => { me = value; status = code; },
     advance: (milliseconds: number) => { now += milliseconds; },
     request: (path = "/api/preferences", init: RequestInit = {}) => new Request(`${options.origin}${path}`, {
