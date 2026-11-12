@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/hub/**/*.ts", "src/hub/**/*.tsx", "scripts/hub-pages-*.ts", "scripts/hub-pages-*.tsx"]
+}
