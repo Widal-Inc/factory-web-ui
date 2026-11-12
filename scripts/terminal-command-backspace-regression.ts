@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
-import type { Browser } from "playwright-core";
+import type { Browser, Page } from "playwright-core";
+import { EventEmitter, once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { paneRead, paneSendKeys, paneSendText } from "../server/herdr/client.ts";
+
+/** A fresh standalone fixture must acknowledge its attachment before a key is safe to send. */
+function inputReady(page: Page, paneId: string): Promise<void> {
+  const signals = new EventEmitter();
+  page.on("websocket", (socket) => socket.on("framereceived", ({ payload }) => {
+    const frame = JSON.parse(String(payload));
+    if (frame.type === "input-ready" && frame.pane_id === paneId && frame.ready !== false) signals.emit("ready");
+  }));
+  return once(signals, "ready", { signal: AbortSignal.timeout(10_000) }).then(() => undefined);
+}
 
 /** Mac keyboard events in an isolated context, against a pane owned by the UI suite. */
 export async function checkCommandBackspace(browser: Browser, origin: string, paneId: string): Promise<void> {
@@ -20,7 +31,8 @@ export async function checkCommandBackspace(browser: Browser, origin: string, pa
       const message = JSON.parse(String(payload));
       if (message.type === "input") inputs.push(message);
     }));
-    await page.goto(`${origin}/?pane=${encodeURIComponent(paneId)}`);
+    const ready = inputReady(page, paneId);
+    await Promise.all([page.goto(`${origin}/?pane=${encodeURIComponent(paneId)}`), ready]);
     await page.locator(".conn-live").waitFor();
     const input = page.locator(".xterm-helper-textarea");
     await input.waitFor();
@@ -123,7 +135,8 @@ process.stdin.on("data", (data) => {
       const message = JSON.parse(String(payload));
       if (message.type === "input") inputs.push(message.text);
     }));
-    await page.goto(`${origin}/?pane=${encodeURIComponent(paneId)}`);
+    const ready = inputReady(page, paneId);
+    await Promise.all([page.goto(`${origin}/?pane=${encodeURIComponent(paneId)}`), ready]);
     await page.locator(".conn-live").waitFor();
     await page.locator(".xterm-helper-textarea").press("Meta+Backspace");
     await page.waitForTimeout(300);
