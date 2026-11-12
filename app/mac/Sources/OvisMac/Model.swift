@@ -18,34 +18,16 @@ private final class InstallerRedirects: NSObject, URLSessionTaskDelegate {
 struct Status: Equatable {
     var running: Bool
     var origin: URL?
-    /// The HTTPS address Tailscale serves the app at, which the phone opens.
-    var phoneURL: URL?
-    /// "missing", "stopped" or "running", as /api/access reports Tailscale.
-    var tailscale: String?
-    /// The launcher's pid, from `plugin.ts status`'s "(pid 1)".
-    var pid: Int32?
 
     /// `plugin.ts status`'s first line: "running http://127.0.0.1:7317 (pid 1)" or "down …".
     static func parse(_ line: String) -> Status {
         let words = line.split(separator: " ")
-        var status = Status(running: words.first == "running", origin: words.count > 1 ? serverOrigin(String(words[1])) : nil)
-        if words.count > 3, words[2] == "(pid", words[3].hasSuffix(")") { status.pid = Int32(words[3].dropLast()) }
-        return status
+        return Status(running: words.first == "running", origin: words.count > 1 ? serverOrigin(String(words[1])) : nil)
     }
 
     /// The address in `plugin.ts status`'s line, when it is a web address.
     static func serverOrigin(_ text: String) -> URL? {
         guard let url = URL(string: text), isWeb(url), url.host?.isEmpty == false else { return nil }
-        return url
-    }
-
-    /// `serving_url` as the phone may open it: Tailscale's HTTPS address of this Mac (`server/tailscale.ts`),
-    /// a `*.ts.net` name, the only one its certificate covers. Anything else draws no QR code.
-    static func phoneAddress(_ text: String) -> URL? {
-        guard text.count <= 300, let url = URL(string: text), url.scheme?.lowercased() == "https",
-              let host = url.host?.lowercased(), host.hasSuffix(".ts.net"), host.count > ".ts.net".count,
-              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
-              url.path.isEmpty || url.path == "/" else { return nil }
         return url
     }
 
@@ -71,8 +53,6 @@ final class Model: ObservableObject {
     @Published private(set) var webOrigin: URL?
     /// Bumped to load the page again: View > Reload, or the server answering again after it was gone.
     @Published private(set) var reloads = 0
-    /// An Install from this app is done: the phone's QR code opens next to the page.
-    @Published var phoneSetupRequested = false
     /// The main window's page, for Open in Browser.
     weak var page: WebPageController?
     /// Unsent drafts read from the page the window left (another port is another origin, with storage of
@@ -81,11 +61,11 @@ final class Model: ObservableObject {
     /// The page did not load: it loads again once the server answers. A page that did load reconnects
     /// by itself, as it does in a browser, and keeps what the user had open in it.
     private var pageFailedToLoad = false
-    /// Bumped as Install, Restart, Make the phone address or Remove starts: a check that began before it
+    /// Bumped as Install, Restart or Remove starts: a check that began before it
     /// must not put its result over theirs.
     private var work = 0
     private var pluginRoot: String?
-    enum Action { case install, restart, phone, remove }
+    enum Action { case install, restart, remove }
     /// What Try again repeats: the action that failed, not the whole install.
     private var retryAction = Action.install
 
@@ -194,7 +174,6 @@ final class Model: ObservableObject {
         switch retryAction {
         case .install: await install()
         case .restart: await restart()
-        case .phone: await makePhoneAddress()
         case .remove: await uninstall()
         }
     }
@@ -232,7 +211,6 @@ final class Model: ObservableObject {
             return
         }
         await waitUntilRunning()
-        if webOrigin != nil { phoneSetupRequested = true }
     }
 
     func restart() async {
@@ -265,32 +243,6 @@ final class Model: ObservableObject {
         await waitUntilRunning()
     }
 
-    /// The installer's phone step: `tailscale serve` for this app, when Tailscale runs here. Run, as
-    /// install.sh runs it, from the release that runs now: the plugin's own checkout stays at the first one.
-    func makePhoneAddress() async {
-        guard let root = pluginRoot else { return }
-        work += 1
-        retryAction = .phone
-        log = []
-        phase = .working(L("Making the phone address…", "휴대폰 주소를 만드는 중…"))
-        // the code the server runs now, read from its processes: herdr's checkout stays at the version first
-        // installed, and an update runs its release from the state dir. The pid is read now, not kept from before
-        var code = root
-        if let pid = await readStatus(root: root).pid, let running = await Self.runningCode(launcher: pid, root: root) { code = running }
-        let script = "\(code)/scripts/plugin.ts"
-        guard (try? String(contentsOfFile: script, encoding: .utf8))?.contains("\"phone\"") == true else {
-            fail(L("This version of the Ovis server cannot make the phone address. Update it in Ovis (Settings → Updates), then try again.",
-                   "이 버전의 Ovis 서버는 휴대폰 주소를 만들 수 없습니다. Ovis의 설정 → 업데이트에서 업데이트한 뒤 다시 시도해 주세요."))
-            return
-        }
-        // plugin.ts gives `tailscale serve` 180 s while the user turns HTTPS on for the tailnet
-        guard await run(Paths.bun, [script, "phone"], timeout: 240, onLine: appendLine).status == 0 else {
-            fail(L("Tailscale did not make the phone address. The log says why.", "Tailscale이 휴대폰 주소를 만들지 못했습니다. 이유는 로그에 있습니다."))
-            return
-        }
-        await refresh()
-    }
-
     /// Takes the Ovis server off this Mac, as the guide's Uninstall does. herdr, Bun and Node stay, and
     /// herdr keeps running: stopping it would end every agent in it.
     func uninstall() async {
@@ -298,7 +250,6 @@ final class Model: ObservableObject {
         retryAction = .remove
         log = []
         phase = .working(L("Removing…", "제거하는 중…"))
-        let phoneURL = status?.phoneURL
         let appPort = status?.origin.map { $0.port ?? ($0.scheme == "https" ? 443 : 80) }
         // looked up again, so Try again goes on from where a failed try stopped; a lookup that failed is
         // not a plugin that is gone
@@ -321,9 +272,9 @@ final class Model: ObservableObject {
         }
         var stillServed: [Int] = []
         if let tailscale = Paths.tailscale {
-            var ports = phoneURL.map { [$0.port ?? 443] } ?? []
-            if ports.isEmpty, let appPort {
-                // a server that was down told no phone address: what Tailscale itself serves for its port does
+            var ports: [Int] = []
+            if let appPort {
+                // what Tailscale itself serves for the app's port
                 let serve = await run(tailscale, ["serve", "status", "--json"], keepStderr: false, timeout: 10)
                 guard serve.status == 0 else {
                     await LaunchAgent.remove()
@@ -340,91 +291,11 @@ final class Model: ObservableObject {
         await LaunchAgent.remove()
         guard stillServed.isEmpty else {
             let commands = stillServed.map { "tailscale serve --https=\($0) off" }.joined(separator: "; ")
-            fail(L("The Ovis server is removed, but Tailscale still serves its phone address. Run: \(commands)",
-                   "Ovis 서버는 제거했지만 Tailscale이 아직 휴대폰 주소를 열어 두고 있습니다. 실행할 명령: \(commands)"))
+            fail(L("The Ovis server is removed, but Tailscale still serves its address. Run: \(commands)",
+                   "Ovis 서버는 제거했지만 Tailscale이 아직 앱 주소를 열어 두고 있습니다. 실행할 명령: \(commands)"))
             return
         }
         await refresh()
-    }
-
-    /// The directory of the code the server runs. `plugin.ts status`'s pid is the launcher, `bun <root>/server/managed.ts`
-    /// of this checkout; it runs a supervisor, which runs the bridge, `bun server/index.ts`, in the code dir of the
-    /// active release or of the checkout (server/supervisor.ts). The bridge's dir is the answer even when the
-    /// supervisor is an older one the launcher fell back to.
-    static func runningCode(launcher: Int32, root: String) async -> String? {
-        guard let args = processArguments(launcher), isLauncher(args, root: root) else { return nil }
-        for supervisor in await children(of: launcher) {
-            guard let args = processArguments(supervisor), args.count >= 2, args[1].hasSuffix("/server/supervisor.ts") else { continue }
-            for bridge in await children(of: supervisor) {
-                guard let args = processArguments(bridge), args.count >= 2, args[1] == "server/index.ts",
-                      let dir = processDirectory(bridge) else { continue }
-                return codeDir(dir, root: root)
-            }
-        }
-        return nil
-    }
-
-    private static func children(of pid: Int32) async -> [Int32] {
-        let result = await run("/usr/bin/pgrep", ["-P", String(pid)], keepStderr: false, timeout: 10)
-        guard result.status == 0 else { return [] }
-        return result.output.split(separator: "\n").compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
-    }
-
-    /// `bun <root>/server/managed.ts`: the launcher `plugin.ts start` of this checkout runs, not another one.
-    nonisolated static func isLauncher(_ args: [String], root: String) -> Bool {
-        let suffix = "/server/managed.ts"
-        guard args.count >= 2, args[1].hasPrefix("/"), args[1].hasSuffix(suffix) else { return false }
-        return URL(fileURLWithPath: String(args[1].dropLast(suffix.count))).resolvingSymlinksInPath().path
-            == URL(fileURLWithPath: root).resolvingSymlinksInPath().path
-    }
-
-    /// A bridge's dir, when it is the checkout or a release (`release-*`) whose scripts/plugin.ts is its own,
-    /// not a link out of it (scripts/plugin-runtime.ts).
-    nonisolated static func codeDir(_ path: String, root: String) -> String? {
-        let dir = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-        guard path.hasPrefix("/"), dir.path == URL(fileURLWithPath: root).resolvingSymlinksInPath().path || dir.lastPathComponent.hasPrefix("release-") else { return nil }
-        let script = dir.appendingPathComponent("scripts/plugin.ts").resolvingSymlinksInPath()
-        guard script.path.hasPrefix(dir.path + "/"), FileManager.default.fileExists(atPath: script.path) else { return nil }
-        return dir.path
-    }
-
-    /// A process's working directory, from the kernel: this user's own processes only.
-    nonisolated static func processDirectory(_ pid: Int32) -> String? {
-        var info = proc_vnodepathinfo()
-        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
-        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
-        let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { bytes in
-            String(decoding: bytes.prefix(while: { $0 != 0 }), as: UTF8.self)
-        }
-        return path.isEmpty ? nil : path
-    }
-
-    /// A process's arguments, as the kernel keeps them (`KERN_PROCARGS2`): this user's own processes only.
-    nonisolated static func processArguments(_ pid: Int32) -> [String]? {
-        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
-        var size = 0
-        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
-        var buffer = [UInt8](repeating: 0, count: size)
-        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
-        return parseArguments(Array(buffer.prefix(size)))
-    }
-
-    /// `KERN_PROCARGS2`'s layout: argc, the executable's path, padding, then argc arguments, each ending in a NUL.
-    /// Anything short of that is no answer.
-    nonisolated static func parseArguments(_ buffer: [UInt8]) -> [String]? {
-        let header = MemoryLayout<Int32>.size
-        guard buffer.count > header else { return nil }
-        let argc = buffer.withUnsafeBytes { Int($0.loadUnaligned(as: Int32.self)) }
-        var index = header
-        while index < buffer.count, buffer[index] != 0 { index += 1 }
-        while index < buffer.count, buffer[index] == 0 { index += 1 }
-        var args: [String] = []
-        while args.count < argc {
-            guard let end = buffer[index...].firstIndex(of: 0) else { return nil }
-            args.append(String(decoding: buffer[index..<end], as: UTF8.self))
-            index = end + 1
-        }
-        return args
     }
 
     enum PluginLookup: Equatable {
@@ -505,20 +376,7 @@ final class Model: ObservableObject {
     /// `plugin.ts status` knows the port the plugin settled on: "running http://127.0.0.1:7317 (pid 1)" or "down …".
     private func readStatus(root: String) async -> Status {
         let result = await run(Paths.bun, ["\(root)/scripts/plugin.ts", "status"], keepStderr: false, timeout: 10)
-        var status = Status.parse(String(result.output.split(separator: "\n").first ?? ""))
-        // the phone address comes only from this Mac's own server, never through a redirect: it becomes the
-        // QR code the phone opens
-        guard status.running, let origin = status.origin, WebPageController.isLoopback(origin) else { return status }
-        var request = URLRequest(url: origin.appendingPathComponent("api/access"))
-        request.timeoutInterval = 5
-        if let (data, response) = try? await URLSession.shared.data(for: request, delegate: NoRedirects()),
-           (response as? HTTPURLResponse)?.statusCode == 200,
-           let access = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let tailscale = access["tailscale"] as? [String: Any] {
-            status.tailscale = tailscale["state"] as? String
-            status.phoneURL = (tailscale["serving_url"] as? String).flatMap(Status.phoneAddress)
-        }
-        return status
+        return Status.parse(String(result.output.split(separator: "\n").first ?? ""))
     }
 
     /// The server's health check that leaves herdr alone (`scope=bridge`); it answers without a sign-in.

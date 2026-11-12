@@ -1,7 +1,7 @@
 import type { WorkspaceInfo, WorktreeListing, WorktreeOpened } from "../../shared/protocol.ts";
 import { MAX_INVENTORY_WORKSPACES } from "../../shared/workspace-lifecycle.ts";
 
-/** The longest query one inventory read carries: well inside the relay's 4096-character request target (shared/relay-mux.ts). */
+/** The longest query one inventory read carries: well inside a request target's usual limits. */
 export const MAX_INVENTORY_QUERY_CHARS = 2048;
 
 /**

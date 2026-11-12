@@ -4,14 +4,14 @@
  * herdr's startup hooks are one-shot initialization commands, not supervised
  * daemons (https://herdr.dev/docs/plugins/), so this script owns the process:
  * `start` detaches the server and records its pid under HERDR_PLUGIN_STATE_DIR,
- * `stop` takes it down, `status` reports, `pair` prints a pairing code for another device, `phone`
+ * `stop` takes it down, `status` reports, `phone`
  * publishes the app to the user's tailnet and prints its address as a QR code. Start is idempotent — a server that is
  * already answering on the port is left alone, which is what makes it safe as
  * both a startup hook and a hand-invoked action.
  *
  * The port is settled here, before the server is spawned: with no PORT set, a default that cannot
  * be opened gives way to the next one that can (scripts/plugin-port.ts), and that choice is kept
- * for later starts and for `status`, `pair` and `phone`.
+ * for later starts and for `status` and `phone`.
  *
  * Two pieces of herdr's runtime environment have to be translated:
  * - herdr injects HERDR_SOCKET_PATH; the server reads HERDR_SOCKET. Without the
@@ -32,14 +32,10 @@ import { basename, delimiter, dirname, join, resolve } from "node:path";
 import qrcode from "qrcode-generator";
 
 import { DEFAULT_PORT } from "../shared/protocol.ts";
-import { decodeOffer } from "../shared/relay-offer.ts";
-import type { RemoteAccess } from "../shared/protocol.ts";
 import { canServe, FALLBACK_PORTS, freePort, savedPort } from "./plugin-port.ts";
-import { link as linkPc, plainLabel } from "./plugin-link.ts";
 import { activePluginScript } from "./plugin-runtime.ts";
-import { accountServiceOrigin, DEFAULT_ACCOUNT_SERVICE } from "../server/static.ts";
 import { herdrStateDir } from "./plugin-state.ts";
-import { HTTPS_PORT_VARIABLE, HTTPS_PORTS, httpsPorts, parseTailscale, parseTailscaleIp, parseTailscaleOwner, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
+import { HTTPS_PORT_VARIABLE, HTTPS_PORTS, httpsPorts, parseTailscale, parseTailscaleIp, readTailscale, tailscaleBinary } from "../server/tailscale.ts";
 import { descendantProcesses, windowsArgv, windowsProcessTable } from "../server/windows-processes.ts";
 
 /**
@@ -108,7 +104,7 @@ const PHONE_AGAIN = platform() === "win32"
   : "curl -fsSL https://ovis.sh/install.sh | sh";
 
 /**
- * Run by hand (`pair` on a headless PC), herdr's env is not there to name the config dir:
+ * Run by hand (`status` on a headless PC), herdr's env is not there to name the config dir:
  * ask herdr for it, so the PORT, HOST and token the plugin runs with are the ones used.
  */
 function herdrConfigDir(): string | null {
@@ -549,7 +545,7 @@ async function startInTurn(): Promise<number> {
     if (await health()) {
       process.stdout.write(`Ovis listening at ${origin}\n`);
       if ((env["OVIS_TOKEN"] ?? "") === "") {
-        process.stdout.write(`no token set: your own Tailscale devices get in as you; pair any other device in Settings → Devices, or put OVIS_TOKEN=<token> in ${join(CONFIG_DIR, "env")}\n`);
+        process.stdout.write(`no token set: only requests from this PC itself get in; put OVIS_TOKEN=<token> in ${join(CONFIG_DIR, "env")} to let other clients in\n`);
       }
       return 0;
     }
@@ -780,142 +776,6 @@ async function stopInTurn(dependencies: StopDependencies): Promise<number> {
 }
 
 /**
- * A pairing code for another device, printed here. A headless PC has no browser of its own to
- * open Settings → Devices in, so this is how its owner lets a phone in: the code, the address the
- * phone opens (when Tailscale serves one), and that address as a QR code for a screen to scan.
- */
-async function pair(): Promise<number> {
-  if (process.argv.includes("--approve")) return approvePairings();
-  if (!(await health())) {
-    process.stderr.write(`Ovis is not running at ${origin}; start it first\n`);
-    return 1;
-  }
-  const headers: Record<string, string> = { "content-type": "application/json", "x-herdr-machine": "1" };
-  if ((env["OVIS_TOKEN"] ?? "") !== "") headers["authorization"] = `Bearer ${env["OVIS_TOKEN"]}`;
-  const started = await fetch(`${origin}/api/devices/pair/start`, { method: "POST", headers, body: "{}" });
-  if (!started.ok) {
-    process.stderr.write(`could not start a pairing (${started.status}): ${await started.text()}\n`);
-    return 1;
-  }
-  const { code } = (await started.json()) as { code: string; expires_at: string };
-  let url: string | null = null;
-  try {
-    const access = (await (await fetch(`${origin}/api/access`, { headers })).json()) as { tailscale: { serving_url: string | null } };
-    url = access.tailscale.serving_url;
-  } catch { /* an older server: the code alone */ }
-  const out: string[] = [`Pairing code: ${code.slice(0, 3)} ${code.slice(3)}   (good for 10 minutes, for one device)`];
-  if (url !== null) {
-    out.push(`On the other device, open ${link(url)} and enter the code, or scan this to open it with the code filled in:`, "");
-    out.push(qr(`${url}/?pair=${code}`));
-  } else {
-    out.push("On the other device, open the app's address and enter the code. Settings → Phone, on any signed-in device, shows the address and how to get one.");
-  }
-  try {
-    const relayResponse = await fetch(`${origin}/api/relay`, { headers, signal: AbortSignal.timeout(5000) });
-    if (relayResponse.status !== 404) {
-      if (!relayResponse.ok) throw new Error(`relay status request failed (${relayResponse.status})`);
-      const relayStatus: unknown = await relayResponse.json();
-      if (typeof relayStatus !== "object" || relayStatus === null || !("phase" in relayStatus) || typeof relayStatus.phase !== "string") {
-        throw new Error("invalid relay status response");
-      }
-      if (relayStatus.phase === "online") {
-        const offerResponse = await fetch(`${origin}/api/relay/offer`, {
-          method: "POST",
-          headers: { ...headers, "x-herdr-update": "1", origin },
-          body: "{}",
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!offerResponse.ok) throw new Error(`relay offer request failed (${offerResponse.status})`);
-        const offer: unknown = await offerResponse.json();
-        if (typeof offer !== "object" || offer === null || !("url" in offer) || typeof offer.url !== "string" || !offer.url.includes("#offer=")) {
-          throw new Error("invalid relay offer response");
-        }
-        if (!decodeOffer(offer.url)) throw new Error("invalid relay offer URL");
-        out.push("", "Ovis relay", link(offer.url), "", qr(offer.url));
-      } else {
-        out.push("To turn on Ovis relay: Settings -> Devices and PCs -> Ovis relay.");
-      }
-    }
-  } catch (error) {
-    process.stderr.write(`Could not read Ovis relay pairing: ${error instanceof Error ? error.message : String(error)}\n`);
-  }
-  process.stdout.write(out.join("\n") + "\n");
-  return 0;
-}
-
-/**
- * `pair --approve`: the devices waiting to pair through the relay by comparing digits, one by one,
- * with the digits their screens show, approved or declined here. The PC's terminal is the PC
- * itself, so this is approval on this PC (docs/account.md, "Who may admit a device").
- */
-async function approvePairings(): Promise<number> {
-  if (!(await health())) {
-    process.stderr.write(`Ovis is not running at ${origin}; start it first\n`);
-    return 1;
-  }
-  const headers: Record<string, string> = { "content-type": "application/json", "x-herdr-machine": "1", "x-herdr-update": "1", origin };
-  if ((env["OVIS_TOKEN"] ?? "") !== "") headers["authorization"] = `Bearer ${env["OVIS_TOKEN"]}`;
-  const listed = await fetch(`${origin}/api/relay/pairings`, { headers });
-  if (!listed.ok) {
-    process.stderr.write(`could not read the waiting pairings (${listed.status}): ${await listed.text()}\n`);
-    return 1;
-  }
-  const { pairings } = (await listed.json()) as { pairings: { id: string; label: string; digits: string; intent?: string }[] };
-  if (pairings.length === 0) {
-    process.stdout.write("No device is waiting to pair.\n");
-    return 0;
-  }
-  const lines = console[Symbol.asyncIterator]();
-  for (const pairing of pairings) {
-    const what = pairing.intent === "account" ? "join your account" : "pair with this PC";
-    process.stdout.write(`${plainLabel(pairing.label)} wants to ${what}. Approve it only if its screen shows ${pairing.digits.slice(0, 3)} ${pairing.digits.slice(3)}. Approve? [y/N] `);
-    const answer = await lines.next();
-    const decision = !answer.done && /^y(es)?$/i.test(answer.value.trim()) ? "approve" : "decline";
-    const decided = await fetch(`${origin}/api/relay/pairing`, { method: "POST", headers, body: JSON.stringify({ id: pairing.id, decision }) });
-    process.stdout.write(decided.ok ? `${decision === "approve" ? "Approved" : "Declined"}.\n` : `${plainLabel(pairing.label)} is no longer waiting.\n`);
-  }
-  return 0;
-}
-
-/**
- * `link [--code] [--github | --google]`: this PC joins the relay from its own terminal (scripts/plugin-link.ts),
- * signed in to the account by a device code, or with a code to type and a QR code.
- */
-async function linkCommand(): Promise<number> {
-  // the checkout survives in-app updates: the release that runs has the link that fits its server (as phone-setup)
-  const active = activePluginScript(ROOT, port, APP_STATE_DIR);
-  if (active !== join(resolve(ROOT), "scripts", "plugin.ts") && resolve(active) !== resolve(import.meta.filename)) {
-    // Ctrl+C reaches the release's link too, which takes its code back; this one waits for it
-    process.on("SIGINT", () => undefined);
-    const child = Bun.spawn([process.execPath, active, "link", ...process.argv.slice(3)], { cwd: ROOT, windowsHide: true, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-    // a SIGTERM or SIGHUP sent to this process alone is passed on, so the release takes its code back too
-    for (const signal of ["SIGTERM", "SIGHUP"] as const) process.on(signal, () => child.kill(signal));
-    return await child.exited;
-  }
-  if (!(await health())) {
-    process.stderr.write(`Ovis is not running at ${origin}; start it first\n`);
-    return 1;
-  }
-  const headers: Record<string, string> = {};
-  if ((env["OVIS_TOKEN"] ?? "") !== "") headers["authorization"] = `Bearer ${env["OVIS_TOKEN"]}`;
-  const stop = new AbortController();
-  // Ctrl+C, a supervisor's SIGTERM or the terminal closing (SIGHUP): each takes the code back on the way out.
-  // A signal can come twice (to the process group, and passed on by a checkout's link), so every one is
-  // caught, and the clean-up gets ten seconds before the process ends anyway
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => {
-    if (stop.signal.aborted) return;
-    stop.abort();
-    setTimeout(() => process.exit(1), 10_000).unref();
-  });
-  return linkPc(process.argv.slice(3), {
-    origin, headers, signal: stop.signal,
-    accountService: accountServiceOrigin(env["OVIS_ACCOUNT_SERVICE_URL"] ?? DEFAULT_ACCOUNT_SERVICE),
-    out: (text) => process.stdout.write(text),
-    lines: console[Symbol.asyncIterator](),
-  });
-}
-
-/**
  * The address a phone opens, as a QR code. When Tailscale runs on this PC but does not yet serve
  * the app, this is the one place that changes it: `tailscale serve` of the app's port on the first
  * free HTTPS port, or only on the one OVIS_TAILSCALE_HTTPS_PORT names, said out loud with the
@@ -974,53 +834,14 @@ async function phone(): Promise<number> {
   }
   const httpsPort = new URL(url).port || "443";
   if (published) say(`Tailscale now serves ${url} → http://127.0.0.1:${port}, for your tailnet only. To undo: tailscale serve --https=${httpsPort} off`);
-  const owner = parseTailscaleOwner(output?.status ?? null);
   const ip = parseTailscaleIp(output?.status ?? null);
   say("");
   say(`On your phone: ${link(url)}`);
   // the name, not the IP, is what the HTTPS certificate is for: https://100.x.y.z would warn
   if (ip !== null) say(`Tailscale IP of this PC: ${ip}. Open the name above, not the IP: the HTTPS certificate is for the name.`);
-  say(`Scan this with a phone signed in to Tailscale${owner === null ? "" : ` as ${owner}`}; that login gets in without a code (with OVIS_TOKEN set, after entering the token once).`);
-  say("Anyone else on your tailnet needs a pairing code: Settings → Devices, or the pair command.");
+  say("Scan this with a phone signed in to Tailscale. It needs the access token (OVIS_TOKEN) the first time.");
   say(qr(url));
   return 0;
-}
-
-/** The marketplace action has a real pane, so its address, QR and pairing code stay visible. */
-async function phoneSetup(): Promise<number> {
-  const active = activePluginScript(ROOT, port, APP_STATE_DIR);
-  if (active !== join(resolve(ROOT), "scripts", "plugin.ts") && resolve(active) !== resolve(import.meta.filename)) {
-    const child = Bun.spawn([process.execPath, active, "phone-setup"], { cwd: ROOT, windowsHide: true, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-    return await child.exited;
-  }
-  process.stdout.write(`Phone setup\n\nApp on this PC: ${link(origin)}\n`);
-  let code = 0;
-  if (!(await health())) {
-    process.stdout.write("The app is not running. Run the Start Ovis action, then reopen Phone setup.\n");
-    code = 1;
-  } else {
-    const headers: Record<string, string> = {};
-    if (env["OVIS_TOKEN"]) headers["authorization"] = `Bearer ${env["OVIS_TOKEN"]}`;
-    try {
-      const response = await fetch(`${origin}/api/access`, { headers, signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`access request failed (${response.status})`);
-      const access = await response.json() as RemoteAccess;
-      if (!access.tailscale.serving_url) {
-        if (access.tailscale.serve_command) process.stdout.write(`To make a phone address, run this on the PC, then reopen Phone setup:\n\n  ${access.tailscale.serve_command}\n\n`);
-        else process.stdout.write("For a phone address, set up Tailscale on both devices, or use your own HTTPS proxy. Settings → Phone shows the connection options.\n\n");
-      }
-      code = await pair();
-    } catch {
-      process.stderr.write("Could not read phone setup. Check the app's token and connection, then reopen this pane.\n");
-      code = 1;
-    }
-  }
-  if (process.stdin.isTTY) {
-    process.stdout.write("\nPress Enter to finish. Reopen Phone setup for a fresh pairing code.\n");
-    await new Promise<void>((done) => { process.stdin.once("data", () => done()); process.stdin.resume(); });
-    process.stdin.pause();
-  }
-  return code;
 }
 
 /**
@@ -1052,12 +873,9 @@ if (import.meta.main) {
   if (command === "start") process.exit(await start());
   else if (command === "stop") process.exit(await stop());
   else if (command === "status") process.exit(await status());
-  else if (command === "pair") process.exit(await pair());
-  else if (command === "link") process.exit(await linkCommand());
   else if (command === "phone") process.exit(await phone());
-  else if (command === "phone-setup") process.exit(await phoneSetup());
   else {
-    process.stderr.write(`usage: bun scripts/plugin.ts <start|stop|status|pair|link|phone|phone-setup>\n`);
+    process.stderr.write(`usage: bun scripts/plugin.ts <start|stop|status|phone>\n`);
     process.exit(2);
   }
 }

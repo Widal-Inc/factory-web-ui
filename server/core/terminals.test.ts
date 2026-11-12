@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, jest, mock, setSystemTime, spyOn } from "bun:test";
 import { OUTPUT_HARD_BYTES, OUTPUT_HIGH_BYTES, OUTPUT_JOIN_BYTES_PER_SECOND, OUTPUT_STALL_MS, ReplayBuffer } from "../output-window.ts";
 import { connectionData, send } from "./connections.ts";
+import { observing } from "./connections.fake.ts";
 import type { PaneAttachment } from "./terminal-process.ts";
 import * as terminalProcess from "./terminal-process.ts";
 import * as pty from "../pty/session.ts";
@@ -22,10 +23,11 @@ afterEach(() => mock.restore());
 async function join({ readOnly = false, ready, recovering, times = 1, receiptResumeId, verifyResume, replayPrefix, retained = "retained screen" }: { readOnly?: boolean; ready: boolean; recovering?: boolean; times?: number; receiptResumeId?: string; verifyResume?: (id: string | undefined) => void; replayPrefix?: string; retained?: string }): Promise<ServerMessage[]> {
   const frames: ServerMessage[] = [];
   const client = {
-    data: connectionData({ deviceId: undefined, readOnly }), readyState: WebSocket.OPEN,
+    data: connectionData({}), readyState: WebSocket.OPEN,
     getBufferedAmount: () => 0, send: (text: string) => { frames.push(JSON.parse(text)); return text.length; },
     close() {},
   };
+  if (readOnly) observing(client);
   const replay = new ReplayBuffer(1024);
   replay.append(retained);
   attachment = {
@@ -49,7 +51,7 @@ it("pauses a pane whose output waits behind a large frame queued after its attac
   const ended: string[] = [];
   const flow: string[] = [];
   const client = {
-    data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN,
+    data: connectionData({}), readyState: WebSocket.OPEN,
     getBufferedAmount: () => buffered, send: (text: string) => { buffered += Buffer.byteLength(text); return -1; },
     close() {},
   };
@@ -183,7 +185,7 @@ for (const [name, reads, screen] of [
     }));
     const frames: ServerMessage[] = [];
     const client = {
-      data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN,
+      data: connectionData({}), readyState: WebSocket.OPEN,
       getBufferedAmount: () => 0, send(raw: string) { frames.push(JSON.parse(raw)); return raw.length; }, close() {},
     };
     // a hold and a retry that never run out here: only what the reads say decides
@@ -237,7 +239,7 @@ for (const resized of [false, true]) {
     }));
     const frames: ServerMessage[] = [];
     const client = {
-      data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN,
+      data: connectionData({}), readyState: WebSocket.OPEN,
       getBufferedAmount: () => 0, send(raw: string) { frames.push(JSON.parse(raw)); return raw.length; }, close() {},
     };
     const registry = createTerminalRegistry({
@@ -309,7 +311,7 @@ async function resizableAttach() {
   const frames: ServerMessage[] = [];
   const ended: string[] = [];
   const client = {
-    data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN, getBufferedAmount: () => 0,
+    data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0,
     send(raw: string) {
       const frame = JSON.parse(raw) as ServerMessage;
       frames.push(frame);
@@ -562,7 +564,7 @@ it("marks a newcomer recovering after a ready stream ends and clears it when the
   const record = () => {
     const frames: ServerMessage[] = [];
     const client = {
-      data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN,
+      data: connectionData({}), readyState: WebSocket.OPEN,
       getBufferedAmount: () => 0, send(raw: string) { frames.push(JSON.parse(raw)); return raw.length; }, close() {},
     };
     return { client, frames };
@@ -623,7 +625,7 @@ it("makes the new ID's first attach wait for the old ID's process, also while it
   });
   const frames: ServerMessage[] = [];
   const client = {
-    data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN,
+    data: connectionData({}), readyState: WebSocket.OPEN,
     getBufferedAmount: () => 0, send: (text: string) => { frames.push(JSON.parse(text)); return text.length; },
     close() {},
   };

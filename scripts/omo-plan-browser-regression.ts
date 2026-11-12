@@ -139,7 +139,7 @@ try {
     await startShellAgent("omo", paneId, [], { command: `export OMO_CODING_AGENT_DIR=${quote(store)}; cd ${quote(root)} && exec ${quote(process.execPath)} ${quote(launcher)}` });
     await ready;
   } finally { watcher.close(); }
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), tailscaleOwner: null, usage: new UsageService(undefined, []) });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), usage: new UsageService(undefined, []) });
   const origin = `http://127.0.0.1:${server.port}`;
   // Plan polling pushes its exact changed state, so readiness needs no timing loop.
   await new Promise<void>((resolve, reject) => {

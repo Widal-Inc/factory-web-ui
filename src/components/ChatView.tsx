@@ -254,7 +254,7 @@ export interface ChatViewProps {
   onCommandScreenClosed?: (peek: TerminalPeek) => void;
   /** the outcome ids each prompt read lists: a send notes them, to know its own outcome among later ones */
   onOutcomes?: (paneId: string, ids: readonly string[]) => void;
-  /** this connection may type into the pane (it is no watching device or observer): only then can a message be rewound to */
+  /** this connection may type into the pane (it is no observer): only then can a message be rewound to */
   interactive?: boolean;
   /** the pane's composer is there to take a quote of a selection: a secret prompt stands in its place */
   quotable?: boolean;

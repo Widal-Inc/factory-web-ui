@@ -12,7 +12,7 @@ import { UsageLoginService } from "./usage-login.ts";
 
 /**
  * A sign-in the browser follows runs through the server's private PTY host, never in a
- * herdr pane, so no other device can read its sign-in address or the code typed into it. The stand-in CLIs
+ * herdr pane, so no other browser can read its sign-in address or the code typed into it. The stand-in CLIs
  * print what the real ones printed (server/fixtures/usage-login/*.pty) and read a pasted code like Claude's.
  */
 const root = mkdtempSync(join(tmpdir(), "usage-login-private-"));
@@ -72,14 +72,14 @@ const cookieOf = (login: unknown, cookie: string | null | undefined): Record<str
   const sent = cookie === undefined ? jar.get(String(login)) : cookie;
   return sent ? { cookie: sent } : {};
 };
-const post = (service: UsageLoginService, path: string, body: unknown, owner = "device:a", cookie?: string | null) =>
-  service.handlePrompt(new Request(`http://x/api/usage/login/${path}`, { method: "POST", headers: cookieOf((body as { login?: unknown }).login, cookie), body: JSON.stringify(body) }), false, owner);
-const read = (service: UsageLoginService, login: string, readOnly = false, owner = "device:a", cookie?: string | null) =>
-  service.handlePrompt(new Request(`http://x/api/usage/login/prompt?login=${encodeURIComponent(login)}`, { headers: cookieOf(login, cookie) }), readOnly, owner);
+const post = (service: UsageLoginService, path: string, body: unknown, owner = "owner:a", cookie?: string | null) =>
+  service.handlePrompt(new Request(`http://x/api/usage/login/${path}`, { method: "POST", headers: cookieOf((body as { login?: unknown }).login, cookie), body: JSON.stringify(body) }), owner);
+const read = (service: UsageLoginService, login: string, owner = "owner:a", cookie?: string | null) =>
+  service.handlePrompt(new Request(`http://x/api/usage/login/prompt?login=${encodeURIComponent(login)}`, { headers: cookieOf(login, cookie) }), owner);
 
 async function start(service: UsageLoginService, body: Record<string, unknown>): Promise<Response> {
   services.add(service);
-  const response = await service.handle(new Request("http://x/api/usage/login", { method: "POST", body: JSON.stringify({ follow: true, ...body }) }), undefined, "device:a");
+  const response = await service.handle(new Request("http://x/api/usage/login", { method: "POST", body: JSON.stringify({ follow: true, ...body }) }), undefined, "owner:a");
   const set = response.headers.get("set-cookie");
   if (response.ok && set !== null) {
     const { login_id: login } = (await response.clone().json()) as { login_id: string };
@@ -117,8 +117,8 @@ describe("a sign-in the browser follows", () => {
       noHerdr();
       const service = new UsageLoginService(root, { PATH: `${bin}:/usr/bin:/bin` });
       const { login_id: login } = await (await start(service, { provider: "codex", name: `owner-${++names}` })).json() as { login_id: string };
-      const response = endpoint === "prompt" ? await read(service, login, false, "device:b")
-        : await post(service, endpoint, { login, code: "fixture-code" }, "device:b");
+      const response = endpoint === "prompt" ? await read(service, login, "owner:b")
+        : await post(service, endpoint, { login, code: "fixture-code" }, "owner:b");
       expect(response.status).toBe(404);
       expect((await read(service, login)).status).toBe(200);
     });
@@ -180,12 +180,11 @@ describe("a sign-in the browser follows", () => {
     await post(service, "cancel", { login: body["login_id"] });
   });
 
-  it("answers only the browser that holds its id, and never a device that only watches", async () => {
+  it("answers only the browser that holds its id", async () => {
     noHerdr();
     const service = new UsageLoginService(root, { PATH: `${bin}:/usr/bin:/bin` });
     const { login_id: login } = (await (await start(service, { provider: "codex", name: `work-${++names}` })).json()) as { login_id: string };
     expect((await read(service, "00000000-0000-4000-8000-000000000000")).status).toBe(404);
-    expect((await read(service, login, true)).status).toBe(403);
     expect((await post(service, "code", { login: "00000000-0000-4000-8000-000000000000", code: "abc" })).status).toBe(404);
     await post(service, "cancel", { login });
   });
@@ -226,7 +225,7 @@ describe("a sign-in the browser follows", () => {
     await post(service, "cancel", { login });
   });
 
-  it("keeps its id out of the shared lock file, which another device can read, in a shape older servers read", async () => {
+  it("keeps its id out of the shared lock file, which another browser can read, in a shape older servers read", async () => {
     noHerdr();
     const state = mkdtempSync(join(root, "state-"));
     const service = new UsageLoginService(root, { PATH: `${bin}:/usr/bin:/bin` });
@@ -383,10 +382,10 @@ exec sleep 600
     expect(set).toMatch(/Path=\/api\/usage\/login/);
     const { login_id: login } = (await started.json()) as { login_id: string };
     // another browser signed in the same way (the server's token: the same owner) that knows the id
-    expect((await read(service, login, false, "device:a", null)).status).toBe(404);
-    expect((await read(service, login, false, "device:a", `${jar.get(login)!.split("=")[0]}=forged`)).status).toBe(404);
-    expect((await post(service, "code", { login, code: "abc" }, "device:a", null)).status).toBe(404);
-    expect((await post(service, "cancel", { login }, "device:a", null)).status).toBe(404);
+    expect((await read(service, login, "owner:a", null)).status).toBe(404);
+    expect((await read(service, login, "owner:a", `${jar.get(login)!.split("=")[0]}=forged`)).status).toBe(404);
+    expect((await post(service, "code", { login, code: "abc" }, "owner:a", null)).status).toBe(404);
+    expect((await post(service, "cancel", { login }, "owner:a", null)).status).toBe(404);
     expect((await read(service, login)).status).toBe(200);
     expect((await post(service, "cancel", { login })).status).toBe(204);
   });
@@ -402,7 +401,7 @@ exec sleep 600
     const { login_id: login } = (await (await start(service, { provider: "claude", name })).json()) as { login_id: string };
     await promptWhen(service, login, (shown) => shown["url"] !== null);
     expect((await post(service, "cancel", { login })).status).toBe(204);
-    const tab = await service.handle(new Request("http://x/api/usage/login", { method: "POST", body: JSON.stringify({ provider: "claude", name }) }), undefined, "device:a");
+    const tab = await service.handle(new Request("http://x/api/usage/login", { method: "POST", body: JSON.stringify({ provider: "claude", name }) }), undefined, "owner:a");
     const answer = (await tab.json()) as { error?: { code?: string } };
     expect(answer.error?.code).not.toBe("account_exists");
   });

@@ -226,7 +226,7 @@ process.stdout.write(Array.from({ length: 400 }, (_, n) => "app history " + n + 
   await herdrRpc("pane.send_input", { pane_id: shellPane, text: "for n in $(seq 1 3000); do printf 'history %04d\\n' $n; done; printf 'shell_%s\\n' ready; exec cat", keys: ["enter"] });
   await shellReady;
 
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(state, "server"), tailscaleOwner: null, usage: new UsageService(undefined, []) });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(state, "server"), usage: new UsageService(undefined, []) });
   const origin = `http://127.0.0.1:${server.port}`;
   browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
   const phone = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, locale: "en-US" };

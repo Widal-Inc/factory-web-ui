@@ -9,7 +9,7 @@ const DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (K
 const ELECTRON = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Ovis/0.5.0 Chrome/130.0.0.0 Electron/33.0.0 Safari/537.36";
 
 const env = (over: Partial<InstallHintEnvironment>): InstallHintEnvironment => ({
-  userAgent: IPHONE, maxTouchPoints: 5, secure: true, installed: false, nativeApp: false, dismissed: false, ...over,
+  userAgent: IPHONE, maxTouchPoints: 5, secure: true, installed: false, dismissed: false, ...over,
 });
 
 describe("installHintKind", () => {
@@ -29,11 +29,9 @@ describe("installHintKind", () => {
     expect(installHintKind(env({ userAgent: IPAD, maxTouchPoints: 0 }))).toBeNull();
   });
 
-  it("stays away once the page runs installed or inside the phone apps", () => {
+  it("stays away once the page runs installed", () => {
     expect(installHintKind(env({ installed: true }))).toBeNull();
     expect(installHintKind(env({ userAgent: ANDROID, installed: true }))).toBeNull();
-    expect(installHintKind(env({ nativeApp: true }))).toBeNull();
-    expect(installHintKind(env({ userAgent: ANDROID, nativeApp: true }))).toBeNull();
   });
 
   it("stays away once dismissed", () => {

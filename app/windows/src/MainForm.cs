@@ -40,9 +40,6 @@ namespace Ovis
             root.Controls.Add(new Label { BorderStyle = BorderStyle.Fixed3D, Height = 2, Width = ContentWidth, Margin = new Padding(0, 14, 0, 14) });
             body = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Margin = Padding.Empty, MinimumSize = new Size(ContentWidth, 160) };
             root.Controls.Add(body);
-            var licences = new LinkLabel { Text = Lang.L("Licences", "라이선스"), AutoSize = true, Margin = new Padding(0, 16, 0, 0), LinkColor = SystemColors.GrayText };
-            licences.LinkClicked += (sender, args) => ShowLicences();
-            root.Controls.Add(licences);
             Controls.Add(root);
 
             logBox = new TextBox
@@ -78,7 +75,7 @@ namespace Ovis
             }
             var titles = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
             titles.Controls.Add(new Label { Text = "Ovis", Font = new Font("Segoe UI Semibold", 18F), AutoSize = true, Margin = Padding.Empty });
-            titles.Controls.Add(new Label { Text = Lang.L("Your coding agents, on your phone", "코딩 에이전트를 휴대폰에서"), ForeColor = SystemColors.GrayText, AutoSize = true, Margin = Padding.Empty });
+            titles.Controls.Add(new Label { Text = Lang.L("Your coding agents, on this PC", "코딩 에이전트를 이 PC에서"), ForeColor = SystemColors.GrayText, AutoSize = true, Margin = Padding.Empty });
             header.Controls.Add(titles);
             return header;
         }
@@ -134,8 +131,8 @@ namespace Ovis
         {
             body.Controls.Add(Heading(Lang.L("Set up this PC for Ovis", "이 PC를 Ovis에 연결할 준비를 합니다")));
             body.Controls.Add(Paragraph(Lang.L(
-                "This installs herdr, Bun and the Ovis server for your user only, with no administrator password, and starts herdr when you sign in to Windows. Then scan the QR code with Ovis on your phone.",
-                "herdr, Bun, Ovis 서버를 내 사용자 계정에만 설치합니다(관리자 권한 필요 없음). Windows에 로그인할 때 herdr가 자동으로 켜집니다. 설치가 끝나면 휴대폰의 Ovis로 QR 코드를 찍으면 됩니다.")));
+                "This installs herdr, Bun and the Ovis server for your user only, with no administrator password, and starts herdr when you sign in to Windows. Then open Ovis in your browser.",
+                "herdr, Bun, Ovis 서버를 내 사용자 계정에만 설치합니다(관리자 권한 필요 없음). Windows에 로그인할 때 herdr가 자동으로 켜집니다. 설치가 끝나면 브라우저에서 Ovis를 열면 됩니다.")));
             if (GitStep()) return;
             var install = Primary(Lang.L("Install", "설치"), () => model.Install());
             body.Controls.Add(Buttons(install));
@@ -195,77 +192,11 @@ namespace Ovis
             line.Controls.Add(state);
             line.Controls.Add(Button(Lang.L("Check again", "다시 확인"), () => model.Refresh(), 0));
             body.Controls.Add(line);
-            if (running) Phone(status);
             var buttons = new System.Collections.Generic.List<Button>();
             if (running && status.Origin != null) buttons.Add(Primary(Lang.L("Open in browser", "브라우저에서 열기"), () => Open(status.Origin)));
             buttons.Add(Button(running ? Lang.L("Restart", "다시 시작") : Lang.L("Start", "시작"), () => model.Restart()));
             buttons.Add(Button(Lang.L("Remove…", "제거…"), ConfirmRemove));
             body.Controls.Add(Buttons(buttons.ToArray()));
-        }
-
-        private void Phone(Status status)
-        {
-            var step = Setup.Phone(status.PhoneUrl, status.Tailscale, status.AccessLocked);
-            if (step == PhoneStep.Qr)
-            {
-                var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 12) };
-                var size = (int)Math.Round(180 * DeviceDpi / 96.0);
-                var modules = QrCode.Encode(status.PhoneUrl);
-                var scale = Math.Max(1, size / (modules.GetLength(0) + 8));
-                row.Controls.Add(new PictureBox
-                {
-                    Image = QrCode.ToBitmap(modules, scale, 4),
-                    SizeMode = PictureBoxSizeMode.AutoSize,
-                    Margin = new Padding(0, 0, 18, 0),
-                    AccessibleName = "QR code",
-                });
-                var words = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Margin = Padding.Empty };
-                words.Controls.Add(Heading(Lang.L("Connect your phone", "휴대폰 연결")));
-                words.Controls.Add(Paragraph(Lang.L(
-                    "Open Ovis on your phone, tap Scan QR code, and point it here. Your phone needs Tailscale, signed in to the same account.",
-                    "휴대폰에서 Ovis를 열고 Scan QR code를 눌러 이 화면을 찍으세요. 휴대폰에도 같은 계정으로 로그인한 Tailscale이 있어야 합니다."), 300));
-                var url = new TextBox { Text = status.PhoneUrl, ReadOnly = true, BorderStyle = BorderStyle.None, Width = 300, BackColor = SystemColors.Window, ForeColor = SystemColors.GrayText, Font = MonoFont, AccessibleName = "Phone address" };
-                words.Controls.Add(url);
-                row.Controls.Add(words);
-                body.Controls.Add(row);
-            }
-            else if (step == PhoneStep.TokenNeeded)
-            {
-                // what the server told without its token is not that Tailscale is missing: say what stood in the way
-                body.Controls.Add(Heading(Lang.L("Ovis cannot read this PC's phone address", "이 PC의 휴대폰 주소를 읽지 못했습니다")));
-                body.Controls.Add(Paragraph(Lang.L(
-                    "The Ovis server asks for its token, and Ovis did not find it, or it did not work, in the server's settings (env or .env in herdr's config folder for the plugin). Open Ovis in the browser to connect your phone, or put the server's token there and check again.",
-                    "Ovis 서버가 토큰을 요구하는데, 서버 설정(herdr의 플러그인 설정 폴더에 있는 env 또는 .env)에서 그 토큰을 찾지 못했거나 그 토큰이 맞지 않습니다. 브라우저에서 Ovis를 열어 휴대폰을 연결하거나, 서버의 토큰을 그곳에 넣은 뒤 다시 확인해 주세요.")));
-            }
-            else if (step == PhoneStep.MakeAddress)
-            {
-                body.Controls.Add(Heading(Lang.L("Your phone needs an address for this PC", "휴대폰이 열 주소가 아직 없습니다")));
-                body.Controls.Add(Paragraph(Lang.L("Tailscale runs here: let it serve the app to your own devices.", "이 PC에 Tailscale이 있습니다. 내 기기들에서만 열리는 주소를 만듭니다.")));
-                body.Controls.Add(Buttons(Button(Lang.L("Make the phone address", "휴대폰 주소 만들기"), () => model.MakePhoneAddress())));
-            }
-            else
-            {
-                body.Controls.Add(Heading(Lang.L("Your phone needs a way to reach this PC", "휴대폰에서 이 PC에 올 길이 필요합니다")));
-                body.Controls.Add(Paragraph(step == PhoneStep.SignInTailscale
-                    ? Lang.L("Tailscale is installed but not signed in. Sign in to it, then check again.", "Tailscale이 설치돼 있지만 로그인되지 않았습니다. 로그인한 뒤 다시 확인해 주세요.")
-                    : Lang.L("Install Tailscale on this PC and on your phone, sign in to both with the same account, then check again.", "이 PC와 휴대폰에 Tailscale을 설치하고 같은 계정으로 로그인한 뒤 다시 확인해 주세요.")));
-                if (step == PhoneStep.InstallTailscale) body.Controls.Add(Buttons(Button(Lang.L("Get Tailscale", "Tailscale 받기"), () => Open(Links.TailscaleDownload))));
-            }
-        }
-
-        private void ShowLicences()
-        {
-            string notice;
-            using (var stream = typeof(MainForm).Assembly.GetManifestResourceStream("NOTICE.txt"))
-            using (var reader = new System.IO.StreamReader(stream))
-            {
-                notice = reader.ReadToEnd().Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
-            }
-            using (var dialog = new Form { Text = Lang.L("Licences", "라이선스"), StartPosition = FormStartPosition.CenterParent, Size = new Size(620, 460), MinimizeBox = false, MaximizeBox = false, ShowInTaskbar = false, Icon = Icon })
-            {
-                dialog.Controls.Add(new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Font = MonoFont, Text = notice });
-                dialog.ShowDialog(this);
-            }
         }
 
         private Task ConfirmRemove()
@@ -284,7 +215,6 @@ namespace Ovis
         }
 
         private static readonly Font HeadingFont = new Font("Segoe UI Semibold", 11F);
-        private static readonly Font MonoFont = new Font("Consolas", 8.5F);
 
         private static void DisposeTree(Control control)
         {

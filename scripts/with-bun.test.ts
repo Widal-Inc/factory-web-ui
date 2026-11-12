@@ -194,7 +194,7 @@ describe.skipIf(process.platform === "win32")("Unix Bun discovery", () => {
     const manifest: Record<string, { command: string[]; platforms?: string[] }[]> =
       Bun.TOML.parse(readFileSync(join(root, "herdr-plugin.toml"), "utf8"));
     tool(join(home, ".bun", "bin"), "bun", "1.4.2");
-    const commands = ["build", "startup", "actions", "panes"].flatMap(section =>
+    const commands = ["build", "startup", "actions"].flatMap(section =>
       manifest[section].filter(entry => entry.platforms?.includes("linux") && entry.command[1] !== "scripts/preflight.sh"
         && entry.command[0] !== "herdr").map(entry => entry.command));
     expect(commands).toEqual([
@@ -205,7 +205,6 @@ describe.skipIf(process.platform === "win32")("Unix Bun discovery", () => {
       ["sh", "scripts/with-bun.sh", "scripts/plugin.ts", "start"],
       ["sh", "scripts/with-bun.sh", "scripts/plugin.ts", "stop"],
       ["sh", "scripts/with-bun.sh", "scripts/plugin.ts", "status"],
-      ["sh", "scripts/with-bun.sh", "scripts/plugin.ts", "phone-setup"],
     ]);
     for (const command of commands) {
       const result = await run(command);

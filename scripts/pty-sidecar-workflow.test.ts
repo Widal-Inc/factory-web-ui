@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { parseWorkflow, root } from "./shell-workflow-rules.ts";
+import { parseWorkflow, root } from "./workflow-yaml.ts";
 
 const workflow = (name: string) => parseWorkflow(join(root, ".github/workflows", name));
 const ATTESTS = { contents: "read", "id-token": "write", attestations: "write" };

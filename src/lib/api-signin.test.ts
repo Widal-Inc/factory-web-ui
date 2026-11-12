@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, it, spyOn } from "bun:test";
-import { ApiError, authenticate, pairDevice } from "./api.ts";
+import { ApiError, authenticate } from "./api.ts";
 import { ConnectionTrace } from "./connectionTrace.ts";
 
 let status = 204;
@@ -28,7 +28,6 @@ async function signedOutTrace() {
 describe("sign-in calls", () => {
   const signIns = [
     { name: "authenticate", url: "/api/auth", call: () => authenticate("fictional-token"), body: { token: "fictional-token" } },
-    { name: "pairDevice", url: "/api/devices/pair", call: () => pairDevice("fictional-code", "fictional-label"), body: { code: "fictional-code", label: "fictional-label" } },
   ];
 
   for (const { name, url, call, body } of signIns) {

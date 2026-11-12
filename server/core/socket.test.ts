@@ -10,11 +10,11 @@ import { createSocket } from "./socket.ts";
 function socket(stopped: boolean) {
   const ended: string[] = [];
   const handler = createSocket({
-    clients: new Set(), present: new Set(), stopped: () => stopped, admit: () => true, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
+    clients: new Set(), present: new Set(), stopped: () => stopped, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
     end: (_client, reason) => { ended.push(reason); }, holdPending() {}, attachments: new Map(),
     clientSnapshot: async () => ({}) as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
   });
-  const client: Client = { data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: () => 1, close: () => {} };
+  const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: () => 1, close: () => {} };
   return { handler, client, ended };
 }
 
@@ -24,12 +24,12 @@ it("tells a new connection its features before its snapshot, which waits on herd
     let fail: (error: Error) => void = () => {};
     const held = new Promise<SessionSnapshot>((resolve, reject) => { settle = resolve; fail = reject; });
     const handler = createSocket({
-      clients: new Set(), present: new Set(), stopped: () => false, admit: () => true, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
+      clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
       end() {}, holdPending() {}, attachments: new Map(),
       clientSnapshot: () => held, herdrLifetime: () => outcome === "read" ? "herdr-a" : undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
     });
     const frames: { type: string; features?: string[]; code?: string; connection?: string; herdr_lifetime?: string }[] = [];
-    const client: Client = { data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
+    const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
     const opened = handler.open!(client);
     expect(frames.map((frame) => frame.type)).toEqual(["features"]);
     expect(frames[0]!.features).toEqual(expect.arrayContaining(["submit", "pending-input", "terminal-insert", "watch"]));
@@ -49,16 +49,15 @@ it("tells a new connection its features before its snapshot, which waits on herd
 it("names the folder OVIS_PASTE_DIR sends uploads to in the features frame, and none for each pane's .ovis (#2771)", async () => {
   const previous = process.env["OVIS_PASTE_DIR"];
   try {
-    // a watch-only connection, which may list no folder, is not told it
-    for (const [override, readOnly, told] of [[" /tmp/shots.png backup ", false, resolve("/tmp/shots.png backup")], [" /tmp/shots.png backup ", true, undefined], [undefined, false, undefined]] as const) {
+    for (const [override, told] of [[" /tmp/shots.png backup ", resolve("/tmp/shots.png backup")], [undefined, undefined]] as const) {
       if (override === undefined) delete process.env["OVIS_PASTE_DIR"]; else process.env["OVIS_PASTE_DIR"] = override;
       const handler = createSocket({
-        clients: new Set(), present: new Set(), stopped: () => false, admit: () => true, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
+        clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
         end() {}, holdPending() {}, attachments: new Map(),
         clientSnapshot: async () => ({ workspaces: [], panes: [], agents: [], layouts: [] }) as unknown as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
       });
       const frames: { type: string; paste_dir?: string }[] = [];
-      const client: Client = { data: connectionData({ deviceId: undefined, readOnly }), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
+      const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
       await handler.open!(client);
       expect(frames[0]).toMatchObject({ type: "features" });
       expect(frames[0]!.paste_dir).toBe(told);
@@ -71,13 +70,13 @@ it("names the folder OVIS_PASTE_DIR sends uploads to in the features frame, and 
 it("offers no watch where none can be drawn (herdr-core), and ends a watch sent anyway without starting one", async () => {
   const watched: string[] = [];
   const handler = createSocket({
-    clients: new Set(), present: new Set(), stopped: () => false, admit: () => true, setRole() {}, watchable: () => false, terminalHistory: () => true,
+    clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => false, terminalHistory: () => true,
     watchPane: (_client, paneId) => { watched.push(paneId); }, unwatchPane() {},
     end() {}, holdPending() {}, attachments: new Map(),
     clientSnapshot: async () => ({ workspaces: [], panes: [], agents: [], layouts: [] }) as unknown as SessionSnapshot, herdrLifetime: () => undefined, browserSnapshot: (snapshot) => snapshot, countVisit() {}, drainOutput() {}, frames: {} as never,
   });
   const frames: { type: string; features?: string[]; pane_id?: string; code?: string }[] = [];
-  const client: Client = { data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
+  const client: Client = { data: connectionData({}), readyState: WebSocket.OPEN, getBufferedAmount: () => 0, send: (raw: string) => { frames.push(JSON.parse(raw)); return raw.length; }, close: () => {} };
   await handler.open!(client);
   expect(frames.map((frame) => frame.type)).toEqual(["features", "snapshot"]);
   for (const frame of frames) {
@@ -102,14 +101,14 @@ it("delivers a session snapshot larger than the transport budget to a socket wit
   const snapshot = { workspaces: [], panes: Array.from({ length: 600 }, (_, i) => ({ pane_id: `p${i}`, cwd: `/w/${"x".repeat(2000)}` })), agents: [], layouts: [] } as unknown as SessionSnapshot;
   expect(Buffer.byteLength(JSON.stringify(snapshot))).toBeGreaterThan(OUTPUT_HARD_BYTES);
   const handler = createSocket({
-    clients: new Set(), present: new Set(), stopped: () => false, admit: () => true, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
+    clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
     end() {}, holdPending() {}, attachments: new Map(),
     clientSnapshot: async () => snapshot, herdrLifetime: () => undefined, browserSnapshot: (read) => read, countVisit() {}, drainOutput() {}, frames: {} as never,
   });
   // a real Bun socket with the production limits, so Bun's own backpressure cap is in play as well
   const server = Bun.serve({
     port: 0, hostname: "127.0.0.1",
-    fetch: (request, bun) => bun.upgrade(request, { data: connectionData({ deviceId: undefined, readOnly: false }) }) ? undefined : new Response(null, { status: 400 }),
+    fetch: (request, bun) => bun.upgrade(request, { data: connectionData({}) }) ? undefined : new Response(null, { status: 400 }),
     websocket: handler,
   });
   const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
@@ -152,7 +151,7 @@ for (const arrives of ["before the browser's socket opens", "after the browser's
     });
     const manager = { endpoint: () => ({ url: `http://127.0.0.1:${pc.port}`, token: "test" }), trackTerminal: () => () => {} } as unknown as MachineManager;
     const handler = createSocket({
-      clients: new Set(), present: new Set(), stopped: () => false, admit: () => true, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
+      clients: new Set(), present: new Set(), stopped: () => false, setRole() {}, watchable: () => true, terminalHistory: () => false, watchPane() {}, unwatchPane() {},
       end() {}, holdPending() {}, attachments: new Map(),
       clientSnapshot: async () => snapshot, herdrLifetime: () => undefined, browserSnapshot: (read) => read, countVisit() {}, drainOutput() {}, frames: {} as never,
     });
@@ -161,7 +160,7 @@ for (const arrives of ["before the browser's socket opens", "after the browser's
     const server = Bun.serve({
       port: 0, hostname: "127.0.0.1",
       async fetch(request, bun) {
-        const relay = new MachineRelay(manager, "pc", false, (read) => read);
+        const relay = new MachineRelay(manager, "pc", (read) => read);
         relays.push(relay);
         if (early) {
           // heard after the relay's own handler: every frame is held for the browser before its socket opens
@@ -173,7 +172,7 @@ for (const arrives of ["before the browser's socket opens", "after the browser's
           await relay.ready;
           await held.promise;
         } else await relay.ready;
-        return bun.upgrade(request, { data: connectionData({ relay, deviceId: undefined, readOnly: false }) }) ? undefined : new Response(null, { status: 400 });
+        return bun.upgrade(request, { data: connectionData({ relay }) }) ? undefined : new Response(null, { status: 400 });
       },
       websocket: handler,
     });

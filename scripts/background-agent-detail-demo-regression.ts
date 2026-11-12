@@ -19,7 +19,7 @@ const app = mkdtempSync(join(tmpdir(), "herdr-background-agent-demo-"));
 const evidence = process.env.UI_EVIDENCE_DIR || "";
 if (evidence) mkdirSync(evidence, { recursive: true });
 
-interface Case { kind?: string; strip?: boolean; role?: "watch" }
+interface Case { kind?: string; strip?: boolean }
 interface Log { requests: string[]; delivered: number; frames: string[]; reads?: number }
 declare global { interface Window { bgCase: Case; bgLog: Log; bgRelease?: () => void; bgHold?: boolean } }
 
@@ -35,10 +35,6 @@ const patch = `(() => {
     const method = (init?.method ?? "GET").toUpperCase();
     log.requests.push(method + " " + url.pathname);
     const c = window.bgCase;
-    if (c.role === "watch" && url.pathname.endsWith("/api/health")) {
-      const body = await (await demoFetch(input, init)).json();
-      return json({ ...body, auth: { required: true, authenticated: true, role: "watch" } });
-    }
     if (c.strip && url.pathname.endsWith("/api/pane/omo-tasks")) {
       const body = await (await demoFetch(input, init)).json();
       for (const task of body.tasks) delete task.detail_kind;
@@ -387,7 +383,6 @@ try {
         ["older-rows", { strip: true }, "This PC's bridge does not offer this yet", NEXT.update],
         ["long", { kind: "long" }, null, null],
         ["many", { kind: "many" }, "The agent wrote more than this view reads.", NEXT.cut],
-        ["observe", { role: "watch" }, null, null],
         ["error", { kind: "error" }, "Couldn't read the agent's details", NEXT.error],
         ["refresh-error", { kind: "refresh-error" }, "Couldn't read the agent's details", NEXT.error],
         ["refresh-changed", { kind: "refresh-changed" }, "The pane moved to another session", NEXT.changed],

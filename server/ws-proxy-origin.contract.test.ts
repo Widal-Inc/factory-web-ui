@@ -8,7 +8,7 @@ import { createServer, type ServerInstance } from "./index.ts";
 describe("secure WebSocket proxy origin contract", () => {
   const stateDir = mkdtempSync(join(tmpdir(), "herdr-wss-origin-"));
   let bridge: ServerInstance;
-  beforeAll(() => { bridge = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "fixture-origin", machines: false, tailscaleOwner: null }); });
+  beforeAll(() => { bridge = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "fixture-origin", machines: false }); });
   afterAll(() => { bridge?.stop(); rmSync(stateDir, { recursive: true, force: true }); });
 
   async function connect(origin: string, forwardedProto = "wss"): Promise<boolean> {

@@ -22,7 +22,6 @@ import { type AlertKind, type AlertPrefs, alertKindAllowed, DEFAULT_ALERTS, pars
 import { isLoopbackHost } from "./access.ts";
 import { badRequest, jsonResponse, setRequestRoute } from "./http.ts";
 import { writePrivateState } from "./private-state.ts";
-import { RELAY_ORIGIN } from "./relay/session.ts";
 
 const FILE = "alert-webhook.json";
 const TIMEOUT_MS = 10_000;
@@ -32,6 +31,8 @@ const TELEGRAM_TOKEN = /^\d{3,20}:[A-Za-z0-9_-]{20,100}$/;
 const TELEGRAM_CHAT = /^(?:-?\d{1,20}|@[A-Za-z0-9_]{4,64})$/;
 
 interface StoredWebhook {
+  /** Compatibility with the old device registry: only an explicitly saved owner destination is active. */
+  owner: null;
   preset: AlertWebhookPreset;
   /** the URL, or for Telegram the bot token */
   secret: string;
@@ -39,8 +40,6 @@ interface StoredWebhook {
   alerts: AlertPrefs;
   /** the app's address as the browser that saved it reached it: the base of each message's link */
   link_base?: string;
-  /** who saved it, as a push subscription's `device_id`: a device, null for a local/token sign-in, absent for the open LAN */
-  owner?: string | null;
 }
 
 /** One pane alert, as push.ts tells it. */
@@ -71,7 +70,7 @@ export interface AlertWebhook {
   send(alert: WebhookAlert): void;
   test(): Promise<WebhookResult | null>;
   view(): AlertWebhookView;
-  save(input: AlertWebhookSave, linkBase: string | undefined, owner?: string | null): AlertWebhookView;
+  save(input: AlertWebhookSave, linkBase: string | undefined): AlertWebhookView;
   remove(): void;
   /** resolves once nothing is being sent or waits to be (tests wait) */
   settled(): Promise<void>;
@@ -85,8 +84,6 @@ export interface AlertWebhookOptions {
   telegramApi?: string;
   /** accept a plain-http loopback URL for every preset: only for the tests' fake destination */
   loopbackHttp?: boolean;
-  /** whether whoever saved it may still hear alerts (push.ts canDeliver): asked before each try */
-  canDeliver?: (owner: string | null | undefined) => boolean;
 }
 
 export class WebhookInputError extends Error {}
@@ -94,16 +91,19 @@ export class WebhookInputError extends Error {}
 function parseStored(value: unknown): StoredWebhook | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
+  // Device-owned and ownerless legacy destinations depended on the removed registry's authorization.
+  // Keep their bytes, but require the owner to enter the destination again before sending anything.
+  if (record["owner"] !== null) return null;
   const preset = record["preset"];
   const secret = record["secret"];
   if (typeof preset !== "string" || !(ALERT_WEBHOOK_PRESETS as readonly string[]).includes(preset) || typeof secret !== "string" || secret.length === 0) return null;
   return {
+    owner: null,
     preset: preset as AlertWebhookPreset,
     secret,
     ...(typeof record["chat_id"] === "string" ? { chat_id: record["chat_id"] } : {}),
     alerts: parseAlerts(record["alerts"]),
     ...(typeof record["link_base"] === "string" ? { link_base: record["link_base"] } : {}),
-    ...(typeof record["owner"] === "string" || record["owner"] === null ? { owner: record["owner"] as string | null } : {}),
   };
 }
 
@@ -237,7 +237,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
       const at = generation;
       for (let attempt = 0; ; attempt += 1) {
         const target = current();
-        if (target === null || at !== generation || options.canDeliver?.(target.owner) === false || alert.current?.() === false || !alertKindAllowed(target.alerts, alert.kind)) break;
+        if (target === null || at !== generation || alert.current?.() === false || !alertKindAllowed(target.alerts, alert.kind)) break;
         const result = await post(target, alert);
         if (at !== generation) break;
         record(result);
@@ -304,7 +304,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
       return run;
     },
     view,
-    save(input, linkBase, owner) {
+    save(input, linkBase) {
       if (!(ALERT_WEBHOOK_PRESETS as readonly string[]).includes(input.preset)) throw new WebhookInputError("unknown destination");
       const before = current();
       const same = before?.preset === input.preset ? before : null;
@@ -322,19 +322,18 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
         secret = typed || !same ? checkUrl(input.preset, input.url, options.loopbackHttp) : same.secret;
       }
       let base = same?.link_base ?? before?.link_base;
-      // a relay request names no address the app opens at (relay/session.ts RELAY_ORIGIN), and this PC's own loopback
-      // address opens nothing on a phone: a saved base another device can reach stays
-      if (linkBase && linkBase !== RELAY_ORIGIN) {
+      // this PC's own loopback address opens nothing on a phone: a saved base another device can reach stays
+      if (linkBase) {
         try {
           const origin = new URL(linkBase).origin;
           if (reachable(origin) || !reachable(base)) base = origin;
         } catch { /* keep the one saved */ }
       }
       const saved: StoredWebhook = {
+        owner: null,
         preset: input.preset, secret, ...(chatId ? { chat_id: chatId } : {}),
         alerts: input.alerts === undefined ? same?.alerts ?? DEFAULT_ALERTS : parseAlerts(input.alerts),
         ...(base ? { link_base: base } : {}),
-        ...(owner === undefined ? {} : { owner }),
       };
       writePrivateState(path, saved);
       const changed = before === null || before.preset !== saved.preset || before.secret !== saved.secret || before.chat_id !== saved.chat_id;
@@ -353,8 +352,8 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
   };
 }
 
-/** /api/alerts/webhook routes (shared/alert-webhook.ts). A watching device is refused every change before it gets here (dispatch.ts). */
-export async function handleAlertWebhookRequest(request: Request, pathname: string, webhook: AlertWebhook, owner?: string | null): Promise<Response | null> {
+/** /api/alerts/webhook routes (shared/alert-webhook.ts). */
+export async function handleAlertWebhookRequest(request: Request, pathname: string, webhook: AlertWebhook): Promise<Response | null> {
   if (pathname !== "/api/alerts/webhook" && pathname !== "/api/alerts/webhook/test") return null;
   setRequestRoute(pathname);
   const route = `${request.method} ${pathname}`;
@@ -379,7 +378,7 @@ export async function handleAlertWebhookRequest(request: Request, pathname: stri
       ...(text("token") === undefined ? {} : { token: text("token")! }),
       ...(text("chat_id") === undefined ? {} : { chat_id: text("chat_id")! }),
       ...(body["alerts"] === undefined ? {} : { alerts: parseAlerts(body["alerts"]) }),
-    }, request.headers.get("origin") ?? new URL(request.url).origin, owner);
+    }, request.headers.get("origin") ?? new URL(request.url).origin);
     return jsonResponse(saved, 200, noStore);
   } catch (error) {
     if (error instanceof WebhookInputError) return badRequest("invalid_webhook", error.message);

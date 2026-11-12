@@ -11,6 +11,7 @@ describe("openWebLink", () => {
     let blocked = false;
     const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
     const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: () => {
       const link = { href: "", target: "", rel: "", click: () => clicked.push({ href: link.href, target: link.target, rel: link.rel }) };
       return link;
@@ -49,12 +50,13 @@ describe("openWebLink", () => {
       expect(clicked.at(-1)).toEqual({ href: "https://seven.example", target: "_blank", rel: "noopener noreferrer" });
       (globalThis as unknown as { window: { open: unknown } }).window.open = windowOpen;
       // an app hands the address to the system browser: it never keeps a window to reuse
-      (globalThis as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: { userAgent: "Mozilla/5.0 (Macintosh) OvisMac/1.0.0" } });
       createWebLinkOpener()("https://app.example", true);
       expect(opened).toHaveLength(3);
       expect(clicked.at(-1)).toEqual({ href: "https://app.example", target: "_blank", rel: "noopener noreferrer" });
     } finally {
-      Reflect.deleteProperty(globalThis, "Capacitor");
+      if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+      else Reflect.deleteProperty(globalThis, "navigator");
       if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
       else Reflect.deleteProperty(globalThis, "document");
       if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);

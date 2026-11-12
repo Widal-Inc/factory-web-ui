@@ -129,138 +129,11 @@ async function keepShell(response, spare) {
 
 /** The shell to start from offline: this cache's, else the one a cache not yet deleted holds. */
 async function cachedShell() {
-  return (await keptShell())?.response;
-}
-
-/**
- * A page that needs the host's shell (src/lib/shellMode.ts requestFreshShell) leaves this entry in
- * FILES: the next navigation takes it and asks the network first, its kept shell still the fallback.
- */
-const FRESH_SHELL = "/__ovis-fresh-shell";
-/** How long a kept shell is opened without asking the host first: past it, a refresh that kept failing shows. */
-const KEPT_SHELL_MS = 24 * 60 * 60 * 1000;
-
-async function takeFreshRequest() {
-  return (await caches.open(FILES)).delete(`${FRESH_SHELL}/${shellServerId()}`);
-}
-
-function keptRecently(response) {
-  const at = Date.parse(response.headers.get("date") || "");
-  return Number.isFinite(at) && Date.now() - at < KEPT_SHELL_MS;
-}
-
-/** The shell kept for the next start and the cache that holds it; null when none was kept. */
-async function keptShell() {
   for (const name of [CACHE, ...(await caches.keys()).filter((name) => name !== CACHE && name !== FILES)]) {
     const response = await (await caches.open(name)).match("/");
-    if (response) return { response, cache: name };
+    if (response) return response;
   }
-  return null;
-}
-
-// Only the shell build stamps this contract. Server-served workers keep their fetch behavior.
-const RELAY_RESOURCES = null;
-
-if (RELAY_RESOURCES) self.addEventListener("message", (event) => {
-  if (event.data?.type === "ovis-relay-resources-v1") event.ports[0]?.postMessage({ type: "ovis-relay-resources-v1" });
-});
-
-/** A page of this PC's app: its scope on this origin, not its render host or a file under `~`. */
-function ofThisPcApp(url, scope) {
-  try {
-    const address = new URL(url);
-    return address.origin === self.location.origin && address.pathname.startsWith(scope) && !address.pathname.startsWith(`${scope}~`);
-  } catch { return false; }
-}
-
-/**
- * Whether this PC's own app asked: what a PC's own server gets from its SameSite=Strict cookie,
- * which another site's link or frame never carries. The Sec-Fetch-* headers are added after the
- * worker, so it cannot read them: a navigation (a tab, a frame, a download) counts by the page it
- * came from, and any other request by the page that made it. No referrer (a typed address, or a
- * page that withheld it) is refused too.
- */
-async function askedByThisPc(event, scope) {
-  if (event.request.mode === "navigate") return ofThisPcApp(event.request.referrer, scope);
-  const client = event.clientId ? await self.clients.get(event.clientId) : undefined;
-  return client !== undefined && ofThisPcApp(client.url, scope);
-}
-
-/** No caching, including errors. Only controlled windows in this PC's registration are eligible. */
-async function relayResourceResponse(event, target) {
-  const { request } = event;
-  const scope = new URL(self.registration.scope).pathname;
-  if (!(await askedByThisPc(event, scope))) {
-    return new Response("Open this file from Ovis.", { status: 403, headers: { "cache-control": "no-store" } });
-  }
-  const windows = await self.clients.matchAll({ type: "window" });
-  for (const client of windows) {
-    const address = new URL(client.url);
-    if (address.origin !== self.location.origin || !address.pathname.startsWith(scope)
-      || address.pathname.startsWith(`${scope}~`)) continue;
-    request.signal.throwIfAborted();
-    const answer = await new Promise((resolve, reject) => {
-      const channel = new MessageChannel();
-      const port = channel.port1;
-      let reader;
-      const finish = () => {
-        clearTimeout(timer);
-        request.signal.removeEventListener("abort", aborted);
-        port.close();
-      };
-      const aborted = () => {
-        port.postMessage({ type: "abort" });
-        if (reader) void reader.cancel(request.signal.reason);
-        finish();
-        reject(request.signal.reason);
-      };
-      const timer = setTimeout(() => {
-        port.postMessage({ type: "abort" });
-        finish();
-        resolve(null);
-      }, 5000);
-      request.signal.addEventListener("abort", aborted, { once: true });
-      port.onmessage = (event) => {
-        clearTimeout(timer);
-        const data = event.data;
-        if (!data?.available) { finish(); resolve(null); return; }
-        if (data.status === undefined) return; // selected; headers arrive when the PC answers
-        const headers = new Headers(data.headers.filter(([name]) => RELAY_RESOURCES.headers.includes(name.toLowerCase())));
-        // A paired PC is not trusted with the shell origin shared by every other PC.
-        // PDF uses Chrome's isolated viewer, which refuses sandboxed documents. nosniff
-        // keeps HTML disguised as PDF out of the HTML parser; script-src also forbids
-        // shell-origin script. Rendered HTML runs separately at ~render, not this route.
-        const pdf = headers.get("content-type")?.split(";")[0].trim().toLowerCase() === "application/pdf";
-        // Only the shell may frame a PC's file, as only the app frames a file of the PC's own server.
-        headers.append("content-security-policy", `${pdf ? "" : "sandbox; "}default-src 'none'; script-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'`);
-        headers.set("x-frame-options", "SAMEORIGIN");
-        headers.set("x-content-type-options", "nosniff");
-        reader = data.body?.getReader();
-        const body = reader ? new ReadableStream({
-          async pull(controller) {
-            try {
-              const next = await reader.read();
-              if (next.done) { controller.close(); finish(); }
-              else controller.enqueue(next.value);
-            } catch (error) { controller.error(error); finish(); }
-          },
-          async cancel(reason) {
-            port.postMessage({ type: "abort" });
-            await reader.cancel(reason);
-            finish();
-          },
-        }, { highWaterMark: 0 }) : null;
-        resolve(new Response(body, { status: data.status, headers }));
-        if (!body) finish();
-      };
-      client.postMessage({
-        type: "ovis-relay-resource", id: crypto.randomUUID(), serverId: scope.split("/")[2],
-        target, headers: [...request.headers].filter(([name]) => RELAY_RESOURCES.requestHeaders.includes(name)),
-      }, [channel.port2]);
-    });
-    if (answer) return answer;
-  }
-  return new Response("Open this PC in Ovis to load its files.", { status: 503, headers: { "cache-control": "no-store" } });
+  return undefined;
 }
 
 self.addEventListener("fetch", (event) => {
@@ -271,35 +144,9 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname === "/ws") return;
 
-  if (RELAY_RESOURCES) {
-    const scope = new URL(self.registration.scope).pathname;
-    if (url.pathname === `${scope}~render`) return;
-    if (url.pathname.startsWith(`${scope}~`)) {
-      const target = url.pathname.slice(scope.length + 1) + url.search;
-      if (/^\/s\/[0-9a-f]{32}\/$/.test(scope) && new RegExp(RELAY_RESOURCES.target).test(target)) {
-        event.respondWith(relayResourceResponse(event, target));
-      }
-      return;
-    }
-  }
-
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
-        // The hosted shell starts from the shell it kept: its host may be a slow ocean away, and
-        // which build a page runs is told apart from the PC's by the version policy, not by being
-        // fresh. The network's shell is kept for the next open.
-        let kept = null;
-        try {
-          const fresh = RELAY_RESOURCES ? await takeFreshRequest() : false;
-          kept = RELAY_RESOURCES && !fresh ? await keptShell() : null;
-        } catch (err) { /* storage that fails costs only the head start: the network is asked */ }
-        if (kept && keptRecently(kept.response)) {
-          event.waitUntil(fetch(request)
-            .then((response) => (response.ok ? keepShell(response, kept.cache) : undefined))
-            .catch(() => undefined));
-          return kept.response;
-        }
         let response;
         try {
           response = await fetch(request);
@@ -351,22 +198,6 @@ self.addEventListener("fetch", (event) => {
 // push shows a notification: Safari revokes a subscription whose pushes stay silent.
 // A window of the app that is visible right now already shows the change in its
 // sidebar, so the notification then arrives without sound or vibration.
-// In the hosted shell every PC has a worker of its own, scoped to `/s/<server_id>/`
-// (src/lib/shellMode.ts), with its own subscription: only that PC pushes to it, and
-// only that PC's windows are this worker's to tell or to open.
-
-/** The PC this worker is the hosted shell's worker for; null for the worker a PC's own server serves. */
-function shellServerId() {
-  const scope = self.registration && self.registration.scope;
-  const match = scope ? /^\/s\/([0-9a-f]{32})\/$/.exec(new URL(scope).pathname) : null;
-  return match ? match[1] : null;
-}
-
-/** A window of this worker's PC: in the hosted shell the origin's other windows are other PCs'. */
-function ofThisPc(url) {
-  if (shellServerId() === null) return true;
-  try { return new URL(url).pathname.startsWith(`/s/${shellServerId()}/`); } catch { return false; }
-}
 
 // The tag replaces the pane's last alert everywhere but iOS, whose webpushd files each one
 // under an id of its own (WebKit bugs 258922, 319860): the pane's earlier alerts are closed by
@@ -396,11 +227,10 @@ async function closeEarlierAlerts(tag, earlier) {
 // Answer buttons (#2916): an alert for a question the server found answerable whole (server/push.ts
 // promptActions) carries its options as buttons. A tap answers through POST /api/pane/prompt/answer
 // with the prompt's id, so the server's own check decides: a prompt that changed or was answered on
-// another device takes nothing, and a new alert says so; its tap opens the pane. Only the worker a
-// PC's own server serves shows them: the hosted shell's worker cannot reach its PC (only a window
-// holds the relay channel). Where a platform shows no buttons (iOS), the alert is as it was.
+// another device takes nothing, and a new alert says so; its tap opens the pane. Where a platform shows no
+// buttons (iOS), the alert is as it was.
 function answerButtons(payload) {
-  if (shellServerId() !== null || typeof payload.prompt_id !== "string" || !payload.pane_id || (payload.machine_id || "local") !== "local") return null;
+  if (typeof payload.prompt_id !== "string" || !payload.pane_id || (payload.machine_id || "local") !== "local") return null;
   if (!Array.isArray(payload.actions)) return null;
   const answers = payload.actions.slice(0, 2).filter((action) => Number.isInteger(action?.option_index) && typeof action.label === "string" && action.label !== "");
   return answers.length > 0 ? answers : null;
@@ -457,7 +287,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      const watching = windows.some((client) => client.visibilityState === "visible" && ofThisPc(client.url));
+      const watching = windows.some((client) => client.visibilityState === "visible");
       const earlier = await earlierAlerts(tag);
       const answers = answerButtons(payload);
       await self.registration.showNotification(payload.title || "Ovis", {
@@ -481,8 +311,7 @@ self.addEventListener("push", (event) => {
 
 /**
  * A window that runs the app and so takes a "select-pane": the shell's own paths only. Not a
- * markdown reader tab (`?read=`, or `#read=` in the hosted shell, which keeps a page's query in its
- * fragment: src/lib/pageQuery.ts; src/lib/fileReader.ts renders FileReader there instead of App),
+ * markdown reader tab (`?read=`; src/lib/fileReader.ts renders FileReader there instead of App),
  * nor a raw file or HTML page the file viewer opened in a tab of its own (those are /api/
  * responses), nor any shipped file (an icon, /social-preview.png, a notice): a path whose last
  * part has an extension is a file, except the shell's own index.html.
@@ -494,9 +323,7 @@ function isAppWindow(url) {
   if (path.startsWith("/api/") || path === "/ws") return false;
   const last = path.slice(path.lastIndexOf("/") + 1);
   if (last.includes(".") && last !== "index.html") return false;
-  // as src/lib/pageQuery.ts pageSearch reads it: a query left from an older build first
-  const query = shellServerId() !== null && parsed.search.length <= 1 && parsed.hash.length > 1 ? new URLSearchParams(parsed.hash.slice(1)) : parsed.searchParams;
-  return (query.get("read") ?? "").trim() === "";
+  return (parsed.searchParams.get("read") ?? "").trim() === "";
 }
 
 // Tap: bring the app forward on that pane - an open window is told which pane
@@ -539,12 +366,10 @@ self.addEventListener("notificationclick", (event) => {
     (async () => {
       // only an app window handles the selection: focusing a reader tab would swallow the tap
       const windows = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }))
-        .filter((client) => isAppWindow(client.url) && ofThisPc(client.url));
+        .filter((client) => isAppWindow(client.url));
       if (click !== latestNotificationClick) return;
-      // the app's own path: the PC's scope in the hosted shell, whose host never hears which pane:
-      // there the pane rides in the fragment (src/lib/pageQuery.ts)
-      const home = shellServerId() === null ? "/" : `/s/${shellServerId()}/`;
-      const url = paneId ? `${home}${shellServerId() === null ? "?" : "#"}machine=${encodeURIComponent(machineId)}${workspaceId ? `&ws=${encodeURIComponent(workspaceId)}` : ""}&pane=${encodeURIComponent(paneId)}&view=chat` : home;
+      const home = "/";
+      const url = paneId ? `${home}?machine=${encodeURIComponent(machineId)}${workspaceId ? `&ws=${encodeURIComponent(workspaceId)}` : ""}&pane=${encodeURIComponent(paneId)}&view=chat` : home;
       const selectLatest = (client) => { if (client && latestNotificationSelection) client.postMessage(latestNotificationSelection); };
       const open = async () => {
         // An opening can also finish after a newer tap. Repair that returned
@@ -576,70 +401,9 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-/**
- * The hosted shell's database (src/lib/relay/device.ts openDatabase: the same name, version and
- * stores): `pending-push` holds, per PC, the subscription its worker could not hand over itself.
- */
-function openRelayDatabase() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open("ovis-relay", 2);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains("devices")) db.createObjectStore("devices", { keyPath: "server_id" });
-      if (!db.objectStoreNames.contains("pending-push")) db.createObjectStore("pending-push", { keyPath: "server_id" });
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/** Keeps `subscription` for the PC to be told on the shell's next connection (src/lib/push.ts registerPendingPush). */
-async function keepPendingPush(serverId, subscription, oldEndpoint) {
-  const db = await openRelayDatabase();
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction("pending-push", "readwrite");
-      const store = tx.objectStore("pending-push");
-      const request = store.get(serverId);
-      request.onsuccess = () => {
-        const held = request.result;
-        // rotated again before the PC heard of the last one: the endpoint the PC knows is still that one's old
-        const old = held && held.subscription.endpoint === oldEndpoint ? held.old_endpoint : oldEndpoint;
-        store.put({ server_id: serverId, subscription, old_endpoint: old });
-      };
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
 // The browser rotated the subscription (Firefox does; Chrome rarely): hand the server
 // the new endpoint and drop the old one, or pushes stop until the app is next opened.
-// The hosted shell's worker cannot reach its PC (only a window holds the relay channel):
-// it keeps the subscription for the PC and tells this PC's open windows, whose shell
-// registers it over the relay; with none open the shell does on its next start.
 self.addEventListener("pushsubscriptionchange", (event) => {
-  const serverId = shellServerId();
-  if (serverId !== null) {
-    event.waitUntil(
-      (async () => {
-        const previous = event.oldSubscription;
-        let fresh = event.newSubscription;
-        if (!fresh && previous && previous.options.applicationServerKey) {
-          fresh = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: previous.options.applicationServerKey });
-        }
-        // no key to subscribe with here: the app subscribes again on its next start (src/lib/push.ts)
-        if (!fresh) return;
-        await keepPendingPush(serverId, fresh.toJSON(), previous ? previous.endpoint : null);
-        const windows = (await self.clients.matchAll({ type: "window", includeUncontrolled: true }))
-          .filter((client) => isAppWindow(client.url) && ofThisPc(client.url));
-        for (const client of windows) client.postMessage({ type: "push-subscription-change" });
-      })(),
-    );
-    return;
-  }
   const post = (method, body) =>
     fetch("/api/push/subscribe", { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   event.waitUntil(

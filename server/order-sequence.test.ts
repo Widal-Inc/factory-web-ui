@@ -84,7 +84,7 @@ test("a session read still waiting on herdr when a move is confirmed carries the
     process.env.HERDR_SOCKET = socketPath;
     app = createServer({
       port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), machines: false, registerBridge: false,
-      herdrProfiles: async () => [], tailscaleOwner: null, terminalAttach: false, sidecar: false, usage: new UsageService(undefined, []),
+      herdrProfiles: async () => [], terminalAttach: false, sidecar: false, usage: new UsageService(undefined, []),
     });
     const origin = `http://127.0.0.1:${app.port}`;
     const session = async () => ((await (await fetch(`${origin}/api/session`)).json()) as { snapshot: SessionSnapshot }).snapshot;

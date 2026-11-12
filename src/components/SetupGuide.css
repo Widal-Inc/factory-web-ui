@@ -342,93 +342,12 @@
     padding-top: var(--space-4);
   }
 
-  /* Start, then Connect your phone below it, each the full width */
+  /* Start, the full width */
   .setup-actions .btn:not(.btn-ghost) {
     flex: 1 1 100%;
     justify-content: center;
     min-height: var(--touch-target);
   }
-}
-
-/* Connect your phone: the QR code and the address, under Start */
-.setup-phone-qr {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-}
-
-.setup-phone-qr-text {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-  color: var(--text-dim);
-  font-size: var(--fs-sm);
-}
-
-.setup-phone-qr-text code {
-  overflow-wrap: anywhere;
-  color: var(--text-strong);
-  font-family: var(--font-mono);
-}
-
-.setup-phone-qr-text strong {
-  color: var(--text-strong);
-  font-family: var(--font-mono);
-  letter-spacing: 0.1em;
-}
-
-/* Connect your phone through the Ovis relay: its line and button, its state, then its QR code */
-.setup-phone-relay {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-panel);
-}
-
-.setup-phone-relay > .setup-actions,
-.setup-phone-relay > .setup-error {
-  align-self: stretch;
-}
-
-.setup-phone-relay-lead {
-  margin: 0;
-  color: var(--text);
-  font-size: var(--fs-md);
-  line-height: var(--lh-base);
-}
-
-.setup-phone-relay-state {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.setup-phone-relay-state svg {
-  width: 14px;
-  height: 14px;
-}
-
-.setup-paired {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--status-done);
-}
-
-.setup-paired svg {
-  width: 14px;
-  height: 14px;
 }
 
 /* Sign in to an installed Claude Code or Codex, under the tiles */

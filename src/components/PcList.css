@@ -1,0 +1,69 @@
+.devices-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--hairline) solid var(--border);
+}
+
+.devices-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--row-h);
+  padding: var(--space-2) 0;
+  border-bottom: var(--hairline) solid var(--border);
+}
+
+.devices-name {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.devices-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* what a row is (this PC, another PC): a pill in neutral tones */
+.devices-kind {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--bg-input);
+  color: var(--text-dim);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semibold);
+  vertical-align: middle;
+}
+
+.devices-kind.is-self {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+/* Connected to this PC: this PC, then the other PCs, as one list */
+.my-devices {
+  display: flex;
+  flex-direction: column;
+}
+
+.my-devices > .my-pcs,
+.my-devices > .my-pc-self {
+  border-top: 0;
+}
+
+/* Add a connection: the page's one way to connect anything, under the list it adds to */
+.devices-add .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* a PC that is not connected now stays in the list, its name dimmed (its state stays readable), with its remove button */
+.devices-row.is-away > .devices-name > .settings-label {
+  opacity: 0.55;
+}

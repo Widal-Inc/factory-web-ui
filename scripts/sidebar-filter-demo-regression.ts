@@ -102,11 +102,6 @@ const patch = `(() => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     calls.requests.push({ method, url: url.pathname + url.search, body: typeof init?.body === "string" ? init.body : null });
-    if (url.pathname === "/api/health") {
-      const value = await (await fetchDemo(input, init)).json();
-      if (params.has("watch") && value.auth) value.auth = { ...value.auth, role: "watch" };
-      return json(value);
-    }
     if (url.pathname === "/api/machines") { const value = await (await fetchDemo(input, init)).json(); last = value.machines; return json({ machines: roster(last) }); }
     const match = url.pathname.match(/^\\/api\\/machines\\/([^/]+)(\\/.*)$/);
     const machine = match ? decodeURIComponent(match[1]) : "local";
@@ -837,19 +832,6 @@ async function foldTransitions(browser: Browser, scene: Scene): Promise<void> {
   console.log(`PASS ${name}: a branch match comes back after a no-match query; parent matches and the selection open folds; carets under the filter fold what is drawn and never the saved fold`);
 }
 
-async function observeOnly(browser: Browser, scene: Scene): Promise<void> {
-  const { context, page, errors } = await newPage(browser, scene, `pane=${encodeURIComponent(WEB)}&watch=1`);
-  try {
-    const input = filterInput(page);
-    await input.click();
-    await input.pressSequentially("flaky");
-    await waitWorkspaceIds(page, 'ids.join(",") === "w1C,w1D,w1H,w1C,w1H"');
-    await capture(page, scene, "observe-only");
-    assert.deepEqual(errors, []);
-    console.log(`PASS ${scene.phone ? "phone" : "desktop"} ${scene.theme}: the filter works for a device that only watches`);
-  } finally { await context.close(); }
-}
-
 async function composition(browser: Browser, scene: Scene): Promise<void> {
   const { context, page, errors } = await newPage(browser, scene, `pane=${encodeURIComponent(WEB)}`);
   try {
@@ -924,14 +906,16 @@ try {
     const browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
     try {
       const only = process.env["SIDEBAR_FILTER_CASE"];
+      const onlyScene = process.env["SIDEBAR_FILTER_SCENE"];
+      if (onlyScene && !["desktop-dark", "desktop-light", "phone-dark", "phone-light"].includes(onlyScene)) throw new Error(`Unknown sidebar scene: ${onlyScene}`);
       if (!only || only === "en") for (const phone of [false, true]) for (const theme of ["dark", "light"] as const) {
+        if (onlyScene && onlyScene !== `${phone ? "phone" : "desktop"}-${theme}`) continue;
         const scene: Scene = { phone, theme, language: "en" };
         await happyPath(browser, scene);
         await selectedNonMatch(browser, scene);
         await liveOfflineRoster(browser, scene);
         await foldTransitions(browser, scene);
         await openWorktreeUnderFilter(browser, scene);
-        await observeOnly(browser, scene);
         await composition(browser, scene);
       }
       if (!only || only === "ko") await koreanShots(browser);

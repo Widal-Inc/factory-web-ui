@@ -7,12 +7,10 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KH
 const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 const LINUX = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
-const input = (overrides: Partial<SurfaceInput>): SurfaceInput => ({ nativeApp: null, macApp: false, installed: false, userAgent: LINUX, maxTouchPoints: 0, ...overrides });
+const input = (overrides: Partial<SurfaceInput>): SurfaceInput => ({ macApp: false, installed: false, userAgent: LINUX, maxTouchPoints: 0, ...overrides });
 
 describe("surfaceOf", () => {
-  it("names the apps before anything the page looks like", () => {
-    expect(surfaceOf(input({ nativeApp: "ios", userAgent: IPHONE, installed: true }))).toBe("ios-app");
-    expect(surfaceOf(input({ nativeApp: "android", userAgent: ANDROID }))).toBe("android-app");
+  it("names the Mac app before anything the page looks like", () => {
     expect(surfaceOf(input({ macApp: true, userAgent: `${MAC} OvisMac/1.0.0`, installed: true }))).toBe("mac-app");
   });
 

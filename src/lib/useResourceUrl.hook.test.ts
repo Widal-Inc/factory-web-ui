@@ -26,8 +26,8 @@ afterEach(async () => {
 
 it("gives a refused address as a failed state, not an unhandled rejection", async () => {
   // Given a transport that refuses the resource
-  const refusal = new TypeError("relay closed");
-  setTransport({ ...nativeTransport, kind: "relay", resourceUrl: () => Promise.reject(refusal) });
+  const refusal = new TypeError("transport closed");
+  setTransport({ ...nativeTransport, kind: "custom", resourceUrl: () => Promise.reject(refusal) });
   // When the hook asks for it
   await act(async () => { renderer = create(createElement(Probe, { path: "/api/fs/file?path=a.png" })); });
   await settle(() => last()?.error != null);
@@ -36,7 +36,7 @@ it("gives a refused address as a failed state, not an unhandled rejection", asyn
 });
 
 it("is null while a later answer is on its way, then gives it", async () => {
-  setTransport({ ...nativeTransport, kind: "relay", resourceUrl: async (path) => `mapped:${path}` });
+  setTransport({ ...nativeTransport, kind: "custom", resourceUrl: async (path) => `mapped:${path}` });
   await act(async () => { renderer = create(createElement(Probe, { path: "/api/fs/file?path=a.png" })); });
   expect(seen[0]).toEqual({ url: null, error: null });
   await settle(() => last()?.url != null);

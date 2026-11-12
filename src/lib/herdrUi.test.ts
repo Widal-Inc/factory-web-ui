@@ -8,12 +8,12 @@ const answer = (status: number, body: unknown): typeof fetch => (async () => Res
 describe("herdr's copy_on_select in the browser", () => {
   afterEach(() => { forgetHerdrUi(); setTransport(nativeTransport); });
 
-  it("loads the PC preference through the selected relay transport, not the shell host", async () => {
+  it("loads the PC preference through the selected transport", async () => {
     // Given
     const globalFetch = spyOn(globalThis, "fetch").mockRejectedValue(new Error("the static shell has no API"));
     const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
     setTransport({
-      ...nativeTransport, kind: "relay",
+      ...nativeTransport, kind: "custom",
       fetch: async (input, init) => { calls.push({ input, init }); return Response.json({ copy_on_select: true }); },
     });
     try {

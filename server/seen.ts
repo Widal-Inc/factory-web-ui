@@ -144,7 +144,7 @@ async function readSeenBody(request: Request): Promise<string | null> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** /api/seen: GET every record, POST one. A watching device's POST is refused before this (index.ts). */
+/** /api/seen: GET every record, POST one. */
 export async function handleSeenRequest(request: Request, store: SeenStore): Promise<Response> {
   const reply = (body: unknown, status = 200) => jsonResponse(body, status, { "cache-control": "no-store" });
   if (request.method === "GET") return reply({ finishes: store.list() });

@@ -92,7 +92,7 @@ lens and the address stay Chat, nothing attaches anew and herdr's focus never mo
 the composer stays under the terminal, dimmed and inert, and the terminal takes the keys; on a
 phone the key bar takes the composer's place. Busy commands wait in the existing queue: only an
 explicit **Send now** opens a peek, never automatic delivery. A refusal or unconfirmed send keeps
-the draft and note. View-only devices never send or peek. `/resume` keeps opening **Earlier
+the draft and note. A view-only connection never sends or peeks. `/resume` keeps opening **Earlier
 sessions…**.
 
 The peek's head says what ran and offers **Back to Chat** and **Keep Terminal** (which keeps the

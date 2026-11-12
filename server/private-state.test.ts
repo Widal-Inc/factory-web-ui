@@ -64,19 +64,19 @@ const document = `${JSON.stringify(value, null, 2)}\n`;
 describe("writePrivateState", () => {
   it("writes all bytes and fsyncs before rename", () => {
     const root = mkdtempSync(join(dir, "order-"));
-    const path = join(root, "state", "devices.json");
+    const path = join(root, "state", "push-subscriptions.json");
     const { ops, open } = trace({ maxWrite: 16 });
     expect(writePrivateState(path, value, "linux")).toEqual({ directorySynced: true });
     const rel = path.replace(dir, "");
     const writes = Math.ceil(Buffer.byteLength(document) / 16);
     expect(ops).toEqual([
-      `mkdirSync ${rel.replace("/devices.json", "")}`,
+      `mkdirSync ${rel.replace("/push-subscriptions.json", "")}`,
       `openSync ${rel}.<tmp>`,
       ...Array.from({ length: writes }, () => "writeSync file"),
       "fsyncSync file",
       "closeSync file",
       `renameSync ${rel}.<tmp> -> ${rel}`,
-      `openSync ${rel.replace("/devices.json", "")}`,
+      `openSync ${rel.replace("/push-subscriptions.json", "")}`,
       "fsyncSync dir",
       "closeSync dir",
     ]);
@@ -84,7 +84,7 @@ describe("writePrivateState", () => {
     expect(readFileSync(path, "utf8")).toBe(document);
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(statSync(join(root, "state")).mode & 0o777).toBe(0o700);
-    expect(readdirSync(join(root, "state"))).toEqual(["devices.json"]);
+    expect(readdirSync(join(root, "state"))).toEqual(["push-subscriptions.json"]);
   });
 
   it("creates its temporary file exclusively, under a name of its own", () => {
@@ -121,7 +121,7 @@ describe("writePrivateState", () => {
 
   it("leaves the destination unchanged on file sync failure", () => {
     const root = mkdtempSync(join(dir, "fsync-"));
-    const path = join(root, "devices.json");
+    const path = join(root, "push-subscriptions.json");
     writeFileSync(path, "old\n", { mode: 0o600 });
     const { ops, open } = trace({ fail: "fsyncSync", maxWrite: 5 });
     expect(() => writePrivateState(path, value, "linux")).toThrow("EIO");
@@ -129,7 +129,7 @@ describe("writePrivateState", () => {
     expect(ops.some((op) => op.startsWith("renameSync"))).toBe(false);
     expect(open.size).toBe(0);
     expect(readFileSync(path, "utf8")).toBe("old\n");
-    expect(readdirSync(root)).toEqual(["devices.json"]);
+    expect(readdirSync(root)).toEqual(["push-subscriptions.json"]);
   });
 
   for (const fail of ["openSync", "writeSync", "fsyncSync", "closeSync", "renameSync"] as const) {
@@ -151,14 +151,14 @@ describe("writePrivateState", () => {
   it("refuses a write that makes no progress instead of spinning", () => {
     const root = mkdtempSync(join(dir, "stuck-"));
     spies.push(spyOn(privateStateFs, "writeSync").mockImplementation(() => 0));
-    expect(() => writePrivateState(join(root, "devices.json"), value, "linux")).toThrow("wrote no bytes");
+    expect(() => writePrivateState(join(root, "push-subscriptions.json"), value, "linux")).toThrow("wrote no bytes");
     expect(readdirSync(root)).toEqual([]);
   });
 
   it("attempts POSIX directory sync without claiming rollback", () => {
     for (const fail of ["openSync", "fsyncSync"] as const) {
       const root = mkdtempSync(join(dir, `dir-${fail}-`));
-      const path = join(root, "devices.json");
+      const path = join(root, "push-subscriptions.json");
       writeFileSync(path, "old\n", { mode: 0o600 });
       const { ops, open } = trace({ fail, when: (args) => fail === "openSync" ? !String(args[0]).endsWith(".tmp") : ops.includes("closeSync file") });
       expect(writePrivateState(path, value, "linux")).toEqual({ directorySynced: false });
@@ -167,7 +167,7 @@ describe("writePrivateState", () => {
       expect(open.size).toBe(0);
       // the renamed document is in place and usable, only less certain to survive power loss
       expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(value);
-      expect(readdirSync(root)).toEqual(["devices.json"]);
+      expect(readdirSync(root)).toEqual(["push-subscriptions.json"]);
     }
   });
 

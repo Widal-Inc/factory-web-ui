@@ -143,9 +143,9 @@ describe("tab labels from the first message", () => {
     settleTabLabels(panes);
     expect(shownTabLabels()).toEqual({ "w8:p1|term_s": "Read before off" });
     learnFromConversation("local", "w8:p1", { source: "codex-transcript", cursor: null, turns: [user("Pending before off")] });
-    setTabLabelLearning(false, false);
+    setTabLabelLearning(false);
     expect(shownTabLabels()).toEqual({});
-    setTabLabelLearning(true, false);
+    setTabLabelLearning(true);
     settleTabLabels(panes);
     learnFromSend("local", "w8:p1", "codex", "Sent after on");
     settleTabLabels(panes);
@@ -154,19 +154,11 @@ describe("tab labels from the first message", () => {
   });
 
   it("learns nothing while the setting is off", () => {
-    setTabLabelLearning(false, false);
+    setTabLabelLearning(false);
     learnTabLabel("local", "w1:p1", "Fix it");
-    setTabLabelLearning(true, false);
+    setTabLabelLearning(true);
     settleTabLabels([pc("local", [{ pane_id: "w1:p1", terminal_id: "term_a" }])]);
     expect(currentTabLabels()).toEqual({});
-  });
-
-  it("a watching device shows the labels and learns none", () => {
-    setTabLabels({ "w1:p1|term_a": "Shared" });
-    setTabLabelLearning(true, true);
-    learnTabLabel("local", "w1:p2", "Mine");
-    settleTabLabels([pc("local", [{ pane_id: "w1:p1", terminal_id: "term_a" }, { pane_id: "w1:p2", terminal_id: "term_b" }])]);
-    expect(currentTabLabels()).toEqual({ "w1:p1|term_a": "Shared" });
   });
 
   it("keeps a label read from a transcript this page's own, and shares it with the user's first send", () => {

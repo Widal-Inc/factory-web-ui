@@ -14,11 +14,8 @@ import { App } from "./App.tsx";
 import { AppCrash, CrashProbe } from "./components/AppCrash.tsx";
 import { FileReader } from "./components/FileReader.tsx";
 import { RenderBoundary } from "./components/RenderBoundary.tsx";
-import { readerFromSearch, reloadWhenReaderChanges } from "./lib/fileReader.ts";
-import { pageSearch } from "./lib/pageQuery.ts";
-import { bootRelayShell } from "./lib/relay/boot.ts";
+import { readerFromSearch } from "./lib/fileReader.ts";
 import { SettingsProvider } from "./lib/settings.ts";
-import { shellMode } from "./lib/shellMode.ts";
 import { isReportableWindowError } from "./lib/uncaughtErrors.ts";
 import "./lib/viewport.ts";
 import { watchSheetExits } from "./lib/sheets.ts";
@@ -31,8 +28,7 @@ if (!container) throw new Error("#root is missing from index.html");
 const mount: HTMLElement = container;
 
 // a markdown file opened in a tab of its own is that page alone, not the app (FileReader)
-const reader = readerFromSearch(pageSearch());
-reloadWhenReaderChanges(reader);
+const reader = readerFromSearch(window.location.search);
 
 // an error nothing else caught still reaches the console under one name, where a bug report can find it
 // (but not the browser's benign ResizeObserver loop notice: lib/uncaughtErrors.ts)
@@ -59,8 +55,4 @@ function renderApp(): Root {
   return root;
 }
 
-// the hosted shell (app.ovis.sh) reaches its PC through the relay: it pairs or picks the PC first,
-// sets the transport, and only then mounts the app; the build a PC serves has no such meta and
-// mounts the app as before
-if (shellMode() === "relay") bootRelayShell(mount, renderApp);
-else renderApp();
+renderApp();

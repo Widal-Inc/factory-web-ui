@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { type ConfigHost, MAX_HOSTS, sshConfigHosts } from "./ssh-config.ts";
 import { includer, MAX_FILE_BYTES, readCapped } from "./ssh-include.ts";
 import { canonicalIp, RESOLVE_TIMEOUT_MS, resolveWithin, systemResolve } from "./ssh-lookup.ts";
-import { readTailscaleStatus, tailnetPeers } from "./tailnet-pcs.ts";
+import { readTailscaleStatus, tailnetPeers } from "./tailscale.ts";
 
 export interface SshCandidate {
   /** the Host alias, or the Tailscale machine name */

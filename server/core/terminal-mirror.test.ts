@@ -67,7 +67,7 @@ function recorder() {
   const frames: Frame[] = [];
   const waiters: { count: number; done: () => void }[] = [];
   const client = {
-    data: connectionData({ deviceId: undefined, readOnly: false }),
+    data: connectionData({}),
     readyState: WebSocket.OPEN,
     getBufferedAmount: () => 0,
     send(raw: string) {

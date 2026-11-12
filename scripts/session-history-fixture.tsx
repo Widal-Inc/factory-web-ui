@@ -21,8 +21,6 @@ declare global { interface Window { qa: {
   /** true: a resumed tab's pane stays out of the roster until rosterCatchUp, as before load() answers */
   holdRoster: boolean;
   rosterCatchUp: () => void;
-  /** this device only watches (its paired role): App passes it to the sidebar */
-  watch: (watching: boolean) => void;
 } } }
 const pane = (id: string, workspace: string, overrides: Partial<HerdrPane> = {}): HerdrPane => ({
   pane_id: id, tab_id: `${workspace}:t1`, terminal_id: `${id}:term`, workspace_id: workspace, agent: "codex", agent_status: "idle", focused: false, revision: 1,
@@ -55,10 +53,9 @@ const SNAPSHOT: SessionSnapshot = {
   ],
 };
 const noop = () => {};
-window.qa = { machine: () => {}, selected: null, resumed: [], historyOpen: false, reportSession: () => {}, closePane: () => {}, openHistory: () => {}, holdRoster: false, rosterCatchUp: () => {}, watch: () => {} };
+window.qa = { machine: () => {}, selected: null, resumed: [], historyOpen: false, reportSession: () => {}, closePane: () => {}, openHistory: () => {}, holdRoster: false, rosterCatchUp: () => {} };
 function Root() {
   const [machine, setMachine] = useState("local");
-  const [watching, setWatching] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [history, setHistory] = useState<{ workspaceId: string; agent: string | null; paneId: string | null; askingPaneId: string | null } | null>(null);
   // the PC's roster as App holds it: a resumed tab's pane joins it (as load() brings it), reporting no session until told
@@ -66,7 +63,6 @@ function Root() {
   const machines = useMemo(() => [{ id: machine, snapshot }], [machine, snapshot]);
   const { standing: recentResumes, remember: rememberResume } = useRecentResumes(machines);
   window.qa.machine = setMachine;
-  window.qa.watch = setWatching;
   window.qa.selected = selected;
   window.qa.historyOpen = history !== null;
   window.qa.reportSession = (paneId, id, agent = "codex") => setSnapshot((current) => ({ ...current, panes: current.panes.map((candidate) => candidate.pane_id === paneId ? { ...candidate, agent_session: { agent, kind: "id", source: `herdr:${agent}`, value: id } } : candidate) }));
@@ -87,7 +83,7 @@ function Root() {
   const workspace = history ? snapshot.workspaces.find((candidate) => candidate.workspace_id === history.workspaceId) : undefined;
   return <SettingsProvider><MachineContext.Provider value={machine}>
     <div className="sidebar-shell" style={{ width: 320, height: 600 }}>
-      <Sidebar key={machine} snapshot={snapshot} online watching={watching} selectedPaneId={selected} actions={actions} />
+      <Sidebar key={machine} snapshot={snapshot} online selectedPaneId={selected} actions={actions} />
     </div>
     {history && workspace && <SessionHistory
       workspace={workspace}

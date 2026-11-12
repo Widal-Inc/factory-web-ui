@@ -22,8 +22,6 @@ export const REMOTE_LIMITS = {
   sessionSnapshot: 64 * MiB,
   /** any other answer the PC proxy holds before passing it on */
   proxy: 64 * MiB,
-  /** a watching device's pane/prompt, parsed here so its hidden fields can be removed */
-  watchedPrompt: MiB,
 } as const;
 
 /** Fixed messages: neither carries the URL, the token or any of the answer. */

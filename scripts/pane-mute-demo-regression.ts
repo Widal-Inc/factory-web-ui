@@ -37,7 +37,6 @@ declare global {
 }
 
 function installMuteFixture(): void {
-  const watch = new URLSearchParams(location.search).get("mute-fixture") === "watch";
   const spies = { notifications: [] as { title: string; body?: string; tag?: string }[], oscillators: 0 };
   const documents: SharedPreferences[] = [];
   const patch: RosterPatch = {};
@@ -57,10 +56,6 @@ function installMuteFixture(): void {
     // the shared document lives in this script's server, as it lives in the web ui server: the demo's own copy is bypassed
     if (url.pathname === "/api/preferences") return fetchDemo("/fixture/preferences", init);
     const response = await fetchDemo(input, init);
-    if (url.pathname === "/api/health" && watch) {
-      const body = await response.json();
-      return Response.json({ ...body, auth: { ...body.auth, role: "watch" } });
-    }
     if (url.pathname === "/api/machines") {
       const body = await response.json();
       return Response.json({ ...body, machines: patched(body.machines) });
@@ -149,7 +144,7 @@ const LONG_LABEL = "Rewrite the whole configuration loader so that every environ
 const app = mkdtempSync(join(tmpdir(), "herdr-pane-mute-demo-"));
 const stateRoot = mkdtempSync(join(tmpdir(), "herdr-pane-mute-state-"));
 let stores = 0;
-const fixture = { store: new PreferenceStore(join(stateRoot, "fresh-0")), old: false, error: false, watch: false, puts: [] as Record<string, unknown>[] };
+const fixture = { store: new PreferenceStore(join(stateRoot, "fresh-0")), old: false, error: false, puts: [] as Record<string, unknown>[] };
 const strip = (document: SharedPreferences): SharedPreferences => {
   if (!fixture.old) return document;
   const { muted_panes: _muted, ...older } = document;
@@ -303,7 +298,6 @@ try {
       if (request.method === "PUT") {
         const text = await request.text();
         fixture.puts.push(JSON.parse(text));
-        if (fixture.watch) return Response.json({ error: { code: "read_only", message: "this device can only watch" } }, { status: 403 });
         if (fixture.error) return Response.json({ error: { code: "preferences_unwritable", message: "EACCES: permission denied, open '/state/preferences.json.7.tmp'" } }, { status: 500 });
         const body = fixture.old ? JSON.stringify(strip({ revision: 0, ...JSON.parse(text) })) : text;
         const answer = await handlePreferencesRequest(new Request(request.url, { method: "PUT", body }), fixture.store);
@@ -512,29 +506,6 @@ try {
       }
       fixture.old = false;
 
-      // ---- a watching device: the state, not the switch ----
-      openStore("fresh");
-      fixture.store.set({ settings: {}, muted_panes: [key] });
-      fixture.watch = true;
-      {
-        const context = await newContext(browser, false, {});
-        const page = await openTab(context, "&mute-fixture=watch");
-        await row(page, "local", P).locator('[data-testid="alerts-muted"]').waitFor();
-        await openMenu(page, false, "local", P);
-        assert.equal(await muteItem(page).getAttribute("aria-checked"), "true", "a watching device sees the shared state");
-        assert.equal(await muteItem(page).getAttribute("aria-disabled"), "true", "and cannot flip it");
-        await muteItem(page).click({ force: true });
-        await barrier(page);
-        assert.equal(await page.locator(".row-menu").count(), 1, "a press on the disabled item leaves the menu open");
-        assert.deepEqual(fixture.puts, [], "a watching device sends no change");
-        assert.equal(fixture.store.get().revision, 1);
-        await closeMenu(page);
-        assert.deepEqual(errorsOf(page), []);
-        await context.close();
-        checks.push("watch device: Unmute alerts is shown checked and disabled, and no PUT goes out");
-      }
-      fixture.watch = false;
-
       // ---- the captures: both widths, both themes, Korean on a phone ----
       if (evidence) {
         for (const phone of [false, true]) for (const theme of ["dark", "light"]) for (const language of phone ? ["en", "ko"] : ["en"]) {
@@ -625,14 +596,6 @@ try {
             fixture.error = false;
             await page.keyboard.press("Escape");
             await page.locator(".settings-dialog").waitFor({ state: "detached" });
-            // a watching device's menu
-            fixture.watch = true;
-            const watching = await openTab(context, "&mute-fixture=watch");
-            await openMenu(watching, phone, "local", P);
-            await capture(watching, theme, language, "menu-watch");
-            await closeMenu(watching);
-            await watching.close();
-            fixture.watch = false;
             // the roster before it is known, and with nothing in it
             await page.evaluate(() => window.muteFixture.roster({ secondPc: null, loading: true }));
             if (phone) await openDrawer(page);

@@ -333,7 +333,7 @@ describe("the machine events", () => {
     const config = new HerdrSidebarConfig(path, 10);
     const manager = { subscribe: () => () => undefined } as unknown as MachineManager;
     const abort = new AbortController();
-    const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager, undefined, undefined, false, config);
+    const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager, undefined, config);
     expect(response.headers.get("content-type")).toBe("text/event-stream");
     const reader = response.body!.getReader();
     const events: MachineEvent[] = [];
@@ -366,7 +366,7 @@ describe("the machine events", () => {
     const relayed: MachineEvent = { type: "machine-message", machine_id: "pc1", message: { type: "snapshot", snapshot } };
     const manager = { subscribe: (listener: (event: MachineEvent) => void) => { listener({ type: "machines", machines: [] }); listener(relayed); return () => undefined; } } as unknown as MachineManager;
     const abort = new AbortController();
-    const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager, undefined, undefined, true, config);
+    const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager, undefined, config);
     const reader = response.body!.getReader();
     let text = "";
     try {
@@ -406,7 +406,7 @@ describe("the machine events", () => {
       expect(drawn().filter((value) => value.startsWith("off"))).toEqual([]);
     };
     const poll = async () => {
-      const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines"), manager, undefined, undefined, true, config);
+      const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines"), manager, undefined, config);
       expect(response.status).toBe(200);
       const body = await response.text();
       text += body;
@@ -414,7 +414,7 @@ describe("the machine events", () => {
     };
     const open = async () => {
       const abort = new AbortController();
-      const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager, undefined, undefined, true, config);
+      const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager, undefined, config);
       const reader = response.body!.getReader();
       const events: MachineEvent[] = [];
       let buffer = "";

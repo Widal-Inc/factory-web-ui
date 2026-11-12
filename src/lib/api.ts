@@ -21,15 +21,12 @@ import type {
   CreateWorktreeRequest,
   CreateTabRequest,
   CreateWorkspaceRequest,
-  DevicesRevokedAll,
   DirectoryCreated,
   DirectoryListing,
   FileInfo,
   FocusPaneRequest,
   HealthAuth,
   IntegrationsResponse,
-  LanExposure,
-  DirectExposure,
   SecuritySummary,
   InteractivePrompt,
   MoveTabRequest,
@@ -41,8 +38,6 @@ import type {
   OmpBtwHistory,
   PaneBackgroundAgentDetail,
   OpenWorktreeRequest,
-  PairedDevice,
-  PairingCode,
   PaneDirection,
   PaneInfo,
   PanePlan,
@@ -63,11 +58,7 @@ import type {
   ProjectFavicon,
   PromptAnswer,
   PushKey,
-  PortalAuth,
-  PortalInvite,
   PushSubscriptionStatus,
-  PortalStatus,
-  RelayStatus,
   RemoteAccess,
   RemoveWorktreeRequest,
   ResizePaneRequest,
@@ -279,93 +270,6 @@ export async function requestHerdrUpdate(): Promise<void> {
   if (!response.ok) throw await errorFrom(url, response);
 }
 
-/** Settings → Phone & devices: Portal's public address for the server's PC. */
-export function fetchPortal(): Promise<PortalStatus> {
-  return getJson<PortalStatus>("/api/portal");
-}
-
-export async function requestPortal(action: "start" | "stop", relay?: string, auth?: PortalAuth): Promise<void> {
-  const url = `/api/portal/${action}`;
-  const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify(relay === undefined ? {} : { relay, auth }) });
-  if (!response.ok) throw await errorFrom(url, response);
-}
-
-/** A private link for `name`, good for `days`: a bearer secret the server keeps nowhere, so this is the one time it is read. */
-export async function issuePortalInvite(name: string, days: number): Promise<PortalInvite> {
-  const url = "/api/portal/invite";
-  const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify({ name, days }) });
-  if (!response.ok) throw await errorFrom(url, response);
-  return (await response.json()) as PortalInvite;
-}
-
-/** Settings → Phone & devices: the Ovis relay, through which paired phones reach this PC from anywhere. */
-export function fetchRelay(): Promise<RelayStatus> {
-  return getJson<RelayStatus>("/api/relay");
-}
-
-/** POST /api/relay/offer: a one-time pairing offer for the QR code, good until `expires_at`. */
-export interface RelayOffer {
-  readonly url: string;
-  readonly expires_at: string;
-}
-
-/**
- * The relay actions answer with the state they left the relay in, a refusal too: a start that
- * serve-only blocks is a 409 whose body is still the RelayStatus, so it is the answer, not an error.
- * Only a body without a phase (the origin gate, a watching device, an older server) is one.
- */
-export async function requestRelay(action: "start" | "stop" | "reset-identity"): Promise<RelayStatus> {
-  const url = `/api/relay/${action}`;
-  const response = await apiFetch(url, { method: "POST", headers: { "x-herdr-update": "1" } });
-  if (!response.ok) {
-    const body: unknown = await response.clone().json().catch(() => null);
-    if (body !== null && typeof body === "object" && "phase" in body) return body as RelayStatus;
-    throw await errorFrom(url, response);
-  }
-  return (await response.json()) as RelayStatus;
-}
-
-/** POST /api/relay/direct: whether paired phones may connect straight to this PC on its networks while the relay is on. */
-export function requestRelayDirect(on: boolean): Promise<RelayStatus> {
-  return getJson<RelayStatus>("/api/relay/direct", { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify({ on }) });
-}
-
-export function requestRelayOffer(): Promise<RelayOffer> {
-  return getJson<RelayOffer>("/api/relay/offer", { method: "POST", headers: { "x-herdr-update": "1" } });
-}
-
-/** POST /api/relay/code: a code to type on the device being paired, good until `expires_at`; it replaces any showing. */
-export interface RelayCode {
-  readonly code: string;
-  readonly expires_at: string;
-  readonly server_id: string;
-}
-
-export function requestRelayCode(): Promise<RelayCode> {
-  return getJson<RelayCode>("/api/relay/code", { method: "POST", headers: { "x-herdr-update": "1" } });
-}
-
-/** POST /api/relay/code/cancel: takes the code showing off the relay. */
-export function cancelRelayCode(): Promise<{ readonly ok: true }> {
-  return getJson<{ readonly ok: true }>("/api/relay/code/cancel", { method: "POST", headers: { "x-herdr-update": "1" } });
-}
-
-/**
- * POST /api/relay/link: a pairing link without a code; the phone that opens it compares six digits with this PC.
- * `localOnly`: this PC's screen waits to be added to an account, so what comes is approved on this PC only.
- */
-export function requestRelayLink(options: { localOnly?: boolean } = {}): Promise<{ readonly url: string }> {
-  return getJson<{ readonly url: string }>("/api/relay/link", { method: "POST", headers: { "x-herdr-update": "1", ...(options.localOnly ? { "x-ovis-local-only": "1" } : {}) } });
-}
-
-/** POST /api/relay/pairing: the owner's answer to a phone waiting with the same digits (`relay-pairings` events). */
-export async function decideRelayPairing(id: string, decision: "approve" | "decline", digits?: string): Promise<void> {
-  const url = "/api/relay/pairing";
-  // an account member approving through the relay names the digits it picked (docs/account.md, "Who may admit a device")
-  const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json", "x-herdr-update": "1" }, body: JSON.stringify({ id, decision, ...(digits === undefined ? {} : { digits }) }) });
-  if (!response.ok) throw await errorFrom(url, response);
-}
-
 /** Anonymous install and update counts; null from a server that sends none (404). */
 /** What every browser of this server shares (shared/preferences.ts); null where the server predates it. */
 export async function fetchPreferences(): Promise<SharedPreferences | null> {
@@ -383,14 +287,14 @@ export async function savePreferences(body: PreferencesChange, keepalive = false
 
 /**
  * Tells every browser of this server that this one presented a finish (shared/seen.ts). A server
- * that predates it (404) or a watching device (403) keeps the read to this browser; one that
+ * that predates it (404) keeps the read to this browser; one that
  * predates `presented` ignores it.
  */
 export async function shareSeen(finish: SeenFinish, presented?: SeenPresentation): Promise<void> {
   const url = "/api/seen";
   const response = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(presented === undefined ? finish : { ...finish, presented }) });
-  if (response.ok || response.status === 404 || response.status === 403) return;
+  if (response.ok || response.status === 404) return;
   throw await errorFrom(url, response);
 }
 
@@ -899,10 +803,6 @@ export interface HealthInfo {
   web_ui?: { boot_id: string | null; revision: string | null };
   /** Absent only on a server that predates the token gate. */
   auth?: HealthAuth;
-  /** present only while this server is reachable beyond this PC with no token and nothing paired */
-  lan_exposure?: LanExposure;
-  /** present only while lan_exposure is not: the relay's direct carrier listens on this PC's network, for relay-paired devices only */
-  direct_exposure?: DirectExposure;
   /** authenticated only; absent from an older server, which the summary shows as unavailable */
   security?: SecuritySummary;
   /** authenticated only; absent from an older server and until the server's first look for hc has ended */
@@ -930,50 +830,10 @@ export async function authenticate(token: string): Promise<void> {
   resumeConnectionTraces();
 }
 
-/** POST /api/devices/pair: the code shown on the PC, once; the server answers with this device's own HttpOnly cookie. */
-export async function pairDevice(code: string, label: string): Promise<void> {
-  const response = await apiFetch("/api/devices/pair", { method: "POST", headers: { "content-type": "application/json", "x-herdr-machine": "1" }, body: JSON.stringify({ code, label }) });
-  if (!response.ok) throw await errorFrom("/api/devices/pair", response);
-  resumeConnectionTraces();
-}
-
-/** `check`: the PC measures every connected device's round trip first (Check now), within a few seconds */
-export async function fetchDevices(check = false): Promise<PairedDevice[]> {
-  return (await getJson<{ devices: PairedDevice[] }>(check ? "/api/devices?check=1" : "/api/devices")).devices;
-}
-
-export async function startPairing(): Promise<PairingCode> {
-  return (await sendJson("/api/devices/pair/start", "POST", {})).json();
-}
-
-export async function renameDevice(id: string, label: string): Promise<PairedDevice> {
-  return (await sendJson(`/api/devices/${encodeURIComponent(id)}`, "PATCH", { label })).json();
-}
-
-export async function revokeDevice(id: string): Promise<void> {
-  await sendJson(`/api/devices/${encodeURIComponent(id)}`, "DELETE", {});
-}
-
-/**
- * POST /api/devices/revoke-all: every paired device loses its pairing access in one durable step,
- * this browser's own included (the answer clears its device cookie). The access token, the PC
- * itself and its Tailscale login get in as before.
- */
-export async function revokeAllDevices(): Promise<DevicesRevokedAll> {
-  return (await sendJson("/api/devices/revoke-all", "POST", {})).json();
-}
-
-/** DELETE /api/auth: clears the session and device cookies, so the next health check reports the gate again. */
+/** DELETE /api/auth: clears the session cookie, so the next health check reports the gate again. */
 export async function signOut(): Promise<void> {
   const response = await apiFetch("/api/auth", { method: "DELETE" });
   if (!response.ok) throw await errorFrom("/api/auth", response);
-}
-
-/** Portal's own sign-out, answered by its gateway and never by this server: a same-origin POST that clears Portal's session cookie for this address. */
-export async function signOutOfPortal(): Promise<void> {
-  const url = "/_portal/auth/logout";
-  const response = await apiFetch(url, { method: "POST" });
-  if (!response.ok) throw await errorFrom(url, response);
 }
 
 /** Chunked btoa: the naive one-liner blows the stack on multi-MB screenshots. */
@@ -1369,7 +1229,7 @@ export async function resumeSession(request: SessionResumeRequest, machineId = "
 /**
  * Whether the PC's bridge has the session history route, asked without a query so no session is
  * listed: a bridge that has it refuses the query (400), one from before it answers not_found (404).
- * Any other refusal (403 for a device that only watches) still says the route is there; a PC that
+ * Any other refusal still says the route is there; a PC that
  * could not be asked rejects, so the caller asks again when it comes back.
  */
 export async function sessionHistoryOffered(machineId = "local"): Promise<boolean> {
@@ -1597,10 +1457,6 @@ export interface SshCandidate {
 }
 /** GET /api/machines/ssh-candidates: Add a connection → SSH's list, each added through the Add PC dialog. */
 export const findSshCandidates = () => machineRequest<{ pcs: SshCandidate[] }>("/ssh-candidates");
-/** A PC of this PC's Tailscale login whose Ovis lets this PC in as its owner (server/tailnet-pcs.ts); `outdated`: older than 0.5. */
-export interface TailnetPc { readonly name: string; readonly url: string; readonly relay: string | null; readonly outdated: boolean }
-/** GET /api/machines/tailnet: those PCs, each asked over Tailscale which Ovis it runs. */
-export const findTailnetPcs = () => machineRequest<{ pcs: TailnetPc[] }>("/tailnet");
 export const startMachineSetup = (request: SetupRequest) => machineRequest<SetupJob>("/setup", "POST", request);
 export const fetchMachineSetup = (id: string) => machineRequest<SetupJob>(`/setup/${encodeURIComponent(id)}`);
 export const answerMachineSetup = (id: string, action: SetupAction) => machineRequest<SetupJob>(`/setup/${encodeURIComponent(id)}`, "POST", action);

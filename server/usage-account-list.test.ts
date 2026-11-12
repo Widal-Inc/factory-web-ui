@@ -5,8 +5,6 @@ import { join } from "node:path";
 import type { UsageLoginFollowed, UsageLoginPrompt } from "../shared/usage-login.ts";
 import type { UsageReport } from "../shared/protocol.ts";
 import { createServer } from "./index.ts";
-import { DEVICE_COOKIE } from "./auth.ts";
-import { DeviceStore } from "./devices.ts";
 import { UsageLoginService } from "./usage-login.ts";
 import { FRESH_MS, UsageService, USAGE_PROVIDERS, type UsageContext, type UsageProvider } from "./usage.ts";
 
@@ -153,18 +151,12 @@ it("keeps the selected account order after restarting the server", async () => {
   expect((await (await fetch(`${second.origin}/api/preferences`)).json()).settings.usageOrder).toEqual(order);
 });
 
-it("refuses account removal from a watching device", async () => {
-  const { root, start } = fixture();
-  const devices = new DeviceStore(join(root, "state"));
-  const paired = devices.pair(devices.startPairing().code, "Watcher", "watch");
-  if (!paired) throw new Error("The fixture could not pair its watcher");
-  devices.match(paired.token);
+it("refuses account removal without the server's token", async () => {
+  const { start } = fixture();
   const host = start("fixture-owner");
-  const response = await fetch(`${host.origin}/api/usage/accounts`, {
-    method: "DELETE", headers: { "content-type": "application/json", cookie: `${DEVICE_COOKIE}=${paired.token}` },
-    body: JSON.stringify({ account: "claude:expired" }),
-  });
-  expect(response.status).toBe(403);
+  const body = JSON.stringify({ account: "claude:expired" });
+  const response = await fetch(`${host.origin}/api/usage/accounts`, { method: "DELETE", headers: { "content-type": "application/json" }, body });
+  expect(response.status).toBe(401);
 });
 
 const keys = (report: UsageReport | { providers?: readonly { key: string }[] } | undefined) => (report?.providers ?? []).map((entry) => entry.key).sort();

@@ -112,7 +112,7 @@ describe("error bodies", () => {
     expect(malformed("return jsonResponse({ error: \"nope\" }, 400);", 7)).toBe(true);
     expect(malformed("return reply({ error: { code: \"x\" } }, 400);", 7)).toBe(true);
     expect(malformed("return jsonResponse({ error: { code, message: a ? b : \"c\" } }, 503);", 7)).toBe(false);
-    expect(malformed("return jsonResponse({ error: { message: \"invalid pairing code\" } }, 400);", 7)).toBe(true);
+    expect(malformed("return jsonResponse({ error: { message: \"invalid token\" } }, 400);", 7)).toBe(true);
     expect(malformed("return jsonResponse({ ok: false, error: \"nope\" }, 400);", 7)).toBe(true);
     expect(malformed("return jsonResponse({ ok: true, data: { error: \"kept\" } });", 7)).toBe(false);
     expect(ANSWER.test("this.patch({ phase: \"error\", error: \"failed\" });")).toBe(false);
@@ -230,26 +230,25 @@ describe("herdr socket", () => {
 });
 
 describe("remote PC bundle boundary", () => {
-  // scripts/build-remote-bundle.ts ships server/, shared/ and integrations/ but not src/ or relay/: code
+  // scripts/build-remote-bundle.ts ships server/, shared/ and integrations/ but not src/: code
   // there that imports either loads from a checkout, where every check runs, and not on a remote PC (#2220)
-  const SRC_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)["']((?:\.\.\/)+(?:src|relay)\/[^"']*)["']/;
-  // server/relay/ is in the bundle: only a path that resolves to the checkout's own src/ or relay/ counts
-  const leavesBundle = (file: string, spec: string) => /^(?:src|relay)\//.test(posix.normalize(posix.join(posix.dirname(file), spec)));
+  const SRC_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)["']((?:\.\.\/)+src\/[^"']*)["']/;
+  // only a path that resolves to the checkout's own src/ counts
+  const leavesBundle = (file: string, spec: string) => /^src\//.test(posix.normalize(posix.join(posix.dirname(file), spec)));
 
-  it("never imports src/ or relay/ from code the remote bundle carries", () => {
+  it("never imports src/ from code the remote bundle carries", () => {
     const shipped = [...serverCode(), ...files("{shared,integrations}/**/*.{ts,mjs,js}").filter((file) => !file.endsWith(".test.ts"))];
     fail(matches(shipped, SRC_IMPORT).filter((found) => leavesBundle(found.file, SRC_IMPORT.exec(found.code.slice(found.index))![1]!)).map((found) => found.at),
-      "The remote PC bundle (scripts/build-remote-bundle.ts) carries server/, shared/ and integrations/, not src/ or relay/: move what this code needs into shared/, as shared/markdown.ts was.");
+      "The remote PC bundle (scripts/build-remote-bundle.ts) carries server/, shared/ and integrations/, not src/: move what this code needs into shared/, as shared/markdown.ts was.");
   });
 
   it("knows an import of src/ from a mention", () => {
     expect(SRC_IMPORT.test("import { parseInline } from \"../src/lib/markdown.ts\";")).toBe(true);
     expect(SRC_IMPORT.test("const m = await import('../../src/lib/x.ts')")).toBe(true);
     expect(SRC_IMPORT.test("import \"../src/styles.css\";")).toBe(true);
-    expect(SRC_IMPORT.test("import { PAIR_CLOSE } from \"../../relay/pair-room.ts\";")).toBe(true);
     expect(SRC_IMPORT.test("import { a } from \"../shared/markdown.ts\";")).toBe(false);
     expect(SRC_IMPORT.test("import { a } from \"./src-files.ts\";")).toBe(false);
-    expect(leavesBundle("server/relay/pair-code.ts", "../../relay/pair-room.ts")).toBe(true);
-    expect(leavesBundle("server/account/mailbox.ts", "../relay/identity.ts")).toBe(false);
+    expect(leavesBundle("server/core/socket.ts", "../../src/lib/x.ts")).toBe(true);
+    expect(leavesBundle("server/core/socket.ts", "../herdr/client.ts")).toBe(false);
   });
 });

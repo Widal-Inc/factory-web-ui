@@ -243,15 +243,13 @@ export interface SidebarProps {
   online: boolean;
   selectedPaneId: string | null;
   actions: AppActions;
-  /** this device only watches: the row's menu offers no earlier sessions, which the server refuses it */
-  watching?: boolean;
 }
 
 /**
  * Spaces follow herdr's workspace roster. A workspace opens its current pane; tabs and split
  * panes are navigated through the tab strip, while Agents is an independent API-backed list.
  */
-export function Sidebar({ snapshot, online, selectedPaneId, actions, watching = false }: SidebarProps) {
+export function Sidebar({ snapshot, online, selectedPaneId, actions }: SidebarProps) {
   const t = useT();
   const { settings } = useSettings();
   const twoLine = settings.sidebarRows === "two";
@@ -278,8 +276,8 @@ export function Sidebar({ snapshot, online, selectedPaneId, actions, watching = 
   const repositoryAnswers = useRef(new Map<string, boolean>());
   useEffect(() => {
     const known = repositoryAnswers.current;
-    // a watching device is refused the listing (#2250), and a PC the Herdr app lays out offers no worktree: nothing to ask
-    if (!online || unmarked === "" || watching || !worktreesOffered) { known.clear(); setRepositoryWorkspaces(new Set()); return; }
+    // a PC the Herdr app lays out offers no worktree: nothing to ask
+    if (!online || unmarked === "" || !worktreesOffered) { known.clear(); setRepositoryWorkspaces(new Set()); return; }
     const ids = unmarked.split("\n");
     for (const id of [...known.keys()]) if (!ids.includes(id)) known.delete(id);
     let live = true;
@@ -290,7 +288,7 @@ export function Sidebar({ snapshot, online, selectedPaneId, actions, watching = 
       (error: unknown) => { if (live && error instanceof ApiError && error.status < 500) known.set(id, false); },
     ))).then(publish);
     return () => { live = false; };
-  }, [listWorktrees, unmarked, online, watching, worktreesOffered]);
+  }, [listWorktrees, unmarked, online, worktreesOffered]);
   // a repository's folder that stops being a checkout is refused on a later poll: that refusal is an answer too (#2726)
   const notCheckout = useCallback((id: string) => {
     repositoryAnswers.current.set(id, false);
@@ -301,7 +299,7 @@ export function Sidebar({ snapshot, online, selectedPaneId, actions, watching = 
       return next;
     });
   }, []);
-  const { branches, rememberOpened } = useWorktreeBranches(snapshot, online, true, repositoryWorkspaces, watching, notCheckout);
+  const { branches, rememberOpened } = useWorktreeBranches(snapshot, online, true, repositoryWorkspaces, notCheckout);
   // the sidebar's filter (lib/sidebarFilter.ts): which rows stay, which are context; it learns the branch
   // each row says from here, since the inventory is this roster's. What it last said outlives a fold of the
   // PC (which unmounts this roster), so a branch stays findable on a PC drawn folded
@@ -344,8 +342,6 @@ export function Sidebar({ snapshot, online, selectedPaneId, actions, watching = 
   };
   if (confirm?.closes && !stillAgreed(confirm.closes)) setConfirm(null);
   const [worktreeDialog, setWorktreeDialog] = useState<{ mode: WorktreeDialogMode; workspace: WorkspaceInfo } | null>(null);
-  // worktrees are not offered to a watching device: one open when this device turns into one closes
-  useEffect(() => { if (watching) setWorktreeDialog(null); }, [watching]);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [workspaceLabel, setWorkspaceLabel] = useState("");
   // the order App's coordinator draws: herdr's, or a drag's until a roster read after its moves comes
@@ -544,8 +540,7 @@ export function Sidebar({ snapshot, online, selectedPaneId, actions, watching = 
     const sameRepo = linked || repoKey === undefined ? [] : (snapshot?.workspaces.filter((candidate) => candidate.workspace_id !== workspace.workspace_id && candidate.worktree?.repo_key === repoKey) ?? []);
     const worktrees = sameRepo.filter((candidate) => candidate.worktree?.is_linked_worktree);
     const otherHeads = sameRepo.length > worktrees.length;
-    // making or opening a worktree is a drive feature, and the dialog's checkout list is refused to a watching device
-    const worktreeItems: RowMenuItem[] = (workspace.worktree || repositoryWorkspaces.has(workspace.workspace_id)) && !linked && !watching && worktreesOffered ? [
+    const worktreeItems: RowMenuItem[] = (workspace.worktree || repositoryWorkspaces.has(workspace.workspace_id)) && !linked && worktreesOffered ? [
       { id: "new-worktree", label: t("New worktree"), icon: GitBranch, run: () => setWorktreeDialog({ mode: "create", workspace }) },
       { id: "open-worktree", label: t("Open worktree…"), icon: FolderOpen, run: () => setWorktreeDialog({ mode: "open", workspace }) },
     ] : [];
@@ -584,7 +579,7 @@ export function Sidebar({ snapshot, online, selectedPaneId, actions, watching = 
         : { id: "pin-workspace", label: t("Pin workspace"), icon: Pin, run: () => togglePin(state) },
       ...(!renameOffered || !renamesWorkspace(workspace.workspace_id) ? [] : [{ id: "rename-workspace", label: t("Rename workspace"), icon: Pencil, run: () => beginWorkspaceRename(workspace) }]),
       // the folder's earlier sessions, listed for the agent of the pane the row opens
-      ...(historyOffered && !watching ? [{ id: "session-history", label: t("Earlier sessions…"), icon: History, run: () => actions.openSessionHistory({ machineId, workspaceId: workspace.workspace_id, agent: (panes.length > 0 ? currentPane(workspace, panes) : null)?.agent ?? null }) }] : []),
+      ...(historyOffered ? [{ id: "session-history", label: t("Earlier sessions…"), icon: History, run: () => actions.openSessionHistory({ machineId, workspaceId: workspace.workspace_id, agent: (panes.length > 0 ? currentPane(workspace, panes) : null)?.agent ?? null }) }] : []),
       ...(holdsLock(closes) ? [] : [{ ...closeItem, label: t(sameRepo.length > 0 ? "Close group" : "Close workspace"), divider: false }]),
       ...worktreeItems, ...deleteItems,
       ...(worktrees.length > 0 && repoKey ? [{ id: "fold", label: t(folded ? "Expand" : "Collapse"), icon: folded ? ChevronRight : ChevronDown, run: () => toggleWorktrees(repoKey, folded) }] : []),

@@ -9,8 +9,6 @@
  * - Settings → Agents starts with the setup guide's row, then lists the agents on this PC (with
  *   versions; herdr's session resume inside each row) and Install another agent (the tiles); there
  *   is no Sign in. Open setup guide closes Settings and opens the guide again (lib/setupGuide.ts).
- * - A device that only watches (`?demo_devices=watch`) gets no Add another agent…, no Install and no
- *   Open setup guide: an install types into a terminal on the PC, which it may not do.
  *
  * With UI_EVIDENCE_DIR, each step is captured under agent-entry-points/.
  */
@@ -68,9 +66,8 @@ try {
       };
       const press = (locator: ReturnType<Page["locator"]>) => width === 390 ? locator.tap() : locator.click();
       try {
-        const base = `${root}&demo_devices=empty`;
         // New workspace: the row is the picker's last, its tiles are what the PC lacks
-        await page.goto(`${base}&new=workspace`);
+        await page.goto(`${root}&new=workspace`);
         const dialog = page.getByRole("dialog", { name: /^New workspace · / });
         await dialog.waitFor();
         await press(dialog.locator(".agent-picker-trigger"));
@@ -100,7 +97,7 @@ try {
         console.log(`PASS Add another agent… shows ${names.length} agents the PC lacks as tiles, Install asks the PC, and Back returns to the picker (${at})`);
 
         // Settings → Agents
-        await page.goto(`${base}&settings=agents`);
+        await page.goto(`${root}&settings=agents`);
         const body = page.locator(".settings-body:not([hidden])");
         await body.locator(".agents-item").first().waitFor();
         const installed = await body.locator("[data-section='agents-installed'] .agents-item").evaluateAll((rows) => rows.map((row) => ({ name: row.querySelector(".settings-label")?.textContent ?? "", version: row.querySelector(".agents-version")?.textContent ?? "" })));
@@ -130,7 +127,7 @@ try {
 
         if (width === 1280) {
           // New worktree, from a repository row's menu
-          await page.goto(base);
+          await page.goto(root);
           const row = page.locator(`.workspace-group[data-workspace="${panes.api.split(":")[0]}"] > .workspace-header .workspace-select`);
           const bounds = (await row.boundingBox())!;
           await row.click({ button: "right", position: { x: 32, y: bounds.height / 2 } });
@@ -146,67 +143,6 @@ try {
           await worktree.locator(".add-agent .setup-tile").first().waitFor();
           console.log(`PASS New worktree's picker ends with ${ADD_ROW} (${at})`);
         }
-
-        // a device that turns into a watching one (its pairing changed) loses what was already open:
-        // the next health answer says role "watch" (site/demo/transport.ts demoSecurity)
-        const becomeWatching = () => page.evaluate(() => { sessionStorage.setItem("ovis:demo-security", "watch"); document.dispatchEvent(new Event("visibilitychange")); });
-        const driveAgain = () => page.evaluate(() => sessionStorage.removeItem("ovis:demo-security"));
-        // Settings: the tiles to install and the guide's row go
-        await page.goto(`${base}&settings=agents`);
-        await press(body.locator("[data-section='install'] > summary"));
-        await body.locator(".settings-agent-tiles .setup-tile-install").first().waitFor();
-        await becomeWatching();
-        await body.locator(".settings-agent-tiles").waitFor({ state: "detached" });
-        assert.equal(await body.getByRole("button", { name: "Open setup guide", exact: true }).count(), 0, `no Open setup guide once watching ${at}`);
-        await driveAgain();
-        // New workspace: the open Add another agent… panel goes, and the picker offers no row
-        await page.goto(`${base}&new=workspace`);
-        const opened = page.getByRole("dialog", { name: /^New workspace · / });
-        await opened.waitFor();
-        await press(opened.locator(".agent-picker-trigger"));
-        await options.last().waitFor();
-        await press(options.last());
-        await opened.locator(".add-agent .setup-tile").first().waitFor();
-        await becomeWatching();
-        await opened.locator(".add-agent").waitFor({ state: "detached" });
-        await press(opened.locator(".agent-picker-trigger"));
-        await options.last().waitFor();
-        assert.notEqual((await options.last().textContent())?.trim(), ADD_ROW, `no ${ADD_ROW} once watching ${at}`);
-        await page.keyboard.press("Escape");
-        await driveAgain();
-        if (width === 1280) {
-          // New worktree is not offered to a watching device: an open one closes
-          await page.goto(base);
-          const row = page.locator(`.workspace-group[data-workspace="${panes.api.split(":")[0]}"] > .workspace-header .workspace-select`);
-          const bounds = (await row.boundingBox())!;
-          await row.click({ button: "right", position: { x: 32, y: bounds.height / 2 } });
-          await page.getByRole("menuitem", { name: "New worktree", exact: true }).click();
-          const worktree = page.getByRole("dialog", { name: /^New worktree · / });
-          await worktree.waitFor();
-          await worktree.locator(".agent-picker-trigger").click();
-          await options.last().click();
-          await worktree.locator(".add-agent .setup-tile").first().waitFor();
-          await becomeWatching();
-          await worktree.waitFor({ state: "detached" });
-          await driveAgain();
-        }
-        console.log(`PASS turning into a watching device takes away the tiles to install, Open setup guide, the Add another agent… panel${width === 1280 ? " and New worktree" : ""} (${at})`);
-
-        // a device that only watches may not type into the PC's terminal: no install anywhere
-        await page.goto(`${root}&demo_devices=watch&new=workspace`);
-        const watched = page.getByRole("dialog", { name: /^New workspace · / });
-        await watched.waitFor();
-        await press(watched.locator(".agent-picker-trigger"));
-        await options.last().waitFor();
-        const offered = (await options.allTextContents()).map((text) => text.trim());
-        assert.ok(offered.length > 1, `a watching device still sees the agents ${at}`);
-        assert.ok(!offered.includes(ADD_ROW), `a watching device gets no ${ADD_ROW} ${at}: ${offered.join(", ")}`);
-        await page.keyboard.press("Escape");
-        await page.goto(`${root}&demo_devices=watch&settings=agents`);
-        await body.locator(".agents-item").first().waitFor();
-        assert.equal(await body.locator(".setup-tile-install").count(), 0, `a watching device gets no Install ${at}`);
-        assert.equal(await body.getByRole("button", { name: "Open setup guide", exact: true }).count(), 0, `a watching device gets no Open setup guide ${at}`);
-        console.log(`PASS a watching device lists the agents but gets no ${ADD_ROW}, Install or Open setup guide (${at})`);
 
         assert.deepEqual(errors, [], `no page errors ${at}`);
       } finally {

@@ -38,9 +38,9 @@ const large = (bytes: number): MachineEvent => ({
 });
 const frameBytes = (event: MachineEvent): number => `data: ${JSON.stringify(event)}\n\n`.length;
 
-async function open(manager: MachineManager, onRevoke?: (end: () => void) => () => void) {
+async function open(manager: MachineManager) {
   const abort = new AbortController();
-  const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager, onRevoke);
+  const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager);
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -119,25 +119,6 @@ describe("the machine events stream", () => {
       for (const stream of streams) expect(await stream.readUntil(2)).toBe("open");
     } finally {
       await Promise.all(streams.map((stream) => stream.close()));
-    }
-  });
-
-  it("ends a revoked device's stream cleanly while it keeps up, and drops what waits for one that stopped reading", async () => {
-    const { manager, emit } = managerStandIn();
-    const revokes: (() => void)[] = [];
-    const onRevoke = (end: () => void) => { revokes.push(end); return () => undefined; };
-    const reading = await open(manager, onRevoke);
-    const stalled = await open(manager, onRevoke);
-    try {
-      emit(status(0));
-      expect(await reading.readUntil(1)).toBe("open");
-      for (let index = 1; index < 100; index++) emit(status(index));
-      expect(await reading.readUntil(100)).toBe("open");
-      for (const revoke of revokes) revoke();
-      expect(await reading.readUntil(101)).toBe("ended");
-      expect(await stalled.readUntil(1)).toBe("failed");
-    } finally {
-      await Promise.all([reading.close(), stalled.close()]);
     }
   });
 
