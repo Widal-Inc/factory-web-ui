@@ -25,7 +25,7 @@ installs at `/opt/widal`, plus the hub UI and a small record of what it was buil
 The factory host's service environment (`WIDAL_AUTH_MODE` and the rest) is not in the archive: it
 belongs to the host and is described in [factory ingress and ownership](factory-auth.md#runtime-configuration).
 Health is `GET /api/health`. The archive holds no secret and no build cache: every dot-entry of `node_modules` is removed
-(`.cache`, `.vite`, `.vite-temp`, and `.bin`, whose links point at absolute paths in the builder's checkout), because
+(`.cache`, `.vite`, `.vite-temp`, and `.bin`, the package manager's launcher links), because
 nothing runs them. No link in the archive leaves it, and the archive's `./` entry and every folder are mode 755 whatever the
 builder's umask was. `node_modules` is the commit's full install, development dependencies included (about 390 MB),
 as in every remote bundle; pruning it to production dependencies is not done, because the release is not smoke-tested
@@ -37,7 +37,7 @@ without them.
 
 ```json
 {
-  "schema": "widal.web-release/1",
+  "schema": "widal.web-release/2",
   "version": "43",
   "platform": "linux-x64",
   "source": { "repository": "Widal-Inc/factory-web-ui", "commit": "<40 hex>", "builtAt": "<commit time>" },
@@ -47,7 +47,8 @@ without them.
 }
 ```
 
-`ownerServer.ptyHostSha256` is the sha256 of `bin/ovis-pty-sidecar`, the Rust PTY host, when the release has one
+The schema is `widal.web-release/2`: the pin gained the required `ownerServer.ptyHostSha256`, so a `/1` pin (which has no
+such field) is refused, and a reader of `/1` is never handed a `/2` pin. `ownerServer.ptyHostSha256` is the sha256 of `bin/ovis-pty-sidecar`, the Rust PTY host, when the release has one
 (`rustPtyHost: true`), and `null` when it has none. `verify` compares the archive's host with it.
 
 The install passes `version` as `--factory-release-version` and `archive.sha256` as

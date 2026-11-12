@@ -75,6 +75,7 @@ describe("release pin", () => {
     const { pin } = release(stageRelease("a"));
     for (const [bad, text] of [
       [{ ...pin, schema: "x" }, "schema"],
+      [{ ...pin, schema: "widal.web-release/1" }, "widal.web-release/2"],
       [{ ...pin, version: "v43" }, "version"],
       [{ ...pin, platform: "darwin-arm64" }, "platform"],
       [{ ...pin, source: { ...pin.source, commit: "abc" } }, "source"],
@@ -146,6 +147,27 @@ describe("deterministic archive", () => {
     packDeterministic(stage, archive, epoch);
     const listing = Bun.spawnSync(["tar", "-tvzf", archive], { stderr: "pipe" }).stdout.toString().split("\n");
     expect(listing[0]).toMatch(/^drwxr-xr-x .* \.\/$/);
+  });
+
+  test("the builder's TAR_OPTIONS and locale neither change the archive nor drop files from it", () => {
+    const stage = stageRelease("one");
+    const plain = join(temp, "plain.tgz");
+    packDeterministic(stage, plain, epoch);
+    const before = { options: process.env["TAR_OPTIONS"], locale: process.env["LC_ALL"] };
+    process.env["TAR_OPTIONS"] = "--exclude=*.ts";
+    process.env["LC_ALL"] = "de_DE.UTF-8";
+    try {
+      const polluted = join(temp, "polluted.tgz");
+      packDeterministic(stage, polluted, epoch);
+      expect(sha256(readFileSync(polluted))).toBe(sha256(readFileSync(plain)));
+      const names = Bun.spawnSync(["tar", "-tzf", polluted], { env: { PATH: process.env["PATH"] ?? "" }, stderr: "pipe" }).stdout.toString();
+      expect(names).toContain("server/index.ts");
+    } finally {
+      for (const [name, value] of [["TAR_OPTIONS", before.options], ["LC_ALL", before.locale]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 
   test("another file or another time makes other bytes", () => {
