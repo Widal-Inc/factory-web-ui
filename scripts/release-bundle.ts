@@ -239,8 +239,12 @@ async function build(): Promise<void> {
     mkdirSync(stage);
     const unpacked = Bun.spawnSync(["tar", "-xzf", join(work, `herdr-web-ui-${RELEASE_PLATFORM}.tgz`), "-C", stage, "--no-same-owner"], { stderr: "pipe" });
     if (unpacked.exitCode !== 0) throw new Error(`The remote bundle cannot be unpacked: ${unpacked.stderr.toString()}`);
-    // the builder copies the whole node_modules; its caches (vite, test reports) are not part of a release
+    // the builder copies the whole node_modules; its caches (vite, test reports) are not part of a release, and
+    // the package manager's .bin links point at absolute paths in the builder's checkout: they would dangle on a
+    // factory host and tie the archive's bytes to where it was built. Nothing at runtime runs them (the Windows
+    // bundle drops them for the same reason).
     rmSync(join(stage, "node_modules", ".cache"), { recursive: true, force: true });
+    rmSync(join(stage, "node_modules", ".bin"), { recursive: true, force: true });
     cpSync(join(root, "dist-hub"), join(stage, HUB_UI_DIR), { recursive: true });
     writeFileSync(join(stage, RELEASE_INFO_FILE), `${JSON.stringify({ schema: RELEASE_INFO_SCHEMA, commit, builtAt: builtAt.toISOString(), hubUi: HUB_UI_DIR, ownerServer: OWNER_SERVER }, null, 2)}\n`);
 

@@ -24,7 +24,8 @@ installs at `/opt/widal`, plus the hub UI and a small record of what it was buil
 
 The factory host's service environment (`WIDAL_AUTH_MODE` and the rest) is not in the archive: it
 belongs to the host and is described in [factory ingress and ownership](factory-auth.md#runtime-configuration).
-Health is `GET /api/health`. The archive holds no secret and no build cache (`node_modules/.cache` is removed).
+Health is `GET /api/health`. The archive holds no secret and no build cache: `node_modules/.cache` is removed, and so is `node_modules/.bin`, whose links point at
+absolute paths in the builder's checkout and which nothing runs. No link in the archive leaves it.
 
 ## The pin
 
