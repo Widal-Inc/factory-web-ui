@@ -115,6 +115,26 @@ installs it, once at a time per page, when the person opens their factory, and t
 (`docs/factory-auth.md`) enforces current ownership for every request. Real ALB and CORS behaviour
 is not yet accepted.
 
+File previews use that same transport for video, audio and PDF element URLs as for images,
+HTML and downloads. After the signed identity and current ownership checks, the file read guard
+accepts CORS requests from the configured hub origin. Browser media elements that omit `Origin`
+must send a `Referer` from that exact hub origin; an absent or unrelated referrer is refused.
+The hub's referrer policy must therefore retain its origin for these media requests. This exception
+does not apply outside authenticated factory HTTP context, to an opaque `Origin: null`, or to a
+referrer from a rendered factory preview. Rendered HTML permits only itself and the configured hub
+as frame ancestors and keeps its script sandbox without same-origin access or network access.
+Unsigned preflights accept API query strings too (file paths are parameters); they return only
+CORS metadata for the configured browser origin, trusted proxy and permitted methods/headers.
+The following data request still requires signed identity and current ownership.
+Credentialed CORS exposes `content-range`, which text previews need to validate a partial response.
+
+`bun scripts/factory-file-view.ts` exercises the actual FileViewer and direct transport against two
+local HTTPS fixture origins, with synthetic ALB identity and registry answers. It checks image,
+video, audio, PDF and sandboxed HTML requests with Chromium's real Fetch Metadata and rejects a
+revoked admin. The file viewer mobile regression also runs it. This is local integration evidence;
+it does not establish deployment sign-in, real ALB cookies, proxy configuration or cross-site cookie
+availability.
+
 The Setup and Admin onboarding slots receive the current identity and are filled by the screens in
 [Admin onboarding and Setup](#admin-onboarding-and-setup). They create no backend and no storage of their
 own: the hub's onboarding API (the factory repository's `docs/hub-onboarding-api.md`) and the owner

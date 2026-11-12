@@ -10,6 +10,8 @@ Avoid `bun run start`, plugin installers, automatic update controls, beta channe
 
 ## Boundaries
 
+The desktop update status keeps its inherited literal wording because older peers compare it exactly to avoid offering a replacement install. Product branding does not change this compatibility value.
+
 - Fork-owned installers, publication, manifests, signing and update discovery need implementation and validation before releases are advertised.
 - Remote-PC setup can fall back to an upstream manifest in `server/remote-bundle.ts`. Building a local bundle does not establish a remote distribution service.
 - The inherited telemetry collector is not a Widal endpoint. Source commands set `OVIS_TELEMETRY=0`; configurable telemetry and its permitted schema remain separate work.

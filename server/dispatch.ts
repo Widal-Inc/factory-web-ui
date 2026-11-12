@@ -135,7 +135,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     identity = await auth.admit(request, ctx.requestIP(request)?.address ?? null);
     const admitted = identity;
     const check = () => auth.checkOwner(admitted);
-    response = await withFactoryAuthority(check, () => handleAuthorizedRequest(request, ctx, identity), [auth.origin, auth.browserOrigin]);
+    response = await withFactoryAuthority(check, () => handleAuthorizedRequest(request, ctx, identity), { factory: auth.origin, hub: auth.browserOrigin });
     // An upgraded socket owns its own checks and can no longer receive an HTTP response.
     if (response === undefined) { auth.audit(identity, action); return undefined; }
     await check();

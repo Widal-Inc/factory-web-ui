@@ -18,7 +18,7 @@ Remote operations execute as the target SSH account. App-specific private keys s
 
 ### Windows PCs
 
-The inherited Windows transport uses OpenSSH and terminal mirroring. Native Windows validation needs its own authorized test environment; source presence is not a supported Widal native release.
+The inherited Windows transport uses OpenSSH and terminal mirroring. Native Windows validation needs its own authorized test environment; source presence is not a supported Widal native release. See [native-app status](native-app.md).
 
 ## Runtime and endpoints
 
@@ -40,4 +40,4 @@ The inherited remote update and bridge-restart code is not a Widal release chann
 
 Use isolated SSH targets, private test state and the commands in [development checks](development.md#checks), including `bun run test:ssh` when changing remote transport. Never point integration tests at a user's PCs or session.
 
-The full upstream design, consent model, API table and prior test results remain in [Git history](https://github.com/Widal-Inc/factory-web-ui/blob/bb0d0f9b234e1c59b98e3ad01060b8d3dc4bd0e9/docs/remote-pcs.md). They are historical evidence, not validation of a Widal deployment.
+The full upstream design, consent model, API table and prior test results remain in [Git history](https://github.com/Widal-Inc/factory-web-ui/blob/bb0d0f9b234e1c59b98e3ad01060b8d3dc4bd0e9/docs/remote-pcs.md). They are historical evidence, not validation of a Widal deployment. [Retired relay guidance](relay.md) does not provide an alternate supported onboarding path.

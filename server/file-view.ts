@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, parse, relative as relativePath, resolve, sep } from "node:path";
 
 import type { FileInfo, FileKind } from "../shared/protocol.ts";
+import { currentFactoryHubOrigin } from "./factory-context.ts";
 import { fileTask } from "./file-pool.ts";
 import type { OpenedFile, RenderedPage } from "./file-tasks.ts";
 import { filesNamed } from "./files.ts";
@@ -231,7 +232,7 @@ export function fileInfo(path: string): FileInfo | null {
  * No hash or nonce is ever added to the policy, since a hash in `script-src` would make browsers
  * ignore `'unsafe-inline'` and block the page's own inline scripts.
  */
-export const pagePolicy = (mediaSource: string | null): string => [
+export const pagePolicy = (mediaSource: string | null, hubOrigin: string | null = null): string => [
   "sandbox allow-scripts",
   "default-src 'none'",
   // nothing from the web either: the page holds its own folder's files (below), and a script that
@@ -243,7 +244,7 @@ export const pagePolicy = (mediaSource: string | null): string => [
   "font-src data:",
   "base-uri 'none'",
   "form-action 'none'",
-  "frame-ancestors 'self'",
+  `frame-ancestors 'self'${hubOrigin === null ? "" : ` ${hubOrigin}`}`,
 ].join("; ");
 
 /** A page's own files are put into it up to these sizes; a larger one is left as the page names it. */
@@ -899,6 +900,16 @@ export function pageWithLocalFiles(path: string, media: PageMedia | null = null,
 export function crossSiteFileRead(request: Request): boolean {
   const site = request.headers.get("sec-fetch-site");
   if (site === null || site === "same-origin" || site === "none") return false;
+  const hub = currentFactoryHubOrigin();
+  if (hub !== undefined) {
+    const origin = request.headers.get("origin");
+    if (origin === hub) return false;
+    // Browser media elements normally send no Origin. Trust only the configured hub's
+    // referrer, never the factory preview's: a sandboxed page must not probe other files.
+    if (origin === null && request.headers.get("sec-fetch-mode") === "no-cors") {
+      try { if (new URL(request.headers.get("referer") ?? "").origin === hub) return false; } catch { /* no trusted referrer */ }
+    }
+  }
   return request.headers.get("sec-fetch-mode") !== "navigate";
 }
 
@@ -996,7 +1007,7 @@ export async function fileResponse(info: FileInfo, download: boolean, render = f
   const page = render && !download && isHtmlPage(info);
   // a PDF is drawn by the browser's own viewer, which refuses a sandboxed document; its
   // scripts stay inside that viewer, never on this origin
-  if (page) headers.set("content-security-policy", pagePolicy(media?.source ?? null));
+  if (page) headers.set("content-security-policy", pagePolicy(media?.source ?? null, currentFactoryHubOrigin() ?? null));
   else if (info.kind !== "pdf") headers.set("content-security-policy", "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'");
   // text shows as text, whatever its extension says it runs as
   const type = page ? "text/html; charset=utf-8" : info.kind === "text" && info.mime !== "image/svg+xml" ? "text/plain; charset=utf-8" : info.mime;

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { chromium } from "playwright-core";
 import { sheetsSettled } from "./sheets-settled.ts";
 import { chromePath } from "./chrome-path.ts";
+import { checkFactoryFileView } from "./factory-file-view.ts";
 
 /** The viewer alone with its source CSS, at phone sizes: the dialog fits, a long name is cut in its stem, no control is covered. */
 async function checkLayout(): Promise<void> {
@@ -239,3 +240,4 @@ async function checkLayout(): Promise<void> {
 }
 
 await checkLayout();
+await checkFactoryFileView();

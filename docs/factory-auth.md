@@ -78,9 +78,17 @@ host and HTTPS forwarding, an exact configured Origin, an allowlisted request me
 only `content-type`, `x-herdr-machine`, `x-herdr-update` or `x-request-id` request headers.
 The empty 204 response exposes only fixed CORS metadata, without running a route or checking
 the registry. The actual GET or mutation still needs signed identity and current ownership.
+API query strings are allowed on this metadata-only request, so correlation headers can be
+preflighted for file paths and other parameterized reads without authorizing their contents.
 Arbitrary OPTIONS requests and any other unsigned traffic are refused. The browser must use
 `credentials: "include"` for cross-origin factory HTTP calls. CORS exposes only the request
-correlator and server clock headers in addition to the standard response headers.
+correlator, server clock and file `content-range` headers in addition to standard response headers.
+The range header lets text previews verify their bounded read and detect empty files.
+
+Repository changes, history and pull-request controls also accept cross-site requests from an
+explicit configured hub or factory Origin after signed identity and current ownership checks.
+An absent, opaque or unrelated Origin does not bypass their cross-site guard. Standalone
+servers retain that guard without trusting any hub origin supplied by the request.
 
 HTTP bodies, including SSE and media, recheck ownership before delivering chunks. WebSockets
 recheck before every incoming frame and outgoing frame. Admission preserves incoming order;
@@ -89,6 +97,8 @@ output waits in a bounded queue. Removal, expiry or lookup failure closes the so
 also closes inactive connections; it never supplies cached authorization to active traffic.
 Delayed terminal input rechecks at its turn, and the identity context follows queued sends to
 their RPC writes. A reconnect starts from a new signed upgrade and cannot revive old input.
+If disconnect or revocation finishes while terminal creation is pending, the completed attachment
+is released when no client still claims it. A concurrent client keeps its shared attachment.
 
 Audit records contain only time, factory, verified actor (or `unknown` for an unverified
 refusal), action category and outcome. They contain no request bodies, query strings, prompts,

@@ -113,7 +113,7 @@ export class FactoryAuth {
   /** Browser preflights contain no sign-in cookie. This grants only CORS metadata, never route execution. */
   preflight(request: Request, peer: string | null): Response | undefined {
     const url = new URL(request.url);
-    if (request.method !== "OPTIONS" || !url.pathname.startsWith("/api/") || url.search || request.headers.has(ALB_IDENTITY_HEADER)
+    if (request.method !== "OPTIONS" || !url.pathname.startsWith("/api/") || request.headers.has(ALB_IDENTITY_HEADER)
       || !this.trustedPeer(peer) || url.host !== new URL(this.origin).host || request.headers.get("x-forwarded-proto") !== "https"
       || !this.allowsOrigin(request.headers.get("origin"))) return undefined;
     const method = request.headers.get("access-control-request-method");

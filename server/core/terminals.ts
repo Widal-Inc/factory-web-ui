@@ -374,7 +374,17 @@ export function createTerminalRegistry({ options, clients, stopped, terminalAtta
         }
         throw error;
       }
-      await client.data.factoryAuthorize?.();
+      try { await client.data.factoryAuthorize?.(); } catch (error) {
+        // Socket cleanup may already have run while creation was pending. Drop only
+        // this attach's claim, then retire its process unless another client wants it.
+        if (client.data.attached.get(message.pane_id) === claim) {
+          client.data.attached.delete(message.pane_id);
+          client.data.conversationInterests.delete(message.pane_id);
+          releaseConversation(message.pane_id);
+        }
+        withoutFactoryAuthority(() => releaseUnclaimed(message.pane_id, attachment));
+        throw error;
+      }
       if (stopped() || connectionOf(client).closing || client.data.attached.get(message.pane_id) !== claim) {
         releaseUnclaimed(message.pane_id, attachment);
         return;

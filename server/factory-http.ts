@@ -8,7 +8,7 @@ export function protectFactoryResponse(request: Request, response: Response, aut
   if (auth.allowsOrigin(origin)) {
     headers.set("access-control-allow-origin", origin!);
     headers.set("access-control-allow-credentials", "true");
-    headers.set("access-control-expose-headers", "x-request-id, x-server-time");
+    headers.set("access-control-expose-headers", "x-request-id, x-server-time, content-range");
     headers.append("vary", "Origin");
     if (request.method === "OPTIONS") {
       headers.set("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS");

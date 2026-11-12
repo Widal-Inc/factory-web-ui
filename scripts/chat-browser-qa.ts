@@ -7,6 +7,7 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { TOKEN_COOKIE } from "../server/auth.ts";
 import { createServer } from "../server/index.ts";
 import { herdrRpc, sessionSnapshot, workspaceClose, workspaceCreate } from "../server/herdr/client.ts";
 import { chromePath } from "./chrome-path.ts";
@@ -59,9 +60,16 @@ try {
     await Bun.sleep(50);
   }
   await herdrRpc("pane.report_agent", { pane_id: paneId, source: "manual", agent: "codex", state: "idle" });
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "push"), codexHome });
+  const token = "chat-browser-test-token";
+  server = createServer({ port: 0, hostname: "127.0.0.1", token, stateDir: join(root, "push"), codexHome });
+  const secureOrigin = `http://127.0.0.1:${server.port}`;
+  const insecureOrigin = `http://clipboard.test:${server.port}`;
   browser = await chromium.launch({ executablePath: chromePath(), headless: process.env["HEADED"] !== "1", args: ["--no-sandbox", "--host-resolver-rules=MAP clipboard.test 127.0.0.1", "--no-proxy-server"] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US" });
+  // The HTTP hostname is forwarded traffic even though Chromium resolves it to loopback.
+  await context.addCookies([secureOrigin, insecureOrigin].map((url) => ({
+    name: TOKEN_COOKIE, value: token, url, httpOnly: true, sameSite: "Strict" as const,
+  })));
   const page = await context.newPage();
   // a pane opens its terminal the first time; this QA is about the chat lens
   await page.addInitScript((id) => {
@@ -71,7 +79,7 @@ try {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.setDefaultTimeout(10_000);
-  await page.goto(`http://127.0.0.1:${server.port}/?pane=${encodeURIComponent(paneId)}`);
+  await page.goto(`${secureOrigin}/?pane=${encodeURIComponent(paneId)}`);
   await page.locator(".conn-live").waitFor();
   const log = page.locator(`.pane-frame[data-layout-pane="${paneId}"]`).getByRole("log");
   await log.getByText("I am checking the transcript.", { exact: true }).waitFor();
@@ -256,16 +264,19 @@ try {
   await page.screenshot({ path: "evidence/chat-mode/desktop.png", fullPage: true, animations: "disabled" });
   // Read back Chromium's actual clipboard from the secure loopback page. The copy itself
   // runs on an ordinary HTTP hostname, where navigator.clipboard genuinely does not exist.
-  const secureOrigin = `http://127.0.0.1:${server.port}`;
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: secureOrigin });
-  const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+  const clipboard = async () => {
+    // Chromium can return an empty clipboard to a background tab even with permission.
+    await page.bringToFront();
+    return page.evaluate(() => navigator.clipboard.readText());
+  };
   const code = "printf 'clipboard ✓'";
   add(message("assistant", `\`\`\`sh\n${code}\n\`\`\``, "final_answer"), 9);
   persist();
   const insecure = await page.context().newPage();
   await insecure.addInitScript((id) => localStorage.setItem(`ovis:view:${id}`, "chat"), paneId);
   insecure.on("pageerror", (error) => errors.push(error.message));
-  await insecure.goto(`http://clipboard.test:${server.port}/?pane=${encodeURIComponent(paneId)}`);
+  await insecure.goto(`${insecureOrigin}/?pane=${encodeURIComponent(paneId)}`);
   const insecureLog = insecure.locator(`.pane-frame[data-layout-pane="${paneId}"]`).getByRole("log");
   await insecureLog.getByText(answer, { exact: true }).waitFor();
   assert.equal(await insecure.evaluate(() => window.isSecureContext), false);
@@ -279,6 +290,7 @@ try {
   assert.equal(await insecureLog.getByRole("button", { name: "Copied", exact: true }).evaluate((node) => node === document.activeElement), true, "fallback restores the triggering button's focus");
   // the copy fallback's own field is appended to the body; the composer's measurement textarea is readonly for good
   assert.equal(await insecure.locator("body > textarea[readonly]").count(), 0);
+  await insecure.bringToFront();
   await insecureLog.getByRole("button", { name: "Copy code", exact: true }).focus();
   await insecureLog.getByRole("button", { name: "Copy code", exact: true }).click();
   await insecureLog.getByRole("button", { name: "Code copied", exact: true }).waitFor();
@@ -296,6 +308,7 @@ try {
   await page.getByRole("button", { name: "Copy code", exact: true }).click();
   await page.getByRole("button", { name: "Code copied", exact: true }).waitFor();
   assert.equal(await clipboard(), code);
+  await insecure.bringToFront();
   await insecure.evaluate(() => { document.execCommand = () => false; });
   await insecureLog.getByRole("button", { name: "Copy as markdown", exact: true }).first().waitFor();
   await messageCopy.focus();
