@@ -20,6 +20,13 @@ export const SECRET_GITHUB = "GH_TOKEN";
 export const SECRET_LINEAR = "LINEAR_ACCESS_TOKEN";
 export const SECRET_LINEAR_REFRESH = "LINEAR_REFRESH_TOKEN";
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/**
+ * What a value Setup writes may hold. The file is NAME=value lines that the factory (or a shell, or a service
+ * manager) may source, and a value is written unquoted: only characters that mean nothing to a shell are
+ * allowed, which covers every token GitHub and Linear issue (letters, digits, `_`, `-`, `.`, base64's `+/=`).
+ */
+const SAFE_VALUE = /^[A-Za-z0-9._+/=:-]+$/;
+export const isSecretValue = (value: string): boolean => SAFE_VALUE.test(value);
 
 export function defaultSecretsPath(env: Record<string, string | undefined> = process.env, home = homedir()): string {
   if (env["WIDAL_SECRETS"]) return env["WIDAL_SECRETS"];
@@ -29,6 +36,13 @@ export function defaultSecretsPath(env: Record<string, string | undefined> = pro
 /** A definition Setup understands: `NAME=value` or `export NAME=value`, with an optional CR before the newline. */
 const DEFINITION = /^(\s*(?:export[ \t]+)?)([A-Za-z_][A-Za-z0-9_]*)=(.*?)(\r?)$/;
 interface Definition { readonly prefix: string; readonly name: string; readonly value: string; readonly cr: string }
+
+/**
+ * The file is read and written as latin1, one character per byte, so a line that is not UTF-8 (whoever
+ * provisioned the file may have used another encoding) goes back byte for byte. Everything Setup itself writes
+ * is ASCII.
+ */
+const ENCODING = "latin1";
 
 /** The file's lines, each with its own line ending, exactly as they are. */
 const splitLines = (content: string): string[] => content.match(/[^\n]*\n|[^\n]+$/g) ?? [];
@@ -46,7 +60,7 @@ function definition(line: string): Definition | null {
 export function readSecrets(path: string): Record<string, string> {
   if (!existsSync(path)) return {};
   const out: Record<string, string> = {};
-  for (const line of splitLines(readFileSync(path, "utf8"))) {
+  for (const line of splitLines(readFileSync(path, ENCODING))) {
     const found = definition(line);
     if (found) out[found.name] = found.value;
   }
@@ -57,18 +71,19 @@ export function readSecrets(path: string): Record<string, string> {
  * Sets the names in `values` (an empty value removes the name) and removes the names in `remove`. Only those
  * names' lines change: every other line (comments, `export` lines, empty values, CRLF endings, lines Setup does
  * not understand) is kept byte for byte. A name defined more than once keeps its first line, rewritten, and
- * loses the rest, which would otherwise win when the file is sourced. Written with writePrivateBytes: a
+ * loses the rest, which would otherwise win when the file is sourced. A value is refused unless it is made only
+ * of characters a shell takes literally. Written with writePrivateBytes: a
  * temporary file of its own beside it, flushed, renamed over the file (never written through a link), the
  * folder flushed, readable by its owner only.
  */
 export function saveSecrets(path: string, values: Record<string, string>, remove: readonly string[] = []): void {
   for (const [name, value] of Object.entries(values)) {
     if (!NAME.test(name)) throw new Error(`"${name}" is not a valid variable name`);
-    if (/[\r\n\0]/.test(value)) throw new Error(`the value of ${name} must be one line`);
+    if (value !== "" && !SAFE_VALUE.test(value)) throw new Error(`the value of ${name} has a character that is not safe in a file a shell may source`);
   }
   const touched = new Set([...Object.keys(values), ...remove]);
   const pending = new Map(Object.entries(values).filter(([, value]) => value !== ""));
-  const existing = existsSync(path) ? readFileSync(path, "utf8") : null;
+  const existing = existsSync(path) ? readFileSync(path, ENCODING) : null;
   const eol = existing?.includes("\r\n") ? "\r\n" : "\n";
   const out: string[] = existing === null ? ["# the factory's secrets, written by its web Setup. Keep this file private.\n"] : [];
   for (const line of existing === null ? [] : splitLines(existing)) {
@@ -81,7 +96,7 @@ export function saveSecrets(path: string, values: Record<string, string>, remove
   }
   if (pending.size > 0 && out.length > 0 && !out.at(-1)!.endsWith("\n")) out.push(eol);
   for (const [name, value] of pending) out.push(`${name}=${value}${eol}`);
-  writePrivateBytes(path, Buffer.from(out.join(""), "utf8"));
+  writePrivateBytes(path, Buffer.from(out.join(""), ENCODING));
 }
 
 export interface StoredGithub {

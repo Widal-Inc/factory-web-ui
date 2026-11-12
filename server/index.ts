@@ -129,6 +129,8 @@ export interface ServerInstance {
    */
   queueFirstMessage: (paneId: string, text: string, kind: string, requester?: string | null, launchedPid?: number | null) => Promise<PendingMessage>;
   stop: () => void;
+  /** After `stop`: resolves once the owner Setup has finished the turn it was in (at once when this server has none). */
+  setupSettled: () => Promise<void>;
 }
 
 export function createServer(
@@ -456,7 +458,7 @@ export function createServer(
     },
     stop: () => {
       services.runtimeMove?.stop();
-      services.factorySetup?.stop();
+      void services.factorySetup?.stop();
       core.stop(() => {
         clearInterval(draftTimer);
         openCodeState.clear();
@@ -477,6 +479,7 @@ export function createServer(
       releaseCommandHistory();
       requestLog.close();
     },
+    setupSettled: () => services.factorySetup?.settled() ?? Promise.resolve(),
   };
 }
 
@@ -554,9 +557,11 @@ if (import.meta.main) {
     instance.stop();
     // Attach sidecars need ~1.2s to release herdr's exclusive client slot
     // herdr-core's adapter answers what the stopping server still asks meanwhile
+    // Setup finishes a Linear renewal already in flight (it has spent the refresh token), for 8s at most
+    const setupSettled = Promise.race([instance.setupSettled(), Bun.sleep(8000)]);
     void Bun.sleep(2000).then(() => {
       herdrCore?.stop();
-      process.exit(0);
+      void setupSettled.then(() => process.exit(0));
     });
   };
   process.on("SIGTERM", shutdown);

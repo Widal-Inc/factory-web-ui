@@ -11,7 +11,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { FactoryAuthError, type FactoryIdentity } from "./factory-auth.ts";
 import type { GithubDevicePoll, GithubDeviceStart, LinearStart, SetupChoices, SetupGithub, SetupLinear, SetupSettings, SetupStatus, SetupStep } from "../shared/factory-setup.ts";
-import { SECRET_GITHUB, SECRET_LINEAR, SECRET_LINEAR_REFRESH, SetupStore, type StoredGithub, type StoredLinear, type StoredSetup } from "./factory-setup-store.ts";
+import { SECRET_GITHUB, SECRET_LINEAR, SECRET_LINEAR_REFRESH, SetupStore, isSecretValue, type StoredGithub, type StoredLinear, type StoredSetup } from "./factory-setup-store.ts";
 
 export const GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code";
 export const GITHUB_DEVICE_PAGE = "https://github.com/login/device";
@@ -29,10 +29,23 @@ const PENDING_MS = 10 * 60_000;
 const REFRESH_MARGIN_MS = 5 * 60_000;
 /** How often the server renews and rechecks on its own, with nobody on the Setup page. */
 export const MAINTAIN_MS = 60_000;
-/** After a renewal Linear refused or did not answer, the next attempt waits this long. */
+/**
+ * After a renewal Linear did not answer, the next attempt waits this long, or half of what the token has left
+ * when that is less (never under RENEW_RETRY_MIN_MS): the wait must not outlast the token.
+ */
 const RENEW_RETRY_MS = 5 * 60_000;
-/** How long a status read trusts the last list of repositories the GitHub connection reaches. */
+const RENEW_RETRY_MIN_MS = 10_000;
+/** What Linear answers to a refresh token it will never accept again. */
+const REFUSED_FOR_GOOD: readonly string[] = ["invalid_grant", "invalid_client", "unauthorized_client"];
+/** How long a status read or the choices page trusts the last list of repositories the GitHub connection reaches. */
 const REACH_MS = 60_000;
+/** After GitHub failed to list them, nobody asks again for this long (a token it rejected is not asked again at all). */
+const REACH_FAILURE_MS = 15_000;
+/** One listing stops asking after this many requests or this long; what it has then is marked incomplete. */
+const LIST_REQUESTS = 200;
+const LIST_BUDGET_MS = 30_000;
+const INSTALLATION_PAGES = 5;
+const REPOSITORY_PAGES = 30;
 const MAX_PENDING = 8;
 
 export class SetupError extends Error {
@@ -66,6 +79,13 @@ const record = (value: unknown): Record<string, unknown> | null => value !== nul
 const EMAIL = /^[^\s@/<>]{1,64}@[^\s@/<>]{1,255}\.[^\s@/<>]{2,}$/;
 const REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
 const tokenKey = (token: string): string => createHash("sha256").update(token).digest("hex");
+/** A credential from upstream, only when it is safe to write unquoted into a file a shell may source. */
+const secretToken = (value: unknown, max: number): string | null => { const found = text(value, max); return found !== null && isSecretValue(found) ? found : null; };
+
+/** Every repository the GitHub connection reaches, as last listed; `complete` is false when the listing hit a limit. */
+interface Listing { readonly key: string; readonly at: number; readonly repositories: SetupChoices["repositories"]; readonly names: ReadonlySet<string>; readonly complete: boolean }
+/** `revoked`: GitHub answered 401 for this token, which no later answer will undo. */
+interface ListingFailure { readonly key: string; readonly at: number; readonly revoked: boolean }
 
 export class FactorySetup {
   private readonly store: SetupStore;
@@ -77,8 +97,12 @@ export class FactorySetup {
   private chain: Promise<unknown> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
   private renewAfter = 0;
+  /** A hash of the refresh token Linear refused for good; it is not offered again, and a new connection has another. */
+  private refused: string | null = null;
+  private stopped = false;
   /** The repositories the stored GitHub token reached when last asked; memory only, keyed by a hash of that token. */
-  private reach: { readonly key: string; readonly at: number; readonly names: ReadonlySet<string> } | null = null;
+  private listing: Listing | null = null;
+  private listingFailure: ListingFailure | null = null;
 
   constructor(private readonly options: FactorySetupOptions) {
     this.store = new SetupStore(options.stateDir, options.secretsPath);
@@ -133,15 +157,26 @@ export class FactorySetup {
    */
   start(everyMs = MAINTAIN_MS): void {
     if (this.timer) return;
+    this.stopped = false;
     this.timer = setInterval(() => { void this.maintain().catch(() => {}); }, everyMs);
     this.timer.unref?.();
     void this.maintain().catch(() => {});
   }
 
-  stop(): void {
+  /**
+   * Stops the timer and any turn not yet begun, and resolves once the turn already running (and every change
+   * queued before it) has finished, so nothing is written to the state folder or the secrets file after it.
+   * A renewal in flight is finished, not dropped: Linear has already rotated the refresh token it spends.
+   */
+  stop(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    return this.settled();
   }
+
+  /** Resolves once every turn queued so far has finished. */
+  settled(): Promise<void> { return this.chain.then(() => undefined); }
 
   /**
    * The server's own turn, in the same serial lane and through the same renewal as a status read, so only one
@@ -151,6 +186,7 @@ export class FactorySetup {
    */
   maintain(): Promise<void> {
     return this.serial(async () => {
+      if (this.stopped) return;
       const owner = this.options.owner?.trim();
       const previous = this.store.read();
       // the factory changed owner: the previous person's token is never renewed and their `ready` never kept
@@ -184,7 +220,7 @@ export class FactorySetup {
     const stored = this.store.read();
     const mine = stored && stored.owner.toLowerCase() === person.toLowerCase() ? stored : null;
     const secrets = this.store.secrets();
-    const github = this.githubState(mine, secrets, apps !== null);
+    let github = this.githubState(mine, secrets, apps !== null);
     const linear = this.linearState(mine, secrets, apps);
     const claudeKnown = await this.options.claudeSignedIn().then((signedIn) => signedIn, () => null);
     const claude: SetupStatus["claude"] = { state: claudeKnown === null ? "unavailable" : claudeKnown ? "signed_in" : "not_signed_in" };
@@ -194,7 +230,10 @@ export class FactorySetup {
     const settings = mine?.settings && accounts && accounts.github === mine.github?.id && accounts.linear === (needsLinear ? mine.linear?.id ?? null : null) ? mine.settings : null;
     // Saved repositories are rechecked: the organization's app may reach fewer of them than when they were saved.
     const reach = settings && github.state === "connected" ? await this.reachable(secrets[SECRET_GITHUB]!) : null;
-    const unreachableRepositories = settings && reach ? settings.repositories.filter((name) => !reach.has(name)) : [];
+    // GitHub no longer accepts the token (revoked, or the app was uninstalled): a connection that does not work is not connected
+    if (reach === "revoked" && github.state === "connected") github = { ...github, state: "expired", reason: "GitHub no longer accepts this connection. Connect again." };
+    // a listing that stopped at a limit says nothing about the repositories it did not reach
+    const unreachableRepositories = settings && reach && reach !== "revoked" && reach.complete ? settings.repositories.filter((name) => !reach.names.has(name)) : [];
     const ready = github.state === "connected" && (!needsLinear || linear.state === "connected") && settings !== null && unreachableRepositories.length === 0 && claude.state === "signed_in";
     const next: SetupStep | null = github.state !== "connected" ? "github"
       : needsLinear && linear.state !== "connected" ? "linear"
@@ -207,14 +246,18 @@ export class FactorySetup {
   /**
    * The repositories this GitHub token reaches, read again at most every REACH_MS. When GitHub cannot be asked,
    * the last answer for the same token stands (none yet: nothing is reported missing), so a GitHub outage
-   * neither blocks a factory nor invents a lost repository.
+   * neither blocks a factory nor invents a lost repository, and a failed listing is not repeated for
+   * REACH_FAILURE_MS. A token GitHub rejects with 401 is `revoked`, and stays so.
    */
-  private async reachable(token: string): Promise<ReadonlySet<string> | null> {
+  private async reachable(token: string): Promise<Listing | "revoked" | null> {
     const key = tokenKey(token);
-    const known = this.reach?.key === key ? this.reach : null;
-    if (known && this.now() - known.at < REACH_MS) return known.names;
-    try { await this.repositories(token); } catch { return known?.names ?? null; }
-    return this.reach?.key === key ? this.reach.names : null;
+    const failure = this.listingFailure?.key === key ? this.listingFailure : null;
+    if (failure?.revoked) return "revoked";
+    const known = this.listing?.key === key ? this.listing : null;
+    if (failure && this.now() - failure.at < REACH_FAILURE_MS) return known;
+    try { return await this.list(token, REACH_MS); } catch (error) {
+      return error instanceof SetupError && error.code === "github_expired" ? "revoked" : known;
+    }
   }
 
   /**
@@ -225,7 +268,13 @@ export class FactorySetup {
     const stored = this.store.read();
     if (!stored || stored.owner.toLowerCase() === person.toLowerCase()) return;
     this.device = null;
-    this.reach = null;
+    this.listing = null;
+    this.listingFailure = null;
+    this.refused = null;
+    this.renewAfter = 0;
+    // Their `ready` goes first, while the record is still theirs: if removing their credentials fails below, the
+    // record must not go on saying the factory is ready, and the next call (still a change of owner) tries again.
+    if (stored.ready) this.store.write({ ...stored, ready: false, updatedAt: new Date(this.now()).toISOString() });
     this.store.saveSecrets({}, [SECRET_GITHUB, SECRET_LINEAR, SECRET_LINEAR_REFRESH]);
     this.store.write({ version: 1, owner: person, ready: false, updatedAt: new Date(this.now()).toISOString() });
   }
@@ -258,10 +307,17 @@ export class FactorySetup {
    */
   private async renewLinear(hubClientId: string | null): Promise<void> {
     const stored = this.store.read();
-    if (!stored?.linear?.expiresAt || stored.linear.expiresAt - REFRESH_MARGIN_MS > this.now() || this.now() < this.renewAfter) return;
-    const clientId = stored.linear.clientId ?? hubClientId;
-    if (!clientId) return;
-    if (!await this.refreshLinear(clientId, stored)) this.renewAfter = this.now() + RENEW_RETRY_MS;
+    const expiresAt = stored?.linear?.expiresAt;
+    if (!stored || !expiresAt || expiresAt - REFRESH_MARGIN_MS > this.now() || this.now() < this.renewAfter) return;
+    const clientId = stored.linear?.clientId ?? hubClientId;
+    const refresh = this.store.secrets()[SECRET_LINEAR_REFRESH];
+    if (!clientId || !refresh || this.refused === tokenKey(refresh)) return;
+    const outcome = await this.refreshLinear(clientId, stored, refresh);
+    if (outcome === "refused") { this.refused = tokenKey(refresh); return; }
+    if (outcome === "retry") {
+      const left = expiresAt - this.now();
+      this.renewAfter = this.now() + (left > 0 ? Math.max(RENEW_RETRY_MIN_MS, Math.min(RENEW_RETRY_MS, left / 2)) : RENEW_RETRY_MS);
+    }
   }
 
   /** Whether Setup is complete is recorded for the factory itself, which starts no agent before it is. */
@@ -272,6 +328,8 @@ export class FactorySetup {
   }
 
   private save(person: string, change: (current: StoredSetup) => StoredSetup): void {
+    // whichever change this is, a previous owner's other credential does not stay behind it
+    this.takeOver(person);
     const stored = this.store.read();
     const base: StoredSetup = stored && stored.owner.toLowerCase() === person.toLowerCase() ? stored : { version: 1, owner: person, ready: false, updatedAt: new Date(this.now()).toISOString() };
     // Whatever the change did, Setup is complete only after the next status read confirms every part.
@@ -285,6 +343,7 @@ export class FactorySetup {
     return this.serial(async () => {
       const { githubClientId } = await this.appsFor(who);
       if (!githubClientId) throw new SetupError(409, "github_not_registered", "The organization has not connected its GitHub App yet. Ask an administrator.");
+      this.takeOver(person);
       const { status, body } = await this.form(GITHUB_DEVICE_CODE_URL, { client_id: githubClientId });
       const deviceCode = text(body["device_code"], 200);
       const userCode = text(body["user_code"], 40);
@@ -311,7 +370,7 @@ export class FactorySetup {
       if (error === "slow_down") { device.interval = typeof body["interval"] === "number" ? Math.min(body["interval"], 120) : device.interval + 5; device.nextPollAt = this.now() + device.interval * 1000; return { state: "pending", interval: device.interval }; }
       if (error === "expired_token") { this.device = null; return { state: "failed", reason: "expired", message: "The GitHub code expired. Start again." }; }
       if (error === "access_denied") { this.device = null; return { state: "failed", reason: "denied", message: "GitHub sign-in was cancelled. Start again when you are ready." }; }
-      const token = text(body["access_token"], 400);
+      const token = secretToken(body["access_token"], 400);
       if (!token) { this.device = null; return { state: "failed", reason: "unavailable", message: "GitHub did not complete the sign-in. Start again." }; }
       const lifetime = typeof body["expires_in"] === "number" && body["expires_in"] > 0 ? body["expires_in"] : null;
       const user = await this.githubJson(token, "/user");
@@ -339,6 +398,7 @@ export class FactorySetup {
   disconnectGithub(who: FactoryIdentity): Promise<void> {
     const person = who.person;
     return this.serial(async () => {
+      this.takeOver(person);
       this.device = null;
       this.store.saveSecrets({}, [SECRET_GITHUB]);
       this.save(person, ({ github: _github, ...rest }) => rest);
@@ -352,6 +412,7 @@ export class FactorySetup {
     return this.serial(async () => {
       const { linearClientId } = await this.appsFor(who);
       if (!linearClientId) throw new SetupError(409, "linear_not_registered", "The organization has not registered its Linear app, or does not use Linear.");
+      this.takeOver(person);
       this.sweep();
       for (const [key, pending] of this.verifiers) if (pending.person.toLowerCase() === person.toLowerCase()) this.verifiers.delete(key);
       while (this.verifiers.size >= MAX_PENDING) this.verifiers.delete(this.verifiers.keys().next().value!);
@@ -383,15 +444,16 @@ export class FactorySetup {
       this.verifiers.delete(state);
       if (!pending || pending.expiresAt <= this.now() || pending.person.toLowerCase() !== person.toLowerCase()) throw new SetupError(403, "stale_callback", "This Linear link expired or was not started here. Connect Linear again.");
       const { status, body } = await this.form(LINEAR_TOKEN_URL, { grant_type: "authorization_code", code, redirect_uri: this.callback(), client_id: pending.clientId, code_verifier: pending.verifier });
-      const token = text(body["access_token"], 600);
+      const token = secretToken(body["access_token"], 600);
       if (status !== 200 || !token) throw new SetupError(502, "linear_refused", "Linear did not accept the sign-in. Connect Linear again.");
       const viewer = await this.linearViewer(token);
-      const refresh = text(body["refresh_token"], 600);
+      const refresh = secretToken(body["refresh_token"], 600);
       const lifetime = typeof body["expires_in"] === "number" && body["expires_in"] > 0 ? body["expires_in"] : null;
       const connected: StoredLinear = { id: viewer.id, name: viewer.name, clientId: pending.clientId, connectedAt: new Date(this.now()).toISOString(), ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : {}) };
       this.takeOver(person);
       this.store.saveSecrets({ [SECRET_LINEAR]: token, ...(refresh ? { [SECRET_LINEAR_REFRESH]: refresh } : {}) }, refresh ? [] : [SECRET_LINEAR_REFRESH]);
       this.renewAfter = 0;
+      this.refused = null;
       this.save(person, (current) => ({ ...current, linear: connected }));
       return { name: viewer.name };
     });
@@ -413,27 +475,33 @@ export class FactorySetup {
     return { id, name: text(viewer?.["name"], 200) ?? "Linear account" };
   }
 
-  /** True when the stored token is usable (renewed if it was about to expire). Runs inside `serial`. */
-  private async refreshLinear(clientId: string, stored: StoredSetup): Promise<boolean> {
-    const refresh = this.store.secrets()[SECRET_LINEAR_REFRESH];
-    if (!refresh || !stored.linear) return false;
+  /**
+   * Spends the refresh token. `renewed`; `refused`, when Linear will never accept this refresh token again (the
+   * renewal then stops until the person connects Linear again); or `retry`, when it could not be told.
+   * Runs inside `serial`.
+   */
+  private async refreshLinear(clientId: string, stored: StoredSetup, refresh: string): Promise<"renewed" | "refused" | "retry"> {
+    if (!stored.linear) return "retry";
     try {
       const { status, body } = await this.form(LINEAR_TOKEN_URL, { grant_type: "refresh_token", refresh_token: refresh, client_id: clientId });
-      const token = text(body["access_token"], 600);
-      if (status !== 200 || !token) return false;
-      const next = text(body["refresh_token"], 600);
+      if ((status === 400 || status === 401) && typeof body["error"] === "string" && REFUSED_FOR_GOOD.includes(body["error"])) return "refused";
+      const token = secretToken(body["access_token"], 600);
+      if (status !== 200 || !token) return "retry";
+      const next = secretToken(body["refresh_token"], 600);
       const lifetime = typeof body["expires_in"] === "number" && body["expires_in"] > 0 ? body["expires_in"] : null;
-      this.store.saveSecrets({ [SECRET_LINEAR]: token, ...(next ? { [SECRET_LINEAR_REFRESH]: next } : {}) });
+      // Linear rotated the refresh token: when the new one is unusable here, the old one is spent and goes too
+      this.store.saveSecrets({ [SECRET_LINEAR]: token, ...(next ? { [SECRET_LINEAR_REFRESH]: next } : {}) }, body["refresh_token"] !== undefined && !next ? [SECRET_LINEAR_REFRESH] : []);
       // the same account, renewed: whatever `ready` was stays, so the factory is not held back by a renewal
       const { expiresAt: _expiresAt, ...linear } = stored.linear;
       this.store.write({ ...stored, linear: { ...linear, clientId, ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : {}) }, updatedAt: new Date(this.now()).toISOString() });
-      return true;
-    } catch { return false; }
+      return "renewed";
+    } catch { return "retry"; }
   }
 
   disconnectLinear(who: FactoryIdentity): Promise<void> {
     const person = who.person;
     return this.serial(async () => {
+      this.takeOver(person);
       for (const [key, pending] of this.verifiers) if (pending.person.toLowerCase() === person.toLowerCase()) this.verifiers.delete(key);
       this.store.saveSecrets({}, [SECRET_LINEAR, SECRET_LINEAR_REFRESH]);
       this.save(person, ({ linear: _linear, ...rest }) => rest);
@@ -446,7 +514,8 @@ export class FactorySetup {
     const status = await this.status(who);
     const secrets = this.store.secrets();
     if (status.github.state !== "connected" || !secrets[SECRET_GITHUB]) throw new SetupError(409, "github_not_connected", "Connect GitHub first.");
-    const repositories = await this.repositories(secrets[SECRET_GITHUB]!);
+    // the status read just listed them when choices were saved: that answer is reused while it is fresh
+    const { repositories } = await this.list(secrets[SECRET_GITHUB]!, REACH_MS);
     let teams: SetupChoices["teams"] = [];
     if (status.linear.state === "connected" && secrets[SECRET_LINEAR]) teams = await this.teams(secrets[SECRET_LINEAR]!);
     const stored = this.store.read();
@@ -456,14 +525,49 @@ export class FactorySetup {
     return { repositories, teams, proposed: { gitName, gitEmail } };
   }
 
-  private async repositories(token: string): Promise<SetupChoices["repositories"]> {
-    const installs = await this.githubJson(token, "/user/installations?per_page=100");
+  /**
+   * The repositories the token reaches: the last listing while it is younger than `maxAgeMs`, else a new one.
+   * A failure is remembered (see `reachable`); a listing is remembered for the status's recheck of the saved
+   * repositories.
+   */
+  private async list(token: string, maxAgeMs: number): Promise<Listing> {
+    const key = tokenKey(token);
+    if (this.listing?.key === key && this.now() - this.listing.at < maxAgeMs) return this.listing;
+    try {
+      const fresh = await this.listAll(token, key);
+      this.listing = fresh;
+      this.listingFailure = null;
+      return fresh;
+    } catch (error) {
+      this.listingFailure = { key, at: this.now(), revoked: error instanceof SetupError && error.code === "github_expired" };
+      throw error;
+    }
+  }
+
+  /** Follows the pages of installations and of each one's repositories, within LIST_REQUESTS and LIST_BUDGET_MS. */
+  private async listAll(token: string, key: string): Promise<Listing> {
+    const started = this.now();
+    let requests = 0;
+    let complete = true;
     const found = new Map<string, boolean>();
-    for (const install of Array.isArray(installs["installations"]) ? installs["installations"].slice(0, 20) : []) {
-      const id = record(install)?.["id"];
-      if (typeof id !== "number" || !Number.isSafeInteger(id)) continue;
-      for (let page = 1; page <= 5; page += 1) {
-        const body = await this.githubJson(token, `/user/installations/${id}/repositories?per_page=100&page=${page}`);
+    const get = (path: string): Promise<Record<string, unknown>> => { requests += 1; return this.githubJson(token, path); };
+    const withinBudget = (): boolean => requests < LIST_REQUESTS && this.now() - started < LIST_BUDGET_MS;
+    const installations: number[] = [];
+    for (let page = 1; page <= INSTALLATION_PAGES; page += 1) {
+      if (!withinBudget()) { complete = false; break; }
+      const body = await get(`/user/installations?per_page=100&page=${page}`);
+      const list = Array.isArray(body["installations"]) ? body["installations"] : [];
+      for (const install of list) {
+        const id = record(install)?.["id"];
+        if (typeof id === "number" && Number.isSafeInteger(id)) installations.push(id);
+      }
+      if (list.length < 100) break;
+      if (page === INSTALLATION_PAGES) complete = false;
+    }
+    for (const id of installations) {
+      for (let page = 1; page <= REPOSITORY_PAGES; page += 1) {
+        if (!withinBudget()) { complete = false; break; }
+        const body = await get(`/user/installations/${id}/repositories?per_page=100&page=${page}`);
         const list = Array.isArray(body["repositories"]) ? body["repositories"] : [];
         for (const item of list) {
           const repo = record(item);
@@ -471,11 +575,11 @@ export class FactorySetup {
           if (fullName && REPOSITORY.test(fullName)) found.set(fullName, repo?.["private"] === true);
         }
         if (list.length < 100) break;
+        if (page === REPOSITORY_PAGES) complete = false;
       }
     }
-    // every complete answer is remembered for the status's recheck of the saved repositories
-    this.reach = { key: tokenKey(token), at: this.now(), names: new Set(found.keys()) };
-    return [...found].map(([fullName, isPrivate]) => ({ fullName, private: isPrivate })).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    const repositories = [...found].map(([fullName, isPrivate]) => ({ fullName, private: isPrivate })).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    return { key, at: this.now(), repositories, names: new Set(found.keys()), complete };
   }
 
   private async teams(token: string): Promise<SetupChoices["teams"]> {
@@ -516,7 +620,7 @@ export class FactorySetup {
       // Choices made for the accounts another tab showed are not saved for the ones connected since.
       const changed = new SetupError(409, "account_changed", "A different GitHub or Linear account was connected since this page loaded. Reload Setup and choose again.");
       if (expectedGithub !== stored.github.id || (expectedLinear !== null && expectedLinear !== stored.linear?.id)) throw changed;
-      const allowed = new Set((await this.repositories(secrets[SECRET_GITHUB]!)).map((repo) => repo.fullName));
+      const allowed = new Set((await this.list(secrets[SECRET_GITHUB]!, 0)).repositories.map((repo) => repo.fullName));
       const repositories = [...new Set(wanted as string[])];
       if (!repositories.every((name) => allowed.has(name))) throw new SetupError(400, "repository_not_available", "A chosen repository is not one the organization's GitHub App can reach for you.");
       const { linearClientId } = await this.appsFor(who);

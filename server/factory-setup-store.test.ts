@@ -85,6 +85,18 @@ describe("the factory's secrets file", () => {
     expect(readFileSync(path, "utf8")).toBe("OTHER=x\n");
   });
 
+  it("keeps a line that is not UTF-8 byte for byte, and writes only characters a shell takes literally", () => {
+    const path = file("");
+    const head = Buffer.concat([Buffer.from("# caf"), Buffer.from([0xe9, 0xff, 0xfe, 0x0a]), Buffer.from("OTHER="), Buffer.from([0xe9]), Buffer.from("x\n")]);
+    writeFileSync(path, Buffer.concat([head, Buffer.from("GH_TOKEN=old\n")]));
+    saveSecrets(path, { GH_TOKEN: "new", LINEAR_ACCESS_TOKEN: "lin_Ab-1.2_3+4/5=:x" });
+    expect(readFileSync(path)).toEqual(Buffer.concat([head, Buffer.from("GH_TOKEN=new\nLINEAR_ACCESS_TOKEN=lin_Ab-1.2_3+4/5=:x\n")]));
+    for (const unsafe of ["a b", "a;b", "$(x)", "`x`", "a'b", "a\"b", "a#b", "a\\b", "a&b", "a|b", "a<b", "a>b", "a*b", "a?b", "a~b", "aéb", "a\nb", "a\rb"]) {
+      expect(() => saveSecrets(path, { GH_TOKEN: unsafe }), unsafe).toThrow();
+    }
+    expect(readFileSync(path).includes(Buffer.from("GH_TOKEN=new\n"))).toBe(true);
+  });
+
   it("writes through a flushed temporary file of its own and renames it over the file, flushing the folder", () => {
     const path = file("OTHER=x\n");
     const calls: string[] = [];

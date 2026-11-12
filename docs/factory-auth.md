@@ -143,19 +143,38 @@ gone from the secrets file, whether or not anyone opens Setup. It never sets `re
 read, with the hub's answer, does. The timer and a status read renew through the same path in the same serial
 lane, so `LINEAR_REFRESH_TOKEN` is spent by one request at a time: Linear rotates it, and a second refresh with
 the old one fails. Nothing else may refresh it, the factory's runtime included, and one Setup server serves a
-state folder. After a renewal Linear refused or did not answer, the next attempt waits five minutes.
+state folder. After a renewal Linear did not answer, the next attempt waits five minutes, or half of what the
+token has left when that is less (never under ten seconds), so a single failure cannot let the token run out
+before the next try. When Linear answers that it will never accept the refresh token again (`invalid_grant`,
+`invalid_client`, `unauthorized_client`), renewal stops: the token expires, the status says so, and connecting
+Linear again brings a refresh token of its own. On a shutdown the server waits (up to eight seconds) for the
+turn the Setup timer is in, so a renewal in flight is written before the process ends, and no turn starts
+after the stop.
 
 Saved choices belong to the accounts they were made with: the record keeps the GitHub account id and the
 Linear account id they were saved for, and a different account (or a Linear connection that is gone) has no
 choices until the person saves them again; reconnecting the same account keeps them. A save names the GitHub
 and Linear account ids the page showed and is refused (409 `account_changed`) when either is no longer the
-connected one, so a second tab with stale choices cannot save them under a newly connected account. A status
-read rechecks the saved repositories against what the GitHub connection reaches (at most every minute; when
-GitHub does not answer, the last answer stands): `unreachableRepositories` lists the ones it no longer
-reaches, and while any is listed Setup is not ready and the next step is `settings`. When the hub names a
-different owner than the record's, the previous person's record and every one of their credentials
-(`GH_TOKEN`, `LINEAR_ACCESS_TOKEN`, `LINEAR_REFRESH_TOKEN`) are removed before anything of the new owner's is
-read or written. The hub's Linear callback page removes the code from its address as it reads it and hands it
+connected one, so a second tab with stale choices cannot save them under a newly connected account. That
+field is required: a hub page that does not send it yet gets 400 `invalid_accounts` on every save, so a
+deployment updates the hub first and the factories after it.
+
+A status read rechecks the saved repositories against what the GitHub connection reaches. The list is read at
+most every minute, and the choices page reuses a list that fresh; it follows every page GitHub has, up to 200
+requests or 30 seconds, and a list that stopped at that limit says nothing about the repositories it did not
+get to, so none is reported lost from it. When GitHub does not answer, the last answer stands and the failure
+is remembered for fifteen seconds, so a GitHub outage is not asked about on every poll. When GitHub answers
+401 the connection is treated as expired (the token is revoked, and it is not asked about again).
+`unreachableRepositories` lists the saved repositories GitHub no longer reaches, and while any is listed
+Setup is not ready and the next step is `settings`. The Setup timer does not make this recheck: it renews and
+takes `ready` back for an expired or missing credential, but a repository the app has lost, or a team Linear no
+longer has, shows on the next status read by the person.
+
+When the hub names a different owner than the record's, the previous person's record and every one of their
+credentials (`GH_TOKEN`, `LINEAR_ACCESS_TOKEN`, `LINEAR_REFRESH_TOKEN`) are removed before anything of the new
+owner's is read or written. This happens on the first request of any kind from the new owner (a connection, a
+disconnect or a start), and `ready` is taken back in the previous record first, so a removal that fails
+leaves no record claiming the previous owner is ready, and the next request tries again. The hub's Linear callback page removes the code from its address as it reads it and hands it
 to the factory once; refreshing the page's data never sends it again. Every status read,
 renewal and write runs in one serial lane, so a status never records over a renewal or a settings write and
 the `ready` it reports is the `ready` it persists. The hub's Setup answer must name each app explicitly: a
@@ -166,14 +185,18 @@ Credentials are written to the factory's own secrets file (`$WIDAL_SECRETS`, els
 `$XDG_CONFIG_HOME/widal/secrets.env`, else `~/.config/widal/secrets.env`; mode 0600) as `GH_TOKEN`,
 `LINEAR_ACCESS_TOKEN` and `LINEAR_REFRESH_TOKEN`. Setup changes only those names' lines (`NAME=value` or
 `export NAME=value`); every other line of whoever provisioned the file (comments, other `export` lines, empty
-values, CRLF endings) is kept exactly as it is. Each write goes to a temporary file of its own beside it, is
+values, CRLF endings, a line that is not UTF-8) is kept byte for byte: the file is read and written as raw
+bytes. A token is written without quotes, because the file may be sourced by a shell, so Setup accepts one
+only if it is made of letters, digits and `. _ - + / = :` (every token GitHub and Linear issue is) and
+treats any other as a refused sign-in. Each write goes to a temporary file of its own beside it, is
 flushed, and is renamed over the file (a link there is replaced, never written through).
 
 What is not secret goes to `factory-setup.json` in the state folder: who connected, the repositories, the
 Linear team, the git name and email, expiry times (`github.expiresAt`, `linear.expiresAt`: milliseconds since
 the epoch, absent when the token has no lifetime) and `ready`. `ready` is true only when GitHub, Linear (unless
-the organization does not use it), the saved choices and Claude's sign-in all exist, none has expired and
-every saved repository is still reachable; the factory starts no agent before it is true. The status
+the organization does not use it), the saved choices and Claude's sign-in all exist, none has expired and,
+as of the last status read, every saved repository is reachable; the factory starts no agent before it is
+true. The status
 (`GET /api/factory/setup`) carries the same `github.expiresAt` and `linear.expiresAt`. Claude uses the
 existing followed sign-in, `/api/usage/login`.
 

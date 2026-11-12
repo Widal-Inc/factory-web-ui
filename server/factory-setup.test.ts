@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unitHerdrOnly } from "../scripts/test-herdr.ts";
@@ -24,7 +24,7 @@ const CANARY_DEVICE = "device_canary_code_0000";
 /** A stand-in for the three upstream services, recording what each was sent. */
 function upstream() {
   const calls: { url: string; body: string; authorization: string | null }[] = [];
-  const state = { pollsBeforeGrant: 1, tokenLifetime: 28800 as number | null, linearLifetime: 86400, repositories: [{ full_name: "example-org/widgets", private: true }, { full_name: "example-org/docs", private: false }], teams: [{ key: "ENG", name: "Engineering" }], githubUser: { login: "ada-dev", id: 4242, name: "Ada Example", email: null as string | null }, linearUser: { id: "lin-user-1", name: "Ada Example" }, deviceError: null as string | null, tokenError: null as string | null, liveRefresh: CANARY_LINEAR_REFRESH, renewals: 0 };
+  const state = { pollsBeforeGrant: 1, tokenLifetime: 28800 as number | null, linearLifetime: 86400, repositories: [{ full_name: "example-org/widgets", private: true }, { full_name: "example-org/docs", private: false }], teams: [{ key: "ENG", name: "Engineering" }], githubUser: { login: "ada-dev", id: 4242, name: "Ada Example", email: null as string | null }, linearUser: { id: "lin-user-1", name: "Ada Example" }, deviceError: null as string | null, tokenError: null as string | null, liveRefresh: CANARY_LINEAR_REFRESH, renewals: 0, listStatus: 200 };
   let polls = 0;
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -39,8 +39,12 @@ function upstream() {
       return Response.json({ access_token: CANARY_GITHUB, token_type: "bearer", ...(state.tokenLifetime ? { expires_in: state.tokenLifetime } : {}) });
     }
     if (url === `${GITHUB_API}/user`) return headers.get("authorization") === `Bearer ${CANARY_GITHUB}` ? Response.json(state.githubUser) : new Response("{}", { status: 401 });
+    if (url.startsWith(`${GITHUB_API}/user/installations?`) && state.listStatus !== 200) return new Response("{}", { status: state.listStatus });
     if (url.startsWith(`${GITHUB_API}/user/installations?`)) return Response.json({ installations: [{ id: 77 }] });
-    if (url.startsWith(`${GITHUB_API}/user/installations/77/repositories`)) return Response.json({ repositories: state.repositories });
+    if (url.startsWith(`${GITHUB_API}/user/installations/77/repositories`)) {
+      const page = Number(new URL(url).searchParams.get("page") ?? "1");
+      return Response.json({ repositories: state.repositories.slice((page - 1) * 100, page * 100) });
+    }
     if (url === LINEAR_TOKEN_URL) {
       // Linear rotates the refresh token: each renewal hands out a new one, and the old one is spent
       const form = new URLSearchParams(body);
@@ -446,9 +450,50 @@ describe("owner Setup", () => {
     clock += 60_000;
     await setup.maintain();
     expect(record().ready).toBe(false);
-    clock += 5 * 60_000;
+    // Linear said the refresh token is dead for good: it is not offered again, however long the factory runs
+    for (let minute = 0; minute < 30; minute += 1) { clock += 60_000; await setup.maintain(); }
+    expect(renewals().length).toBe(1);
+    expect(await setup.status(identity())).toMatchObject({ ready: false, linear: { state: "expired" } });
+    expect(renewals().length).toBe(1);
+    // connecting Linear again brings a refresh token of its own, which is renewed as usual
+    up.state.liveRefresh = CANARY_LINEAR_REFRESH;
+    await (await connectLinear()).done();
+    clock += 86_400_000 - 60_000;
     await setup.maintain();
     expect(renewals().length).toBe(2);
+  });
+
+  it("retries a renewal Linear did not answer before the token runs out, not after", async () => {
+    up.state.tokenLifetime = null;
+    await completeAsAda();
+    let attempts = 0;
+    const original = up.fetcher;
+    const flaky = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input) === LINEAR_TOKEN_URL && new URLSearchParams(String(init?.body)).get("grant_type") === "refresh_token") { attempts += 1; return new Response("{}", { status: 503 }); }
+      return original(input, init);
+    }) as typeof fetch;
+    const timer = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: async () => { throw new Error("the timer asks no hub"); }, claudeSignedIn: async () => true, owner: "ada@example.test", fetch: flaky, now: () => clock });
+    // the margin is five minutes: the first attempt comes with 300 s left, and the next at half of what is left
+    clock += 86_400_000 - 300_000;
+    await timer.maintain();
+    expect(attempts).toBe(1);
+    clock += 149_000;
+    await timer.maintain();
+    expect(attempts).toBe(1);
+    clock += 1_000;
+    await timer.maintain();
+    expect(attempts).toBe(2);
+    // 150 s left: 75 s; then 75 s left: 37.5 s
+    clock += 74_000;
+    await timer.maintain();
+    expect(attempts).toBe(2);
+    clock += 1_000;
+    await timer.maintain();
+    expect(attempts).toBe(3);
+    clock += 37_500;
+    await timer.maintain();
+    expect(attempts).toBe(4);
+    expect(record().ready).toBe(true);
   });
 
   it("never sets ready on its own, and takes it back when a credential is gone from the secrets file", async () => {
@@ -464,6 +509,155 @@ describe("owner Setup", () => {
     writeFileSync(secrets, readFileSync(secrets, "utf8").replace(/^LINEAR_ACCESS_TOKEN=.*\n/m, ""));
     await setup.maintain();
     expect(record().ready).toBe(false);
+  });
+
+  it("treats a GitHub token that GitHub rejects as no longer connected, and does not ask again for it", async () => {
+    await completeAsAda();
+    clock += 61_000;
+    up.state.listStatus = 401;
+    const status = await setup.status(identity());
+    expect(status).toMatchObject({ ready: false, next: "github", github: { state: "expired", login: "ada-dev" } });
+    expect(record().ready).toBe(false);
+    const listings = () => up.calls.filter((call) => call.url.startsWith(`${GITHUB_API}/user/installations?`)).length;
+    const before = listings();
+    clock += 120_000;
+    expect((await setup.status(identity())).github.state).toBe("expired");
+    expect(listings()).toBe(before);
+  });
+
+  it("asks GitHub for the repositories once for a status and the choices page, and does not repeat a failed listing at once", async () => {
+    await completeAsAda();
+    const listings = () => up.calls.filter((call) => call.url.startsWith(`${GITHUB_API}/user/installations?`)).length;
+    const before = listings();
+    await setup.status(identity());
+    await setup.choices(identity());
+    expect(listings()).toBe(before);
+    clock += 61_000;
+    await setup.choices(identity());
+    expect(listings()).toBe(before + 1);
+    clock += 61_000;
+    up.state.listStatus = 502;
+    expect((await setup.status(identity())).ready).toBe(true);
+    const failed = listings();
+    for (let i = 0; i < 3; i += 1) { clock += 1_000; expect((await setup.status(identity())).unreachableRepositories).toEqual([]); }
+    expect(listings()).toBe(failed);
+    clock += 15_000;
+    await setup.status(identity());
+    expect(listings()).toBe(failed + 1);
+  });
+
+  it("lists every page of a large installation, and never reports a repository lost from a listing that stopped at a limit", async () => {
+    up.state.repositories = Array.from({ length: 230 }, (_, i) => ({ full_name: `example-org/repo-${String(i).padStart(3, "0")}`, private: false }));
+    await connectGithub();
+    await (await connectLinear()).done();
+    const everything = await setup.choices(identity());
+    expect(everything.repositories.length).toBe(230);
+    await setup.saveSettings(identity(), { ...good, repositories: ["example-org/repo-229"] });
+    claude = true;
+    expect(await setup.status(identity())).toMatchObject({ ready: true, unreachableRepositories: [] });
+    // an organization with more installations than one listing can follow: what it did not get to is unknown, not lost
+    const original = up.fetcher;
+    const vast = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith(`${GITHUB_API}/user/installations?`)) return Response.json({ installations: Array.from({ length: 100 }, (_, i) => ({ id: 1000 + i })) });
+      if (url.startsWith(`${GITHUB_API}/user/installations/`)) return Response.json({ repositories: Array.from({ length: 100 }, (_, i) => ({ full_name: `elsewhere/r-${url.length}-${i}`, private: false })) });
+      return original(input, init);
+    }) as typeof fetch;
+    const big = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: (who) => f.auth.setupApps(who), claudeSignedIn: async () => true, fetch: vast, now: () => clock });
+    expect(await big.status(identity())).toMatchObject({ ready: true, unreachableRepositories: [] });
+  });
+
+  it("takes a previous owner's other credential away on a disconnect or a start, not only on a connection", async () => {
+    const grace = { person: "grace@example.test", token: "fixture-identity", expires: Number.MAX_SAFE_INTEGER };
+    const hers = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: async () => ({ githubClientId: "Iv1.fixture-github", linearClientId: "fixture-linear-client" }), claudeSignedIn: async () => true, fetch: up.fetcher, now: () => clock });
+    const credentials = () => ["GH_TOKEN", "LINEAR_ACCESS_TOKEN", "LINEAR_REFRESH_TOKEN"].filter((name) => readFileSync(secrets, "utf8").includes(`${name}=`));
+    const acts: [string, () => Promise<unknown>][] = [["disconnectGithub", () => hers.disconnectGithub(grace)], ["disconnectLinear", () => hers.disconnectLinear(grace)], ["startLinear", () => hers.startLinear(grace)], ["startGithub", () => hers.startGithub(grace)]];
+    for (const [name, act] of acts) {
+      up.resetPolls();
+      await completeAsAda();
+      expect(credentials().length, name).toBe(3);
+      await act();
+      expect(credentials(), name).toEqual([]);
+      expect(record(), name).toMatchObject({ owner: "grace@example.test", ready: false });
+      expect(record().linear, name).toBeUndefined();
+    }
+  });
+
+  it("takes the previous owner's ready back before it removes their credentials, so a failed removal cannot leave them ready", async () => {
+    await completeAsAda();
+    expect(record().ready).toBe(true);
+    // the secrets file cannot be rewritten: a folder stands where it was
+    rmSync(secrets);
+    mkdirSync(secrets);
+    const grace = { person: "grace@example.test", token: "fixture-identity", expires: Number.MAX_SAFE_INTEGER };
+    const hers = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: async () => ({ githubClientId: "Iv1.fixture-github", linearClientId: "fixture-linear-client" }), claudeSignedIn: async () => true, fetch: up.fetcher, now: () => clock });
+    await expect(hers.status(grace)).rejects.toThrow();
+    expect(record()).toMatchObject({ owner: "ada@example.test", ready: false });
+    // still her record, so the change of owner is tried again until it succeeds
+    rmSync(secrets, { recursive: true });
+    writeFileSync(secrets, `GH_TOKEN=${CANARY_GITHUB}\n`);
+    expect(await hers.status(grace)).toMatchObject({ ready: false, github: { state: "not_connected" } });
+    expect(record()).toMatchObject({ owner: "grace@example.test", ready: false });
+    expect(readFileSync(secrets, "utf8")).not.toContain("GH_TOKEN=");
+  });
+
+  it("never writes a credential that is not safe in a file a shell may source", async () => {
+    up.state.tokenLifetime = null;
+    const original = up.fetcher;
+    let token = "ghu_ok";
+    const odd = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input) === GITHUB_TOKEN_URL) return Response.json({ access_token: token });
+      if (String(input) === `${GITHUB_API}/user`) return Response.json(up.state.githubUser);
+      return original(input, init);
+    }) as typeof fetch;
+    const unsafe = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: (who) => f.auth.setupApps(who), claudeSignedIn: async () => true, fetch: odd, now: () => clock });
+    for (const bad of ["tok en", "tok;id", "$(id)", "`id`", "tok'en", "a#b", "a\\b", "aéb"]) {
+      token = bad;
+      await unsafe.startGithub(identity());
+      clock += 6_000;
+      expect(await unsafe.pollGithub(identity()), bad).toMatchObject({ state: "failed", reason: "unavailable" });
+    }
+    expect(() => readFileSync(secrets, "utf8")).toThrow();
+    token = "ghu_AbC-1.2_3+4/5=";
+    await unsafe.startGithub(identity());
+    clock += 6_000;
+    expect(await unsafe.pollGithub(identity())).toMatchObject({ state: "connected" });
+    expect(readFileSync(secrets, "utf8")).toContain("GH_TOKEN=ghu_AbC-1.2_3+4/5=\n");
+  });
+
+  it("finishes the turn it is in when it stops, and starts none after", async () => {
+    up.state.tokenLifetime = null;
+    await completeAsAda();
+    const original = up.fetcher;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let renewing = 0;
+    const slow = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input) === LINEAR_TOKEN_URL && new URLSearchParams(String(init?.body)).get("grant_type") === "refresh_token") { renewing += 1; await gate; }
+      return original(input, init);
+    }) as typeof fetch;
+    const timer = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: async () => { throw new Error("the timer asks no hub"); }, claudeSignedIn: async () => true, owner: "ada@example.test", fetch: slow, now: () => clock });
+    clock += 86_400_000 - 60_000;
+    const running = timer.maintain();
+    const queued = timer.maintain();
+    const deadline = Date.now() + 10_000;
+    while (renewing === 0) { if (Date.now() > deadline) throw new Error("the renewal never started"); await new Promise((resolve) => setImmediate(resolve)); }
+    expect(renewing).toBe(1);
+    let stopped = false;
+    const stopping = timer.stop().then(() => { stopped = true; });
+    // the renewal is held at Linear: however many turns of the event loop pass, stop has not come back
+    for (let turn = 0; turn < 20; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    await Promise.all([running, queued]);
+    // the renewal in flight was kept (Linear had already rotated the token), and the queued turn did nothing
+    expect(readFileSync(secrets, "utf8")).toContain("LINEAR_REFRESH_TOKEN=lin_refresh_canary_token_0000-1\n");
+    const written = readFileSync(join(dir, "factory-setup.json"), "utf8");
+    clock += 86_400_000;
+    await timer.maintain();
+    expect(renewing).toBe(1);
+    expect(readFileSync(join(dir, "factory-setup.json"), "utf8")).toBe(written);
   });
 });
 
