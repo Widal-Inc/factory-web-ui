@@ -32,8 +32,8 @@ function status(value: unknown): SetupStatus {
   const repositories = settings ? (Array.isArray(settings["repositories"]) ? settings["repositories"].map(str) : unsupported()) : [];
   return {
     version: 1,
-    github: { state: oneOf(github["state"], ["connected", "expired", "not_connected", "unavailable"] as const), ...(github["login"] !== undefined ? { login: str(github["login"]) } : {}), ...(github["noreplyEmail"] !== undefined ? { noreplyEmail: str(github["noreplyEmail"]) } : {}), ...(github["reason"] !== undefined ? { reason: str(github["reason"]) } : {}) },
-    linear: { state: oneOf(linear["state"], ["connected", "expired", "not_connected", "not_used", "unavailable"] as const), ...(linear["name"] !== undefined ? { name: str(linear["name"]) } : {}), ...(linear["reason"] !== undefined ? { reason: str(linear["reason"]) } : {}) },
+    github: { state: oneOf(github["state"], ["connected", "expired", "not_connected", "unavailable"] as const), ...(github["login"] !== undefined ? { login: str(github["login"]) } : {}), ...(github["noreplyEmail"] !== undefined ? { noreplyEmail: str(github["noreplyEmail"]) } : {}), ...(github["expiresAt"] !== undefined ? { expiresAt: num(github["expiresAt"]) } : {}), ...(github["reason"] !== undefined ? { reason: str(github["reason"]) } : {}) },
+    linear: { state: oneOf(linear["state"], ["connected", "expired", "not_connected", "not_used", "unavailable"] as const), ...(linear["name"] !== undefined ? { name: str(linear["name"]) } : {}), ...(linear["expiresAt"] !== undefined ? { expiresAt: num(linear["expiresAt"]) } : {}), ...(linear["reason"] !== undefined ? { reason: str(linear["reason"]) } : {}) },
     settings: settings ? { repositories, linearTeam: settings["linearTeam"] === null ? null : str(settings["linearTeam"]), gitName: str(settings["gitName"]), gitEmail: str(settings["gitEmail"]) } : null,
     claude: { state: oneOf(obj(body["claude"])["state"], ["signed_in", "not_signed_in", "unavailable"] as const) },
     ready: bool(body["ready"]), next,

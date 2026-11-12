@@ -54,6 +54,13 @@ describe("owner Setup client", () => {
     await expect(setup(() => json({ version: 2 })).api.status()).rejects.toMatchObject({ code: "unsupported" });
     await expect(setup(() => json({ ...status, ready: "yes" })).api.status()).rejects.toMatchObject({ code: "unsupported" });
     await expect(setup(() => json({ repositories: "x" })).api.choices()).rejects.toMatchObject({ code: "unsupported" });
+    await expect(setup(() => json({ ...status, github: { ...status.github, expiresAt: "soon" } })).api.status()).rejects.toMatchObject({ code: "unsupported" });
+  });
+
+  it("keeps when each connection expires", async () => {
+    const value = await setup(() => json({ ...status, github: { ...status.github, expiresAt: 1_800_028_800_000 }, linear: { state: "connected", name: "Ada", expiresAt: 1_800_086_400_000 } })).api.status();
+    expect(value.github.expiresAt).toBe(1_800_028_800_000);
+    expect(value.linear.expiresAt).toBe(1_800_086_400_000);
   });
 
   it("only offers GitHub's device page and Linear's authorize page", async () => {

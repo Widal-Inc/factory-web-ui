@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unitHerdrOnly } from "../scripts/test-herdr.ts";
@@ -24,7 +24,7 @@ const CANARY_DEVICE = "device_canary_code_0000";
 /** A stand-in for the three upstream services, recording what each was sent. */
 function upstream() {
   const calls: { url: string; body: string; authorization: string | null }[] = [];
-  const state = { pollsBeforeGrant: 1, tokenLifetime: 28800 as number | null, linearLifetime: 86400, repositories: [{ full_name: "example-org/widgets", private: true }, { full_name: "example-org/docs", private: false }], teams: [{ key: "ENG", name: "Engineering" }], githubUser: { login: "ada-dev", id: 4242, name: "Ada Example", email: null as string | null }, linearUser: { id: "lin-user-1", name: "Ada Example" }, deviceError: null as string | null, tokenError: null as string | null };
+  const state = { pollsBeforeGrant: 1, tokenLifetime: 28800 as number | null, linearLifetime: 86400, repositories: [{ full_name: "example-org/widgets", private: true }, { full_name: "example-org/docs", private: false }], teams: [{ key: "ENG", name: "Engineering" }], githubUser: { login: "ada-dev", id: 4242, name: "Ada Example", email: null as string | null }, linearUser: { id: "lin-user-1", name: "Ada Example" }, deviceError: null as string | null, tokenError: null as string | null, liveRefresh: CANARY_LINEAR_REFRESH, renewals: 0 };
   let polls = 0;
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -41,7 +41,14 @@ function upstream() {
     if (url === `${GITHUB_API}/user`) return headers.get("authorization") === `Bearer ${CANARY_GITHUB}` ? Response.json(state.githubUser) : new Response("{}", { status: 401 });
     if (url.startsWith(`${GITHUB_API}/user/installations?`)) return Response.json({ installations: [{ id: 77 }] });
     if (url.startsWith(`${GITHUB_API}/user/installations/77/repositories`)) return Response.json({ repositories: state.repositories });
-    if (url === LINEAR_TOKEN_URL) return Response.json({ access_token: CANARY_LINEAR, refresh_token: CANARY_LINEAR_REFRESH, expires_in: state.linearLifetime });
+    if (url === LINEAR_TOKEN_URL) {
+      // Linear rotates the refresh token: each renewal hands out a new one, and the old one is spent
+      const form = new URLSearchParams(body);
+      if (form.get("grant_type") !== "refresh_token") return Response.json({ access_token: CANARY_LINEAR, refresh_token: CANARY_LINEAR_REFRESH, expires_in: state.linearLifetime });
+      if (form.get("refresh_token") !== state.liveRefresh) return Response.json({ error: "invalid_grant" }, { status: 400 });
+      state.liveRefresh = `${CANARY_LINEAR_REFRESH}-${++state.renewals}`;
+      return Response.json({ access_token: `${CANARY_LINEAR}-${state.renewals}`, refresh_token: state.liveRefresh, expires_in: state.linearLifetime });
+    }
     if (url === LINEAR_GRAPHQL_URL) return init?.body && String(init.body).includes("viewer") ? Response.json({ data: { viewer: state.linearUser } }) : Response.json({ data: { teams: { nodes: state.teams } } });
     throw new Error(`unexpected upstream request ${url}`);
   }) as typeof fetch;
@@ -105,7 +112,7 @@ describe("owner Setup", () => {
     const record = readFileSync(join(dir, "factory-setup.json"), "utf8");
     expect(record).not.toContain(CANARY_GITHUB);
     expect(record).toContain("ada-dev");
-    expect((await setup.status(identity())).github).toEqual({ state: "connected", login: "ada-dev", noreplyEmail: "4242+ada-dev@users.noreply.github.com" });
+    expect((await setup.status(identity())).github).toEqual({ state: "connected", login: "ada-dev", noreplyEmail: "4242+ada-dev@users.noreply.github.com", expiresAt: clock + 28_800_000 });
   });
 
   it("slows down when GitHub says so, reports a denial and an expired code, and refuses a poll nobody started", async () => {
@@ -319,6 +326,84 @@ describe("owner Setup", () => {
     f.setMe({ person: "ada@example.test", role: "engineer", factories: [{ factory: "ada-factory", owner: "ada@example.test", address: "https://ada.factory.example.test", state: "ready" }] });
     f.setSetup("not an object");
     expect((await setup.status(identity())).github).toMatchObject({ state: "unavailable" });
+  });
+
+  const record = () => JSON.parse(readFileSync(join(dir, "factory-setup.json"), "utf8"));
+  const renewals = () => up.calls.filter((call) => call.url === LINEAR_TOKEN_URL && new URLSearchParams(call.body).get("grant_type") === "refresh_token");
+
+  it("renews the Linear token on its own, with nobody opening Setup, and keeps the factory ready", async () => {
+    up.state.tokenLifetime = null;
+    await completeAsAda();
+    expect(record().linear.clientId).toBe("fixture-linear-client");
+    clock += 86_400_000 - 60_000;
+    // the hub is not asked: the timer has no person's identity, and the token is renewed with the app it was issued to
+    f.setSetup("not an object");
+    await setup.maintain();
+    expect(renewals().map((call) => new URLSearchParams(call.body).get("client_id"))).toEqual(["fixture-linear-client"]);
+    expect(readFileSync(secrets, "utf8")).toContain(`LINEAR_ACCESS_TOKEN=${CANARY_LINEAR}-1\n`);
+    expect(readFileSync(secrets, "utf8")).toContain(`LINEAR_REFRESH_TOKEN=${CANARY_LINEAR_REFRESH}-1\n`);
+    expect(record()).toMatchObject({ ready: true, linear: { expiresAt: clock + 86_400_000 } });
+    // the next one spends the rotated refresh token
+    clock += 86_400_000 - 60_000;
+    await setup.maintain();
+    expect(new URLSearchParams(renewals().at(-1)!.body).get("refresh_token")).toBe(`${CANARY_LINEAR_REFRESH}-1`);
+    expect(record().ready).toBe(true);
+  });
+
+  it("spends the refresh token once when the timer and status reads renew together", async () => {
+    up.state.tokenLifetime = null;
+    await completeAsAda();
+    clock += 86_400_000 - 60_000;
+    const [, first, , second] = await Promise.all([setup.maintain(), setup.status(identity()), setup.maintain(), setup.status(identity())]);
+    expect(renewals().length).toBe(1);
+    expect([first.ready, second.ready]).toEqual([true, true]);
+    expect(first.linear.expiresAt).toBe(clock + 86_400_000);
+    expect(record().ready).toBe(true);
+  });
+
+  it("takes ready back in the factory's record when the GitHub token expires, with nobody opening Setup", async () => {
+    await completeAsAda();
+    const status = await setup.status(identity());
+    expect(status.github.expiresAt).toBe(record().github.expiresAt);
+    clock = status.github.expiresAt! - 1;
+    await setup.maintain();
+    expect(record().ready).toBe(true);
+    clock += 1;
+    await setup.maintain();
+    expect(record().ready).toBe(false);
+    expect(await setup.status(identity())).toMatchObject({ ready: false, next: "github", github: { state: "expired" } });
+  });
+
+  it("takes ready back when Linear refuses the renewal and the token expires, and does not keep asking", async () => {
+    up.state.tokenLifetime = null;
+    await completeAsAda();
+    up.state.liveRefresh = "spent-elsewhere";
+    clock += 86_400_000 - 60_000;
+    await setup.maintain();
+    await setup.maintain();
+    expect(renewals().length).toBe(1);
+    expect(record().ready).toBe(true);
+    clock += 60_000;
+    await setup.maintain();
+    expect(record().ready).toBe(false);
+    clock += 5 * 60_000;
+    await setup.maintain();
+    expect(renewals().length).toBe(2);
+  });
+
+  it("never sets ready on its own, and takes it back when a credential is gone from the secrets file", async () => {
+    await connectGithub();
+    claude = true;
+    await setup.maintain();
+    expect(record().ready).toBe(false);
+    await (await connectLinear()).done();
+    await setup.saveSettings(identity(), good);
+    await setup.maintain();
+    expect(record().ready).toBe(false);
+    expect((await setup.status(identity())).ready).toBe(true);
+    writeFileSync(secrets, readFileSync(secrets, "utf8").replace(/^LINEAR_ACCESS_TOKEN=.*\n/m, ""));
+    await setup.maintain();
+    expect(record().ready).toBe(false);
   });
 });
 

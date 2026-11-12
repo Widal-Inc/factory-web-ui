@@ -13,6 +13,11 @@ export interface SetupGithub {
   readonly login?: string;
   /** The `<id>+<login>@users.noreply.github.com` address GitHub gives commits of a person who keeps their email private. */
   readonly noreplyEmail?: string;
+  /**
+   * When the token stops working, in milliseconds since the epoch; absent when GitHub gave it no lifetime. It
+   * cannot be renewed on the factory: after it, the person connects GitHub again.
+   */
+  readonly expiresAt?: number;
   /** Why it cannot be used, for the page; never an upstream body. */
   readonly reason?: string;
 }
@@ -21,6 +26,8 @@ export interface SetupLinear {
   /** `not_used`: the organization chose that its team does not use Linear. */
   readonly state: "connected" | "expired" | "not_connected" | "not_used" | "unavailable";
   readonly name?: string;
+  /** When the current token stops working (milliseconds since the epoch); the factory renews it before then. */
+  readonly expiresAt?: number;
   readonly reason?: string;
 }
 
@@ -39,8 +46,9 @@ export interface SetupStatus {
   readonly settings: SetupSettings | null;
   readonly claude: { readonly state: "signed_in" | "not_signed_in" | "unavailable" };
   /**
-   * True only when every required connection exists and the choices are saved. The factory starts no
-   * agent before this is true; it is also written to `factory-setup.json` in the state folder.
+   * True only when every required connection exists, none has expired, and the choices are saved. The factory
+   * starts no agent before this is true; it is also written to `factory-setup.json` in the state folder, and
+   * taken back there within a minute when a credential expires.
    */
   readonly ready: boolean;
   /** The first step that still needs the person. */

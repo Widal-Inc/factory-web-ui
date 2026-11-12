@@ -98,7 +98,10 @@ export interface StoredLinear {
   /** Linear's own id of the account: choices made with another one do not carry over */
   readonly id: string;
   readonly name: string;
+  /** the Linear app's public client id the token was issued to, which renews it; absent in records saved before it was kept */
+  readonly clientId?: string;
   readonly connectedAt: string;
+  /** milliseconds since the epoch; renewed by Setup before it passes */
   readonly expiresAt?: number;
 }
 
@@ -113,7 +116,10 @@ export interface StoredSetup {
   /** the GitHub account id and Linear account id (null: Linear not used) the settings were made with */
   readonly settingsAccounts?: { readonly github: number; readonly linear: string | null };
   readonly claude?: boolean;
-  /** every required connection exists and the choices are saved */
+  /**
+   * every required connection exists and the choices are saved; set only by a status read, taken back within
+   * MAINTAIN_MS once a credential it rests on expires. A reader also checks `github.expiresAt` and `linear.expiresAt`.
+   */
   readonly ready: boolean;
   readonly updatedAt: string;
 }

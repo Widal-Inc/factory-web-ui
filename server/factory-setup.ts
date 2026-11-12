@@ -27,6 +27,10 @@ export const LINEAR_CALLBACK_PATH = "/linear/callback";
 const TIMEOUT_MS = 10_000;
 const PENDING_MS = 10 * 60_000;
 const REFRESH_MARGIN_MS = 5 * 60_000;
+/** How often the server renews and rechecks on its own, with nobody on the Setup page. */
+export const MAINTAIN_MS = 60_000;
+/** After a renewal Linear refused or did not answer, the next attempt waits this long. */
+const RENEW_RETRY_MS = 5 * 60_000;
 const MAX_PENDING = 8;
 
 export class SetupError extends Error {
@@ -63,6 +67,8 @@ export class FactorySetup {
   private device: Device | null = null;
   private readonly verifiers = new Map<string, Verifier>();
   private chain: Promise<unknown> = Promise.resolve();
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private renewAfter = 0;
 
   constructor(private readonly options: FactorySetupOptions) {
     this.store = new SetupStore(options.stateDir, options.secretsPath);
@@ -111,11 +117,51 @@ export class FactorySetup {
     return this.serial(() => this.compute(who));
   }
 
+  /**
+   * Runs `maintain` now and then every MAINTAIN_MS, so a Linear token is renewed and an expired credential
+   * takes `ready` back in factory-setup.json even when nobody opens Setup.
+   */
+  start(everyMs = MAINTAIN_MS): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => { void this.maintain().catch(() => {}); }, everyMs);
+    this.timer.unref?.();
+    void this.maintain().catch(() => {});
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /**
+   * The server's own turn, in the same serial lane and through the same renewal as a status read, so only one
+   * request ever spends LINEAR_REFRESH_TOKEN (Linear rotates it: a second refresh with the old one fails and
+   * can sign the factory out). It only ever takes `ready` back, when a credential it rests on has expired or
+   * is gone: setting it needs the hub's answer, which only a status read by the person has.
+   */
+  maintain(): Promise<void> {
+    return this.serial(async () => {
+      await this.renewLinear(null);
+      const stored = this.store.read();
+      if (!stored?.ready || this.usable(stored, this.store.secrets())) return;
+      try { this.store.write({ ...stored, ready: false, updatedAt: new Date(this.now()).toISOString() }); } catch { /* the next turn tries again */ }
+    });
+  }
+
+  /** Whether every credential a `ready` record rests on is still present and unexpired. */
+  private usable(stored: StoredSetup, secrets: Record<string, string>): boolean {
+    const now = this.now();
+    if (!stored.github || !secrets[SECRET_GITHUB] || (stored.github.expiresAt !== undefined && stored.github.expiresAt <= now)) return false;
+    // the choices say whether Linear was needed when they were saved: null means the organization does not use it
+    if (stored.settingsAccounts?.linear === null) return true;
+    return !!stored.linear && !!secrets[SECRET_LINEAR] && (stored.linear.expiresAt === undefined || stored.linear.expiresAt > now);
+  }
+
   private async compute(who: FactoryIdentity): Promise<SetupStatus> {
     const person = who.person;
     const apps = await this.options.apps(who).then((found) => found, () => null);
     // an expiring Linear token is renewed before anything is read, so the rest sees the renewed record
-    if (apps?.linearClientId) await this.renewLinear(person, apps.linearClientId);
+    if (apps?.linearClientId) await this.renewLinear(apps.linearClientId);
     const stored = this.store.read();
     const mine = stored && stored.owner.toLowerCase() === person.toLowerCase() ? stored : null;
     const secrets = this.store.secrets();
@@ -142,8 +188,9 @@ export class FactorySetup {
       return hubKnown ? { state: "not_connected" } : { state: "unavailable", reason: "The hub did not answer Setup. Try again." };
     }
     const noreplyEmail = `${github.id}+${github.login}@users.noreply.github.com`;
-    if (github.expiresAt !== undefined && github.expiresAt <= this.now()) return { state: "expired", login: github.login, noreplyEmail, reason: "The GitHub connection has expired. Connect again." };
-    return { state: "connected", login: github.login, noreplyEmail };
+    const expiry = github.expiresAt !== undefined ? { expiresAt: github.expiresAt } : {};
+    if (github.expiresAt !== undefined && github.expiresAt <= this.now()) return { state: "expired", login: github.login, noreplyEmail, ...expiry, reason: "The GitHub connection has expired. Connect again." };
+    return { state: "connected", login: github.login, noreplyEmail, ...expiry };
   }
 
   private linearState(stored: StoredSetup | null, secrets: Record<string, string>, apps: { linearClientId: string | null } | null): SetupLinear {
@@ -151,15 +198,22 @@ export class FactorySetup {
     if (apps.linearClientId === null) return { state: "not_used" };
     const linear = stored?.linear;
     if (!linear || !secrets[SECRET_LINEAR]) return { state: "not_connected" };
-    if (linear.expiresAt !== undefined && linear.expiresAt <= this.now()) return { state: "expired", name: linear.name, reason: "The Linear connection has expired. Connect again." };
-    return { state: "connected", name: linear.name };
+    const expiry = linear.expiresAt !== undefined ? { expiresAt: linear.expiresAt } : {};
+    if (linear.expiresAt !== undefined && linear.expiresAt <= this.now()) return { state: "expired", name: linear.name, ...expiry, reason: "The Linear connection has expired. Connect again." };
+    return { state: "connected", name: linear.name, ...expiry };
   }
 
-  /** Renews a Linear token that is about to expire, if the person has one. Runs inside the serial lane. */
-  private async renewLinear(person: string, clientId: string): Promise<void> {
+  /**
+   * Renews a stored Linear token that is about to expire: the one path for the timer and for a status read,
+   * always inside the serial lane, so two renewals never spend the same refresh token. The token is renewed
+   * with the app it was issued to; `hubClientId` is only for a record saved before that was kept.
+   */
+  private async renewLinear(hubClientId: string | null): Promise<void> {
     const stored = this.store.read();
-    if (!stored || stored.owner.toLowerCase() !== person.toLowerCase() || !stored.linear?.expiresAt) return;
-    if (stored.linear.expiresAt - REFRESH_MARGIN_MS <= this.now()) await this.refreshLinear(clientId, stored);
+    if (!stored?.linear?.expiresAt || stored.linear.expiresAt - REFRESH_MARGIN_MS > this.now() || this.now() < this.renewAfter) return;
+    const clientId = stored.linear.clientId ?? hubClientId;
+    if (!clientId) return;
+    if (!await this.refreshLinear(clientId, stored)) this.renewAfter = this.now() + RENEW_RETRY_MS;
   }
 
   /** Whether Setup is complete is recorded for the factory itself, which starts no agent before it is. */
@@ -285,8 +339,9 @@ export class FactorySetup {
       const viewer = await this.linearViewer(token);
       const refresh = text(body["refresh_token"], 600);
       const lifetime = typeof body["expires_in"] === "number" && body["expires_in"] > 0 ? body["expires_in"] : null;
-      const connected: StoredLinear = { id: viewer.id, name: viewer.name, connectedAt: new Date(this.now()).toISOString(), ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : {}) };
+      const connected: StoredLinear = { id: viewer.id, name: viewer.name, clientId: pending.clientId, connectedAt: new Date(this.now()).toISOString(), ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : {}) };
       this.store.saveSecrets({ [SECRET_LINEAR]: token, ...(refresh ? { [SECRET_LINEAR_REFRESH]: refresh } : {}) }, refresh ? [] : [SECRET_LINEAR_REFRESH]);
+      this.renewAfter = 0;
       this.save(person, (current) => ({ ...current, linear: connected }));
       return { name: viewer.name };
     });
@@ -319,7 +374,9 @@ export class FactorySetup {
       const next = text(body["refresh_token"], 600);
       const lifetime = typeof body["expires_in"] === "number" && body["expires_in"] > 0 ? body["expires_in"] : null;
       this.store.saveSecrets({ [SECRET_LINEAR]: token, ...(next ? { [SECRET_LINEAR_REFRESH]: next } : {}) });
-      this.save(stored.owner, (current) => ({ ...current, linear: { ...current.linear!, ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : { expiresAt: undefined }) } }));
+      // the same account, renewed: whatever `ready` was stays, so the factory is not held back by a renewal
+      const { expiresAt: _expiresAt, ...linear } = stored.linear;
+      this.store.write({ ...stored, linear: { ...linear, clientId, ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : {}) }, updatedAt: new Date(this.now()).toISOString() });
       return true;
     } catch { return false; }
   }

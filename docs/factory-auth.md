@@ -125,7 +125,16 @@ supplies a client ID, a redirect address or an upstream host, and every upstream
 server. A device code or PKCE verifier lives in memory only, belongs to one person, is single use and
 expires after ten minutes. A GitHub user token cannot be refreshed here, because refreshing needs the app's
 client secret, which stays on the hub: when its lifetime ends the status says expired and the person
-connects again. A Linear token is renewed with its refresh token and says expired when that fails.
+connects again. A Linear token is renewed with its refresh token, by the app it was issued to, and says
+expired when that fails.
+
+The server renews on its own: every minute (and when it starts) it renews a Linear token that expires within
+five minutes and takes `ready` back in `factory-setup.json` when a credential it rests on has expired or is
+gone from the secrets file, whether or not anyone opens Setup. It never sets `ready` itself; only a status
+read, with the hub's answer, does. The timer and a status read renew through the same path in the same serial
+lane, so `LINEAR_REFRESH_TOKEN` is spent by one request at a time: Linear rotates it, and a second refresh with
+the old one fails. Nothing else may refresh it, the factory's runtime included, and one Setup server serves a
+state folder. After a renewal Linear refused or did not answer, the next attempt waits five minutes.
 
 Saved choices belong to the accounts they were made with: the record keeps the GitHub account id and the
 Linear account id they were saved for, and a different account (or a Linear connection that is gone) has no
@@ -141,14 +150,19 @@ Credentials are written to the factory's own secrets file (`$WIDAL_SECRETS`, els
 `export NAME=value`); every other line of whoever provisioned the file (comments, other `export` lines, empty
 values, CRLF endings) is kept exactly as it is. Each write goes to a temporary file of its own beside it, is
 flushed, and is renamed over the file (a link there is replaced, never written through). What is not secret goes to `factory-setup.json` in the state
-folder: who connected, the repositories, the Linear team, the git name and email, expiry times and `ready`.
-`ready` is true only when GitHub, Linear (unless the organization does not use it), the saved choices and
-Claude's sign-in all exist; the factory starts no agent before it is true. Claude uses the existing
-followed sign-in, `/api/usage/login`.
+folder: who connected, the repositories, the Linear team, the git name and email, expiry times
+(`github.expiresAt`, `linear.expiresAt`: milliseconds since the epoch, absent when the token has no lifetime)
+and `ready`. `ready` is true only when GitHub, Linear (unless the organization does not use it), the saved
+choices and Claude's sign-in all exist and none has expired; the factory starts no agent before it is true.
+The status (`GET /api/factory/setup`) carries the same `github.expiresAt` and `linear.expiresAt`. Claude uses
+the existing followed sign-in, `/api/usage/login`.
 
 Applying these choices is not done by this server. The factory's runtime must read the secrets file and
-`factory-setup.json` (repositories, Linear team, git identity, `ready`), apply them to its own settings and
-hold agent start until `ready` is true. That consumer is separate factory work (the factory repository's
+`factory-setup.json` (repositories, Linear team, git identity, `ready`, the expiry times), apply them to its
+own settings and hold agent start until `ready` is true and neither `github.expiresAt` nor (when the choices
+use Linear) `linear.expiresAt` has passed: Setup takes `ready` back within a minute of an expiry, and the
+consumer does not wait for that. It reads `LINEAR_ACCESS_TOKEN` again before use, since Setup renews it, and
+never refreshes it itself. That consumer is separate factory work (the factory repository's
 runtime adapter); until it exists, a complete Setup means the choices are saved on the factory, not that its
 agents use them or can start.
 
