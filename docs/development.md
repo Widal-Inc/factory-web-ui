@@ -156,7 +156,7 @@ bun run check run bun test --timeout 15000 ./server/api.contract.test.ts   # one
 bun run check run --build bun scripts/ui-regression.ts                     # build and browser script under the same lock
 ```
 
-The terminal input lifecycle and the Safari, iPad and Linux native-event replays run as separate
+The terminal shortcuts, input lifecycle and Safari, iPad and Linux native-event replays run as separate
 scripts in both `test:ui` and the CI browser lane. Their existing standalone entrypoints own their
 fixtures and receive the same per-script watchdog as the core UI checks. A healthy sequence of
 terminal reloads must not consume the core script's remaining deadline. Run one replay directly

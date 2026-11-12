@@ -294,8 +294,7 @@ describe("Extracted UI checks", () => {
     const contexts = calls(readFileSync(new URL("./ui-contexts-checks.ts", import.meta.url), "utf8"));
     expect(contexts.filter((name) => moved.includes(name))).toEqual(moved);
     expect(core.filter((name) => moved.includes(name))).toEqual([]);
-    for (const name of ["checkHeldDraftPaneSwitch",
-      "checkCommandBackspace", "checkCtrlEnter", "checkCommandArrows"]) {
+    for (const name of ["checkHeldDraftPaneSwitch"]) {
       expect(core.filter((call) => call === name)).toHaveLength(1);
     }
   });
@@ -310,6 +309,7 @@ describe("Extracted UI checks", () => {
       ["terminal-safari-ime-regression.ts", "checkSafariIme"],
       ["terminal-ipad-ime-regression.ts", "checkIpadIme"],
       ["terminal-linux-ime-regression.ts", "checkLinuxIme"],
+      ["terminal-shortcuts-regression.ts", "checkTerminalShortcuts"],
     ]) {
       expect(core).not.toContain(check!);
       expect(scripts.filter((script) => script === `scripts/${file}`)).toHaveLength(1);
@@ -318,6 +318,15 @@ describe("Extracted UI checks", () => {
       expect(entry).toContain("if (import.meta.main)");
       // Definition plus its real standalone invocation: listing an import-only helper would drop coverage.
       expect(calls(entry).filter((name) => name === check)).toHaveLength(2);
+    }
+  });
+
+  it("keeps every platform shortcut check in the standalone group instead of core", () => {
+    const core = calls(readFileSync(new URL("./ui-regression.ts", import.meta.url), "utf8"));
+    const shortcuts = calls(readFileSync(new URL("./terminal-shortcuts-regression.ts", import.meta.url), "utf8"));
+    for (const name of ["checkCommandBackspace", "checkCtrlEnter", "checkCommandArrows"]) {
+      expect(core).not.toContain(name);
+      expect(shortcuts.filter((call) => call === name)).toHaveLength(1);
     }
   });
 
