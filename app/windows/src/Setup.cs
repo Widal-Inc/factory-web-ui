@@ -28,18 +28,6 @@ namespace Ovis
         VersionUnknown,
     }
 
-    /// <summary>What the Installed screen offers for the phone, from what GET /api/access told.</summary>
-    internal enum PhoneStep
-    {
-        /// <summary>Tailscale serves the app: the QR code of its address.</summary>
-        Qr,
-        MakeAddress,
-        SignInTailscale,
-        InstallTailscale,
-        /// <summary>The server asks for a token the app does not have: nothing is known of Tailscale here.</summary>
-        TokenNeeded,
-    }
-
     internal sealed class Plugin
     {
         public string Id;
@@ -84,18 +72,6 @@ namespace Ovis
             var script = "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; " +
                          "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); $ProgressPreference = 'SilentlyContinue'; " + command;
             return new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script };
-        }
-
-        /// <summary>
-        /// The phone step: the QR code while Tailscale serves the app, else what Tailscale needs. A server behind a token the
-        /// app could not read answers nothing of Tailscale, which is then not taken as missing.
-        /// </summary>
-        public static PhoneStep Phone(string phoneUrl, string tailscale, bool accessLocked)
-        {
-            if (phoneUrl != null) return PhoneStep.Qr;
-            if (accessLocked) return PhoneStep.TokenNeeded;
-            if (tailscale == "running") return PhoneStep.MakeAddress;
-            return tailscale == "stopped" ? PhoneStep.SignInTailscale : PhoneStep.InstallTailscale;
         }
 
         /// <summary>"0.4.19", "v0.4.19" or "herdr 0.9.3-preview" as X.Y.Z; null for anything else.</summary>

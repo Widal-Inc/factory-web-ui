@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DeviceStore } from "./devices.ts";
 import { createServer } from "./index.ts";
 import { MACHINE_PROXY_PATH } from "./machine-api.ts";
 import { PullRequestError, mergePullRequest, pullRequestLog, pullRequestView } from "./pull-request.ts";
@@ -184,15 +183,10 @@ describe("merging", () => {
 describe("the /api/workspace/pr routes", () => {
   let server: ReturnType<typeof createServer>;
   let base: string;
-  let watchCookie: string;
   const stateDir = mkdtempSync(join(tmpdir(), "ovis-pull-request-state-"));
   const owner = { authorization: "Bearer test-pull-request" };
   beforeAll(() => {
-    const store = new DeviceStore(stateDir);
-    const watchToken = store.pair(store.startPairing().code, "Watch", "watch")!.token;
-    expect(store.match(watchToken)).not.toBeNull();
-    watchCookie = `ovis_device=${watchToken}`;
-    server = createServer({ port: 0, stateDir, token: "test-pull-request", tailscaleOwner: null, machines: false });
+    server = createServer({ port: 0, stateDir, token: "test-pull-request", machines: false });
     base = `http://127.0.0.1:${server.port}`;
   });
   afterAll(() => { server.stop(); rmSync(stateDir, { recursive: true, force: true }); });
@@ -200,14 +194,6 @@ describe("the /api/workspace/pr routes", () => {
   it("reaches another PC's pull request through its route", () => {
     for (const path of ["workspace/pr", "workspace/pr/log", "workspace/pr/merge"]) expect([path, MACHINE_PROXY_PATH.test(path)]).toEqual([path, true]);
     expect(MACHINE_PROXY_PATH.test("workspace/pr/other")).toBe(false);
-  });
-
-  it("is closed to a device that can only watch, on this PC and through a PC's route", async () => {
-    for (const path of ["workspace/pr", "workspace/pr/log", "machines/pc1/workspace/pr", "machines/pc1/workspace/pr/log"]) {
-      const response = await fetch(`${base}/api/${path}?directory=${encodeURIComponent(scratch)}&job_id=1`, { headers: { cookie: watchCookie } });
-      expect([path, response.status]).toEqual([path, 403]);
-      expect(((await response.json()) as { error: { code: string } }).error.code).toBe("read_only");
-    }
   });
 
   it("refuses a request without a folder, and a merge without what was shown", async () => {

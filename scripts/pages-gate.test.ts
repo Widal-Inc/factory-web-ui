@@ -289,14 +289,44 @@ describe("Extracted UI checks", () => {
   ];
   const calls = (source: string) => [...source.matchAll(/\b(check[A-Z]\w*)\(/g)].map((match) => match[1]!);
 
-  it("moves all 24 existing checks exactly once, in order, without removing core input checks", () => {
+  it("moves all 24 existing checks exactly once, in order, without removing the remaining core checks", () => {
     const core = calls(readFileSync(new URL("./ui-regression.ts", import.meta.url), "utf8"));
     const contexts = calls(readFileSync(new URL("./ui-contexts-checks.ts", import.meta.url), "utf8"));
     expect(contexts.filter((name) => moved.includes(name))).toEqual(moved);
     expect(core.filter((name) => moved.includes(name))).toEqual([]);
-    for (const name of ["checkTerminalInput", "checkSafariIme", "checkHeldDraftPaneSwitch",
-      "checkCommandBackspace", "checkCtrlEnter", "checkCommandArrows"]) {
+    for (const name of ["checkHeldDraftPaneSwitch"]) {
       expect(core.filter((call) => call === name)).toHaveLength(1);
+    }
+  });
+
+  it("runs the terminal input and native IME suites once each in both browser entrypoints", () => {
+    const core = calls(readFileSync(new URL("./ui-regression.ts", import.meta.url), "utf8"));
+    const scripts = serialBrowserScripts();
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    const local = [...pkg.scripts["test:ui"].matchAll(/\bbun (scripts\/[\w.-]+\.ts)\b/g)].map((match) => match[1]);
+    for (const [file, check] of [
+      ["terminal-input-regression.ts", "checkTerminalInput"],
+      ["terminal-safari-ime-regression.ts", "checkSafariIme"],
+      ["terminal-ipad-ime-regression.ts", "checkIpadIme"],
+      ["terminal-linux-ime-regression.ts", "checkLinuxIme"],
+      ["terminal-shortcuts-regression.ts", "checkTerminalShortcuts"],
+    ]) {
+      expect(core).not.toContain(check!);
+      expect(scripts.filter((script) => script === `scripts/${file}`)).toHaveLength(1);
+      expect(local.filter((script) => script === `scripts/${file}`)).toHaveLength(1);
+      const entry = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+      expect(entry).toContain("if (import.meta.main)");
+      // Definition plus its real standalone invocation: listing an import-only helper would drop coverage.
+      expect(calls(entry).filter((name) => name === check)).toHaveLength(2);
+    }
+  });
+
+  it("keeps every platform shortcut check in the standalone group instead of core", () => {
+    const core = calls(readFileSync(new URL("./ui-regression.ts", import.meta.url), "utf8"));
+    const shortcuts = calls(readFileSync(new URL("./terminal-shortcuts-regression.ts", import.meta.url), "utf8"));
+    for (const name of ["checkCommandBackspace", "checkCtrlEnter", "checkCommandArrows"]) {
+      expect(core).not.toContain(name);
+      expect(shortcuts.filter((call) => call === name)).toHaveLength(1);
     }
   });
 

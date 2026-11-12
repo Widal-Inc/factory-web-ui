@@ -1,10 +1,8 @@
 import type { TelemetrySurface } from "../../shared/telemetry.ts";
 import { isAppWindow } from "./install.ts";
-import { inAndroidApp, inMacApp, inNativeApp } from "./nativeApp.ts";
+import { inMacApp } from "./macApp.ts";
 
 export interface SurfaceInput {
-  /** the iOS or Android app around this page (lib/nativeApp.ts), or null in a browser */
-  nativeApp: "ios" | "android" | null;
   /** Ovis for Mac's own window */
   macApp: boolean;
   /** this window is an installed web app's, not a browser tab (lib/install.ts isAppWindow) */
@@ -19,8 +17,6 @@ export interface SurfaceInput {
  * pages names itself a Mac but has a touch screen.
  */
 export function surfaceOf(input: SurfaceInput): TelemetrySurface {
-  if (input.nativeApp === "ios") return "ios-app";
-  if (input.nativeApp === "android") return "android-app";
   if (input.macApp) return "mac-app";
   const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(input.userAgent) || (/Macintosh/.test(input.userAgent) && input.maxTouchPoints > 1);
   if (input.installed) return mobile ? "mobile-pwa" : "pwa";
@@ -29,7 +25,6 @@ export function surfaceOf(input: SurfaceInput): TelemetrySurface {
 
 export function currentSurface(): TelemetrySurface {
   return surfaceOf({
-    nativeApp: inNativeApp() ? (inAndroidApp() ? "android" : "ios") : null,
     macApp: inMacApp(),
     installed: isAppWindow(),
     userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,

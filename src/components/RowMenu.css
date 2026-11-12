@@ -53,7 +53,7 @@
   color: currentColor;
 }
 
-/* a shared switch a watching device sees but cannot flip (an agent's Mute alerts): its words and
+/* an item shown but not runnable now (a PC action while it is busy or unreachable): its words and
    mark in the dim text colour, not faded, so they keep AA contrast in both themes; its state still
    drawn, and a press or a hover changes nothing */
 .row-menu .menu-item.is-disabled,

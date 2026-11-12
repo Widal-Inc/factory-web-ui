@@ -6,8 +6,6 @@ import type { MachineManager } from "./machines.ts";
 
 // A remote bridge that answers like the local conversation route: an ETag, then 304 while unchanged.
 const asked: (string | null)[] = [];
-const promptAsked: (string | null)[] = [];
-const PLAN_CARD = { id: "claude-plan:abc", agent: "claude", kind: "plan", title: "Plan", question: "Would you like to proceed?", options: [{ label: "Yes", description: null }], multi_select: false, custom_option_index: null };
 const historyAsked: (string | null)[] = [];
 const commandsAsked: string[] = [];
 const filesAsked: string[] = [];
@@ -52,15 +50,6 @@ const remote = Bun.serve({
       faviconAsked.push({ search: new URL(request.url).search, authorization: request.headers.get("authorization"), cookie: request.headers.get("cookie") });
       return Response.json({ icon: null });
     }
-    if (path === "/api/pane/prompt") {
-      const search = new URL(request.url).searchParams;
-      promptAsked.push(search.get("plan"));
-      // pane `old` is a PC that does not know `plan=0` and always answers with the plan file
-      const screen = search.get("plan") === "0" && search.get("pane_id") !== "old";
-      return Response.json({ prompt: screen
-        ? { ...PLAN_CARD, body: "4. The last step that fits the pane." }
-        : { ...PLAN_CARD, id: `${PLAN_CARD.id}.0123abcd`, body: "1. A secret step from the plan file.", plan_file: "/home/u/.claude/plans/p.md" }, suggestion: null, restored: null });
-    }
     if (path.startsWith("/api/workspace/diff/") || path.startsWith("/api/workspace/git/")) {
       diffAsked.push({ path, search: new URL(request.url).search, authorization: request.headers.get("authorization"), cookie: request.headers.get("cookie"), forwarded: request.headers.get("x-forwarded-for") });
       return Response.json({ files: [], total: 0, truncated: false }, { headers: { "set-cookie": "remote=1" } });
@@ -95,49 +84,36 @@ describe("PC proxy", () => {
   });
 });
 
-it("never forwards a PC's session history to a watching device, nor a route spelled with a trailing, doubled or encoded slash", async () => {
+it("forwards a PC's session history with the PC's credential, never a route spelled with a trailing, doubled or encoded slash", async () => {
   const base = "http://127.0.0.1/api/machines/pc1";
   const query = "?workspace_id=w1&agent=pi";
-  const watched = await handleMachineRequest(new Request(`${base}/sessions/history${query}`), manager, undefined, undefined, true);
-  expect(watched.status).toBe(403);
-  expect(await watched.text()).not.toContain("a private prompt");
-  for (const readOnly of [true, false]) {
-    for (const path of ["sessions/history/", "sessions//history", "sessions%2Fhistory", "sessions%2fhistory", "pane/commands/", "workspace/directories/"]) {
-      const response = await handleMachineRequest(new Request(`${base}/${path}${query}`), manager, undefined, undefined, readOnly);
-      expect([readOnly, path, response.status]).toEqual([readOnly, path, 404]);
-    }
+  for (const path of ["sessions/history/", "sessions//history", "sessions%2Fhistory", "sessions%2fhistory", "pane/commands/", "workspace/directories/"]) {
+    const response = await handleMachineRequest(new Request(`${base}/${path}${query}`), manager);
+    expect([path, response.status]).toEqual([path, 404]);
   }
   expect(historyAsked).toEqual([]);
-  // a driving device gets the PC's answer, asked with the PC's credential
+  // the PC's answer, asked with the PC's credential
   const driven = await handleMachineRequest(new Request(`${base}/sessions/history${query}`), manager);
   expect(driven.status).toBe(200);
   expect(JSON.stringify(await driven.json())).toContain("a private prompt");
   expect(historyAsked).toEqual(["Bearer remote-token"]);
 });
 
-it("never asks a PC for a pane's or a folder's command rows for a watching device (#2132)", async () => {
+it("asks a PC for a pane's command rows with the PC's credential (#2132)", async () => {
   const base = "http://127.0.0.1/api/machines/pc1";
-  for (const path of ["pane/commands?pane_id=w1:p1", "agent/commands?agent=claude"]) {
-    const watched = await handleMachineRequest(new Request(`${base}/${path}`), manager, undefined, undefined, true);
-    expect([path, watched.status, ((await watched.json()) as { error: { code: string } }).error.code]).toEqual([path, 403, "read_only"]);
-  }
   expect(commandsAsked).toEqual([]);
-  // a driving device gets the PC's rows
   const driven = await handleMachineRequest(new Request(`${base}/pane/commands?pane_id=w1:p1`), manager);
   expect(driven.status).toBe(200);
   expect(JSON.stringify(await driven.json())).toContain("SECRET");
   expect(commandsAsked).toEqual(["/api/pane/commands"]);
 });
 
-it("carries a save to a PC's file with its body and the PC's credential, and its conflict back, but never for a watching device (#771)", async () => {
+it("carries a save to a PC's file with its body and the PC's credential, and its conflict back (#771)", async () => {
   const body = JSON.stringify({ pane_id: "w1:p1", path: "/work/notes.md", revision: "a".repeat(64), text: "new\n" });
-  const put = (readOnly: boolean) => handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/fs/text", {
+  const put = () => handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/fs/text", {
     method: "PUT", body, headers: { origin: "http://127.0.0.1", "x-herdr-machine": "1", "content-type": "application/json" },
-  }), manager, undefined, undefined, readOnly);
-  const watched = await put(true);
-  expect([watched.status, ((await watched.json()) as { error: { code: string } }).error.code]).toEqual([403, "read_only"]);
-  expect(textAsked).toEqual([]);
-  const driven = await put(false);
+  }), manager);
+  const driven = await put();
   expect(driven.status).toBe(409);
   expect(await driven.json()).toMatchObject({ error: { code: "stale_revision", revision: "b".repeat(64) } });
   expect(textAsked).toEqual([{ method: "PUT", body, authorization: "Bearer remote-token", contentType: "application/json" }]);
@@ -150,15 +126,10 @@ it("passes on a PC's 503 with its Retry-After, so the menu knows to ask again (#
   expect(((await busy.json()) as { error: { code: string } }).error.code).toBe("file_busy");
 });
 
-it("never asks a PC for the paths under a pane's folder or a plugin run's output for a watching device (#2244)", async () => {
+it("asks a PC for the paths under a pane's folder or a plugin run's output with the PC's credential (#2244)", async () => {
   const base = "http://127.0.0.1/api/machines/pc1";
   const routes = ["pane/files?pane_id=w1:p1&q=env", "plugin/action?plugin_id=deploy&log_id=plugin-log-1", "pane/docs?pane_id=w1:p1"];
-  for (const path of routes) {
-    const watched = await handleMachineRequest(new Request(`${base}/${path}`), manager, undefined, undefined, true);
-    expect([path, watched.status, ((await watched.json()) as { error: { code: string } }).error.code]).toEqual([path, 403, "read_only"]);
-  }
   expect(filesAsked).toEqual([]);
-  // a driving device gets the PC's answers
   for (const path of routes) {
     const driven = await handleMachineRequest(new Request(`${base}/${path}`), manager);
     expect([path, driven.status, JSON.stringify(await driven.json()).includes("SECRET")]).toEqual([path, 200, true]);
@@ -166,12 +137,9 @@ it("never asks a PC for the paths under a pane's folder or a plugin run's output
   expect(filesAsked).toEqual(["/api/pane/files", "/api/plugin/action", "/api/pane/docs"]);
 });
 
-it("never asks a PC for a repository's checkouts for a watching device (#2250)", async () => {
+it("asks a PC for a repository's checkouts with the PC's credential (#2250)", async () => {
   const url = "http://127.0.0.1/api/machines/pc1/worktree/list?workspace_id=w1";
-  const watched = await handleMachineRequest(new Request(url), manager, undefined, undefined, true);
-  expect([watched.status, ((await watched.json()) as { error: { code: string } }).error.code]).toEqual([403, "read_only"]);
   expect(worktreesAsked).toEqual([]);
-  // a driving device gets the PC's answer
   const driven = await handleMachineRequest(new Request(url), manager);
   expect([driven.status, JSON.stringify(await driven.json()).includes("SECRET")]).toEqual([200, true]);
   expect(worktreesAsked).toEqual(["/api/worktree/list"]);
@@ -246,7 +214,7 @@ it("forwards a repository diff or history read with its query and the bridge's o
   const routes = ["diff/files", "diff/file", "diff/refs", "git/log", "git/branches", "git/show"];
   for (const route of routes) {
     const response = await handleMachineRequest(new Request(`http://127.0.0.1/api/machines/pc1/workspace/${route}${search}`, {
-      headers: { cookie: "ovis_token=browser-secret; ovis_device=device-secret", authorization: "Bearer browser-secret", "x-forwarded-for": "203.0.113.9" },
+      headers: { cookie: "ovis_token=browser-secret", authorization: "Bearer browser-secret", "x-forwarded-for": "203.0.113.9" },
     }), manager);
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toBeNull();
@@ -266,40 +234,20 @@ it("forwards a repository diff or history read with its query and the bridge's o
   expect(diffAsked.length).toBe(before + routes.length);
 });
 
-it("gives a watching device a PC's plan card without Claude's plan file, even from a PC that ignores the ask", async () => {
-  const before = promptAsked.length;
-  const poll = async (pane: string, readOnly: boolean) => {
-    const response = await handleMachineRequest(new Request(`http://127.0.0.1/api/machines/pc1/pane/prompt?pane_id=${pane}`), manager, undefined, undefined, readOnly);
-    expect(response.status).toBe(200);
-    return (await response.json()) as { prompt: Record<string, unknown> };
-  };
-  for (const pane of ["w1%3Ap1", "old"]) {
-    const watched = await poll(pane, true);
-    expect(watched.prompt).toMatchObject({ kind: "plan", question: "Would you like to proceed?", options: [{ label: "Yes", description: null }] });
-    expect(watched.prompt).not.toHaveProperty("plan_file");
-    expect(JSON.stringify(watched)).not.toContain("secret step");
-  }
-  // a device that can drive still gets the whole plan
-  expect((await poll("w1%3Ap1", false)).prompt).toMatchObject({ plan_file: "/home/u/.claude/plans/p.md", body: "1. A secret step from the plan file." });
-  expect(promptAsked.slice(before)).toEqual(["0", "0", null]);
-});
-
 it("passes a PC's session on without the token values this server's sidebar rows hide (#2160)", async () => {
   const rows = agentRowTokens(Bun.TOML.parse(`[ui.sidebar.agents]\nrows = [[{ token = "$quota", rules = [{ starts_with = "off", hide = true }] }, "$eta"]]`));
   const sidebar = { get: () => rows, subscribe: () => () => undefined };
-  for (const readOnly of [true, false]) {
-    const response = await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session"), manager, undefined, undefined, readOnly, sidebar);
-    expect(response.status).toBe(200);
-    const text = await response.text();
-    expect(text).not.toContain("off · private");
-    expect((JSON.parse(text) as { snapshot: { panes: { tokens: unknown }[] } }).snapshot.panes[0]!.tokens).toEqual({ eta: "soon" });
-  }
+  const response = await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session"), manager, undefined, sidebar);
+  expect(response.status).toBe(200);
+  const text = await response.text();
+  expect(text).not.toContain("off · private");
+  expect((JSON.parse(text) as { snapshot: { panes: { tokens: unknown }[] } }).snapshot.panes[0]!.tokens).toEqual({ eta: "soon" });
   // any other method the PC answers with a body is filtered too (its session route takes them all)
-  const asked = await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session", { method: "OPTIONS", headers: { "x-herdr-machine": "1" } }), manager, undefined, undefined, true, sidebar);
+  const asked = await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session", { method: "OPTIONS", headers: { "x-herdr-machine": "1" } }), manager, undefined, sidebar);
   expect(await asked.text()).not.toContain("off · private");
   // a HEAD has no body to filter: it is answered as before
-  expect((await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session", { method: "HEAD" }), manager, undefined, undefined, true, sidebar)).status).toBe(200);
+  expect((await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session", { method: "HEAD" }), manager, undefined, sidebar)).status).toBe(200);
   // a server whose config names no rows passes the session on whole
-  const whole = await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session"), manager, undefined, undefined, true, { get: () => null, subscribe: () => () => undefined });
+  const whole = await handleMachineRequest(new Request("http://127.0.0.1/api/machines/pc1/session"), manager, undefined, { get: () => null, subscribe: () => () => undefined });
   expect(await whole.text()).toContain("off · private");
 });

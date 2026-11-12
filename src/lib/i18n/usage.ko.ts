@@ -95,4 +95,5 @@ export const USAGE_KO: Record<string, string> = {
   "Limit resets": "한도 초기화권",
   "Expires in {time}": "{time} 후 만료",
   "{n} left": "{n}회 남음",
+  "Sign in again": "다시 로그인",
 };

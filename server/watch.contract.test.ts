@@ -85,7 +85,7 @@ describe("WebSocket read-only live watch", () => {
   }
 
   beforeAll(async () => {
-    bridge = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", machines: false, tailscaleOwner: null });
+    bridge = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "", machines: false });
     const created = await herdrRpc<{ workspace: { workspace_id: string }; root_pane: { pane_id: string } }>(
       "workspace.create", { label: "ovis-test-watch", cwd: tmpdir(), focus: false },
     );

@@ -1288,7 +1288,7 @@ describe("Pi stat-keyed streaming reader", () => {
     const snapshot = async () => ({ workspaces: [{ workspace_id: "w" }], tabs: [{ workspace_id: "w", tab_id: "t", number: 1 }], panes: [{ tab_id: "t", cwd: process.cwd() }] }) as unknown as SessionSnapshot;
     const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => {
       const url = new URL(request.url);
-      return url.pathname === "/ping" ? new Response("pong") : handleSessionHistoryRequest(request, url, { readOnly: false, stores: f.stores, snapshot });
+      return url.pathname === "/ping" ? new Response("pong") : handleSessionHistoryRequest(request, url, { stores: f.stores, snapshot });
     } });
     const origin = `http://127.0.0.1:${server.port}`;
     const url = `${origin}/api/sessions/history?workspace_id=w&agent=pi`;

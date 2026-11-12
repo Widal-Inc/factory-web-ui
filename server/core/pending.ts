@@ -185,7 +185,7 @@ export function createPendingDelivery({ options, clients, attachments, sight, se
   const receiptKeys = new WeakMap<Client, Map<string, string>>();
   const resumeKey = (client: Client, paneId: string): string | undefined => {
     const id = client.data.attached.get(paneId)?.receiptResumeId;
-    return id ? JSON.stringify([client.data.deviceId ?? null, id]) : undefined;
+    return id ? id : undefined;
   };
   const prunePi = (): void => {
     const cutoff = Date.now() - PI_RESUME_MS;

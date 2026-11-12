@@ -569,14 +569,6 @@ try {
   await page.screenshot({ path: join(evidence, "remote-404.png") });
   await page.keyboard.press("Escape");
   console.log("PASS a bridge answering 404 hides the menu item");
-  // a device that only watches is refused the list on its own PC too: the menu does not offer it
-  await page.evaluate(() => { window.qa.machine("local"); window.qa.watch(true); });
-  await row("w1").waitFor();
-  const watchMenu = await openMenu("w1");
-  assert.ok(!(await watchMenu.getByRole("menuitem").allTextContents()).includes("Earlier sessions…"), "no Earlier sessions for a device that only watches");
-  await page.keyboard.press("Escape");
-  await page.evaluate(() => window.qa.watch(false));
-  console.log("PASS a device that only watches is not offered the list");
   writeFileSync(join(evidence, "request-log.txt"), [
     "POST /api/tab/create bodies, in order (the double click on Resume sent the one below):",
     ...tabCreates.map((body, index) => `${index + 1}. ${JSON.stringify(body)}`),

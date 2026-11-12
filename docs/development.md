@@ -156,6 +156,12 @@ bun run check run bun test --timeout 15000 ./server/api.contract.test.ts   # one
 bun run check run --build bun scripts/ui-regression.ts                     # build and browser script under the same lock
 ```
 
+The terminal shortcuts, input lifecycle and Safari, iPad and Linux native-event replays run as separate
+scripts in both `test:ui` and the CI browser lane. Their existing standalone entrypoints own their
+fixtures and receive the same per-script watchdog as the core UI checks. A healthy sequence of
+terminal reloads must not consume the core script's remaining deadline. Run one replay directly
+with, for example, `bun run check run --build bun scripts/terminal-safari-ime-regression.ts`.
+
 `fast` needs no herdr. The other modes run on a herdr of their own: its config, its plugin state
 and Widal Factory's state live in a directory made for the run (`XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
 `OVIS_STATE_DIR`), under a session name made for the run. Nothing reads your herdr config,

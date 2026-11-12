@@ -9,7 +9,7 @@ afterEach(() => mock.restore());
 type Told = { type: string; id?: number; pane_id?: string; ok?: boolean; code?: string };
 
 function connection(told: Told[]): Client {
-  return { data: connectionData({ deviceId: undefined, readOnly: false }), readyState: WebSocket.OPEN, send: (raw: string) => { told.push(JSON.parse(raw)); return 1; }, getBufferedAmount: () => 0, close: () => {} } as unknown as Client;
+  return { data: connectionData({}), readyState: WebSocket.OPEN, send: (raw: string) => { told.push(JSON.parse(raw)); return 1; }, getBufferedAmount: () => 0, close: () => {} } as unknown as Client;
 }
 
 /**

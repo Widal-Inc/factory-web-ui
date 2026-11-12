@@ -97,7 +97,7 @@ setInterval(() => {}, 1 << 30);
   await ready;
 
   server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(state, "server"),
-    tailscaleOwner: null, usage: new UsageService(undefined, []) });
+    usage: new UsageService(undefined, []) });
   browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
 
   // The face arrives soon after the page asks for it (1x and 2x): the pane is attached at the face's

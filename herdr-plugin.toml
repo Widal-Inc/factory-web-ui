@@ -85,31 +85,3 @@ title = "Ovis status"
 contexts = ["workspace"]
 command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/plugin.ps1", "status"]
 platforms = ["windows"]
-
-[[panes]]
-id = "phone"
-title = "Phone setup"
-placement = "zoomed"
-command = ["sh", "scripts/with-bun.sh", "scripts/plugin.ts", "phone-setup"]
-platforms = ["linux", "macos"]
-
-[[panes]]
-id = "phone-windows"
-title = "Phone setup"
-placement = "zoomed"
-command = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/plugin.ps1", "phone-setup"]
-platforms = ["windows"]
-
-[[actions]]
-id = "phone"
-title = "Phone setup"
-contexts = ["workspace"]
-command = ["herdr", "plugin", "pane", "open", "--plugin", "devswha.ovis", "--entrypoint", "phone", "--placement", "zoomed", "--focus"]
-platforms = ["linux", "macos"]
-
-[[actions]]
-id = "phone-windows"
-title = "Phone setup"
-contexts = ["workspace"]
-command = ["herdr", "plugin", "pane", "open", "--plugin", "devswha.ovis", "--entrypoint", "phone-windows", "--placement", "zoomed", "--focus"]
-platforms = ["windows"]

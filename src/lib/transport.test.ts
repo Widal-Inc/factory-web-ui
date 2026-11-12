@@ -1,16 +1,15 @@
 import { afterEach, expect, it } from "bun:test";
 import { apiFetch } from "./api-request-id.ts";
-import { fetchHealth, requestRelay } from "./api.ts";
-import type { RelayStatus } from "../../shared/protocol.ts";
+import { fetchHealth } from "./api.ts";
 import { abandonNativeReads, getTransport, nativeTransport, serverResourceUrl, setTransport, type Transport } from "./transport.ts";
 
 function testTransport(fetch: Transport["fetch"]): Transport {
   return {
-    kind: "relay",
+    kind: "custom",
     fetch,
     openSocket: () => { throw new Error("no socket in this test"); },
     openEventSource: () => { throw new Error("no event stream in this test"); },
-    resourceUrl: (path) => `relay:${path}`,
+    resourceUrl: (path) => `custom:${path}`,
   };
 }
 
@@ -24,7 +23,7 @@ it("the native transport loads a server path from the path itself", () => {
 
 it("only server paths go to the transport for an address", () => {
   const transport = testTransport(() => Promise.reject(new Error("unused")));
-  expect(serverResourceUrl("/api/fs/file?path=a", transport)).toBe("relay:/api/fs/file?path=a");
+  expect(serverResourceUrl("/api/fs/file?path=a", transport)).toBe("custom:/api/fs/file?path=a");
   for (const url of ["data:image/png;base64,AAAA", "blob:http://localhost/1", "https://other.example/api/x.png", "/?read=a.md"]) {
     expect(serverResourceUrl(url, transport)).toBe(url);
   }
@@ -46,28 +45,10 @@ it("setTransport swaps what apiFetch sends through", async () => {
 
 it("a transport that refuses makes the API call reject with its error", async () => {
   // Given
-  const refused = new Error("relay unreachable");
+  const refused = new Error("transport unreachable");
   setTransport(testTransport(() => Promise.reject(refused)));
   // When / Then
   await expect(fetchHealth()).rejects.toBe(refused);
-});
-
-it("relay controls use the selected transport even for a refusal carrying relay status", async () => {
-  // Given
-  const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
-  const status: RelayStatus = { phase: "off", relay: "wss://relay.test", app: "https://app.test", sessions: 0, blocked: "serve_only", error: null };
-  setTransport(testTransport(async (input, init) => {
-    calls.push({ input, init });
-    return Response.json(status, { status: 409 });
-  }));
-  // When
-  const result = await requestRelay("start");
-  // Then
-  expect(result).toEqual(status);
-  expect(calls).toHaveLength(1);
-  expect(calls[0]?.input).toBe("/api/relay/start");
-  expect(calls[0]?.init?.method).toBe("POST");
-  expect(new Headers(calls[0]?.init?.headers).get("x-herdr-update")).toBe("1");
 });
 
 it("gives up the reads in flight on the browser's own connections, not a write nor a read sent after", async () => {

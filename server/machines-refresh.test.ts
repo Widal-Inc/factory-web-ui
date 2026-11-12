@@ -79,7 +79,7 @@ function responses() {
   };
 }
 
-async function fixture(options: { bootId?: string; now?: () => number; serverId?: () => string | undefined; moveOfferMs?: { idle: number; active: number } } = {}) {
+async function fixture(options: { bootId?: string; now?: () => number; moveOfferMs?: { idle: number; active: number } } = {}) {
   const root = mkdtempSync(join(tmpdir(), "herdr-machine-refresh-"));
   const path = join(root, "herdr.sock");
   const local = responses();
@@ -139,7 +139,7 @@ type TestRuntime = {
   retry?: ReturnType<typeof setTimeout>;
 };
 
-async function remoteFixture(options: { bootId?: string; now?: () => number; serverId?: () => string | undefined; moveOfferMs?: { idle: number; active: number } } = {}) {
+async function remoteFixture(options: { bootId?: string; now?: () => number; moveOfferMs?: { idle: number; active: number } } = {}) {
   const local = await fixture(options);
   /** the bridge's own /api/health; without one it answers as before (a snapshot, so no boot id) */
   let health: ((request: Request) => Response | Promise<Response>) | null = null;
@@ -878,28 +878,6 @@ describe("workspace order evidence through the manager", () => {
     expect(remoteOf(manager)?.snapshot).toMatchObject({ order_epoch: "R", read_seq: 0 });
   });
 
-  it("names each PC by the relay ID its own server has: this one's, and a remote one's from its health (#2876)", async () => {
-    const own = "ab".repeat(16), theirs = "cd".repeat(16);
-    const { manager, send, setHealth } = await remoteFixture({ serverId: () => own });
-    setHealth(() => Response.json({ ok: true, web_ui: { boot_id: "R", revision: null, server_id: theirs } }));
-    expect(manager.list()[0]?.server_id).toBe(own);
-    const proved = published(manager, (machines) => machines.some((machine) => machine.id === "remote" && machine.source_boot_id === "R"));
-    send({ type: "snapshot", snapshot: paired("R", 0) });
-    await proved;
-    expect(remoteOf(manager)?.server_id).toBe(theirs);
-  });
-
-  it("keeps an SSH PC's relay ID across a restart, so its alerts are known by it before it answers (#2876)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "herdr-machine-id-"));
-    const id = "0f0f0f0f-0000-4000-8000-000000000001", theirs = "cd".repeat(16);
-    writeFileSync(join(dir, "machines.json"), JSON.stringify([{ id, name: "Office", enabled: false, target: { destination: "office" }, server_id: theirs, snapshot: null }]));
-    const manager = new MachineManager(dir, { seed() {} } as unknown as PushService, new CompletionTracker(null));
-    cleanups.push(() => { manager.stop(); rmSync(dir, { recursive: true, force: true }); });
-    expect(manager.list().find((machine) => machine.id === id)?.server_id).toBe(theirs);
-    manager.patch(id, { name: "Office 2" });
-    expect(JSON.parse(readFileSync(join(dir, "machines.json"), "utf8"))[0].server_id).toBe(theirs);
-  });
-
   it("a connection's first epoch is published only once its health proves it", async () => {
     const { manager, send, setHealth } = await remoteFixture();
     const health = gatedHealth();
@@ -1277,8 +1255,8 @@ it("shows a connected PC's move to herdr-core on its roster, one read at a time,
   answer = { available: true, plan: { workspaces: [], panes: [], ready: true, revision: "r2" }, status: { state: "rolled_back", reason: `could not start ${secret}`, left: [{ pane_id: "w1:p1", agent: "claude", why: `${secret} is gone` }] } };
   await until(() => f.runtime.machine.runtime_move?.status.state === "rolled_back");
   expect(f.runtime.machine.runtime_move?.status).toEqual({ state: "rolled_back", left: 1 });
-  const watched = await handleMachineRequest(new Request("http://127.0.0.1/api/machines"), f.manager, undefined, undefined, true);
-  expect(await watched.text()).not.toContain("secret-project");
+  const roster = await handleMachineRequest(new Request("http://127.0.0.1/api/machines"), f.manager);
+  expect(await roster.text()).not.toContain("secret-project");
   // a move that ended is read every minute; a change sent from here reads it at once
   // a reason this version does not know is not carried: it could be any words of that PC's
   answer = { available: false, reason: `cannot move ${secret}`, status: { state: "idle" } };

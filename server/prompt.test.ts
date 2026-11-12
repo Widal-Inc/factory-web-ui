@@ -3125,9 +3125,9 @@ Claude has written up a plan and is ready to execute. Would you like to proceed?
     }
   }
 
-  async function poll(claudeTranscript?: (paneId: string) => string | null, readOnly?: boolean): Promise<InteractivePrompt | null> {
+  async function poll(claudeTranscript?: (paneId: string) => string | null): Promise<InteractivePrompt | null> {
     const url = new URL("http://127.0.0.1/api/pane/prompt?pane_id=p_1");
-    const response = await handlePromptRequest(new Request(url), url, { claudeTranscript, readOnly });
+    const response = await handlePromptRequest(new Request(url), url, { claudeTranscript });
     return ((await response!.json()) as { prompt: InteractivePrompt | null }).prompt;
   }
 
@@ -3141,29 +3141,6 @@ Claude has written up a plan and is ready to execute. Would you like to proceed?
       expect(filed).toMatchObject({ kind: "plan", plan_file: planFile });
       expect(filed?.id.startsWith(`${screen!.id}.`)).toBe(true);
       expect(filed?.body).toContain("1. The first step, gone from the pane.");
-    });
-  }, 4_000);
-
-  test("gives a watch-only requester the screen's card, without the plan file's text or path", async () => {
-    await planHerdr(async (transcript) => {
-      const screen = await poll();
-      const watched = await poll(() => transcript, true);
-      expect(watched).toMatchObject({ kind: "plan", id: screen!.id });
-      expect(watched?.plan_file).toBeUndefined();
-      expect(watched?.body).not.toContain("The first step");
-      expect(watched?.body).toContain("The last step that fits the pane.");
-    });
-  }, 4_000);
-
-  test("gives a connection server's plan=0 ask the screen's card, as for a watching device", async () => {
-    await planHerdr(async (transcript) => {
-      const screen = await poll();
-      const url = new URL("http://127.0.0.1/api/pane/prompt?pane_id=p_1&plan=0");
-      const response = await handlePromptRequest(new Request(url), url, { claudeTranscript: () => transcript });
-      const asked = ((await response!.json()) as { prompt: InteractivePrompt | null }).prompt;
-      expect(asked).toMatchObject({ kind: "plan", id: screen!.id });
-      expect(asked?.plan_file).toBeUndefined();
-      expect(asked?.body).not.toContain("The first step");
     });
   }, 4_000);
 

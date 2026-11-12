@@ -3,7 +3,7 @@ import { REVISION, type UpdateStatus, INSTALL_ID } from "../shared/update.ts";
 import { discard, readCappedJson, REMOTE_LIMITS } from "./remote-json.ts";
 
 /**
- * Another PC's own Ovis updating itself, asked from here through its connection (a relay PC's, or an SSH PC's
+ * Another PC's own Ovis updating itself, asked from here through its connection (an SSH PC's
  * tunnel to its own server): what it offers, and following its install until it answers on the new release.
  * Nothing of it is replaced from here; its own updater installs the release it offers, by revision.
  */

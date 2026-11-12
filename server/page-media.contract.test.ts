@@ -10,7 +10,7 @@ const fromPage = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors", 
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "herdr-page-media-"));
-  const server = createServer({ port: 0, stateDir: join(root, "state"), token: "test-page-media", tailscaleOwner: null });
+  const server = createServer({ port: 0, stateDir: join(root, "state"), token: "test-page-media" });
   const base = `http://127.0.0.1:${server.port}`;
   const bytes = 9 * 1024 * 1024;
   writeFileSync(join(root, "clip.mp4"), "");
@@ -55,61 +55,6 @@ it("an address the page passes on plays for no other client, and ends when that 
     expect((await fetch(`${base}${address}`, { headers: fromPage })).status).toBe(200);
     const signedOut = await fetch(`${base}/api/auth`, { method: "DELETE", headers: { authorization: "Bearer test-page-media", origin: base } });
     expect(signedOut.status).toBe(204);
-    expect((await fetch(`${base}${address}`, { headers: fromPage })).status).toBe(404);
-  } finally { close(); }
-});
-
-it("revoking a paired device ends the page media its renders were given", async () => {
-  const { base, render, close } = fixture();
-  const admin = { authorization: "Bearer test-page-media", "x-herdr-machine": "1", "content-type": "application/json" };
-  try {
-    const { code } = await (await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: admin })).json() as { code: string };
-    const paired = await fetch(`${base}/api/devices/pair`, { method: "POST", headers: { "x-herdr-machine": "1", "content-type": "application/json" }, body: JSON.stringify({ code, label: "phone" }) });
-    expect(paired.status).toBe(204);
-    const cookie = paired.headers.get("set-cookie")!.split(";")[0]!;
-    const { address } = await render({ cookie });
-    expect((await fetch(`${base}${address}`, { headers: fromPage })).status).toBe(200);
-    const { devices } = await (await fetch(`${base}/api/devices`, { headers: admin })).json() as { devices: { id: string; label: string }[] };
-    const phone = devices.find((device) => device.label === "phone")!;
-    expect((await fetch(`${base}/api/devices/${phone.id}`, { method: "DELETE", headers: admin })).status).toBe(204);
-    expect((await fetch(`${base}${address}`, { headers: fromPage })).status).toBe(404);
-  } finally { close(); }
-});
-
-it("revoking every device ends the page media each device's renders were given, and not the token's", async () => {
-  const { base, render, close } = fixture();
-  const admin = { authorization: "Bearer test-page-media", "x-herdr-machine": "1", "content-type": "application/json" };
-  try {
-    const pair = async (label: string) => {
-      const { code } = await (await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: admin })).json() as { code: string };
-      const paired = await fetch(`${base}/api/devices/pair`, { method: "POST", headers: { "x-herdr-machine": "1", "content-type": "application/json" }, body: JSON.stringify({ code, label }) });
-      expect(paired.status).toBe(204);
-      return paired.headers.get("set-cookie")!.split(";")[0]!;
-    };
-    const phone = await render({ cookie: await pair("phone") });
-    const tablet = await render({ cookie: await pair("tablet") });
-    const owner = await render();
-    for (const { address } of [phone, tablet, owner]) expect((await fetch(`${base}${address}`, { headers: fromPage })).status).toBe(200);
-    const revoked = await fetch(`${base}/api/devices/revoke-all`, { method: "POST", headers: admin });
-    expect(revoked.status).toBe(200);
-    expect(await revoked.json()).toEqual({ revoked: 2 });
-    expect((await fetch(`${base}${phone.address}`, { headers: fromPage })).status).toBe(404);
-    expect((await fetch(`${base}${tablet.address}`, { headers: fromPage })).status).toBe(404);
-    expect((await fetch(`${base}${owner.address}`, { headers: fromPage })).status).toBe(200);
-  } finally { close(); }
-});
-
-it("signing out ends page media rendered by a browser holding both the token and a device cookie", async () => {
-  const { base, render, close } = fixture();
-  const admin = { authorization: "Bearer test-page-media", "x-herdr-machine": "1", "content-type": "application/json" };
-  try {
-    const { code } = await (await fetch(`${base}/api/devices/pair/start`, { method: "POST", headers: admin })).json() as { code: string };
-    const paired = await fetch(`${base}/api/devices/pair`, { method: "POST", headers: { "x-herdr-machine": "1", "content-type": "application/json" }, body: JSON.stringify({ code, label: "laptop" }) });
-    expect(paired.status).toBe(204);
-    const both = { authorization: "Bearer test-page-media", cookie: paired.headers.get("set-cookie")!.split(";")[0]! };
-    const { address } = await render(both);
-    expect((await fetch(`${base}${address}`, { headers: fromPage })).status).toBe(200);
-    expect((await fetch(`${base}/api/auth`, { method: "DELETE", headers: { ...both, origin: base } })).status).toBe(204);
     expect((await fetch(`${base}${address}`, { headers: fromPage })).status).toBe(404);
   } finally { close(); }
 });

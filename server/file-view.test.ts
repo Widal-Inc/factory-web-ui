@@ -56,27 +56,6 @@ describe("file view", () => {
   });
   const temp = () => { const root = mkdtempSync(join(tmpdir(), "herdr-file-view-")); roots.push(root); return root; };
 
-  it("streams relay files with a length and bounded chunks without Bun.serve sizing the body", async () => {
-    const root = temp();
-    const path = join(root, "relay.bin");
-    writeFileSync(path, new Uint8Array(STREAM_CHUNK_BYTES * 3 + 1));
-    const info = fileInfo(path);
-    if (!info) throw new Error("fixture missing");
-    const response = await fileResponse(info, false, false, null, null, undefined, null, true);
-    expect(response.headers.get("content-length")).toBe(String(info.size));
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("file body missing");
-    let bytes = 0;
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      expect(next.value.byteLength).toBeLessThanOrEqual(STREAM_CHUNK_BYTES);
-      bytes += next.value.byteLength;
-    }
-    reader.releaseLock();
-    expect(bytes).toBe(info.size);
-  });
-
   it("resolves absolute, ~ and pane-relative paths", () => {
     expect(resolveFilePath("/a/b.txt", "/work")).toBe("/a/b.txt");
     expect(resolveFilePath("~/x.png", null)).toBe(join(homedir(), "x.png"));
@@ -231,7 +210,7 @@ describe("file view", () => {
       `<img id="img" src="huge.png"><video id="rooted" src="/etc/hosts"></video>`,
     ].join(""));
     const source = "http://127.0.0.1:7317/api/fs/page-media/";
-    const media = { source, client: "10.0.0.2", device: "phone" };
+    const media = { source, client: "10.0.0.2" };
     const page = await fileResponse(fileInfo(join(site, "report.html"))!, false, true, media);
     const policy = page.headers.get("content-security-policy")!;
     // media from that one path, and still nothing else from this server or the web
@@ -299,7 +278,7 @@ describe("file view", () => {
     const root = temp();
     writeFileSync(join(root, "clip.mp4"), Buffer.alloc(9 * 1024 * 1024, 7));
     writeFileSync(join(root, "page.html"), `<video src="clip.mp4"></video>`);
-    const html = await (await fileResponse(fileInfo(join(root, "page.html"))!, false, true, { source: "http://127.0.0.1:1/api/fs/page-media/", client: null, device: null })).text();
+    const html = await (await fileResponse(fileInfo(join(root, "page.html"))!, false, true, { source: "http://127.0.0.1:1/api/fs/page-media/", client: null })).text();
     const token = /page-media\/([A-Za-z0-9_-]{32})/.exec(html)![1]!;
     const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => pageMediaResponse(token, null, request) ?? new Response(null, { status: 404 }) });
     try {
@@ -321,7 +300,7 @@ describe("file view", () => {
     return join(root, name);
   };
   const tokensOf = (html: string): string[] => [...html.matchAll(/page-media\/([A-Za-z0-9_-]{32})/g)].map((match) => match[1]!);
-  const owner = (client: string | null, device: string | null = null) => ({ source: "https://pc.example.ts.net/api/fs/page-media/", client, device });
+  const owner = (client: string | null) => ({ source: "https://pc.example.ts.net/api/fs/page-media/", client });
 
   it("ends a page's media address a fixed time after its render, however often it plays", async () => {
     const root = temp();
@@ -344,49 +323,42 @@ describe("file view", () => {
     expect(await plays(token!, "10.0.0.2")).toBe(true);
   });
 
-  it("drops a device's page media when it is revoked, and a client's when it signs out", async () => {
+  it("drops a client's page media when it signs out, and no other client's", async () => {
     const root = temp();
     const page = fileInfo(streamedPage(root))!;
-    const [phone] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.2", "phone"))).text());
-    const [laptop] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.3", "laptop"))).text());
+    const [laptop] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.3"))).text());
     const [shared] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.4"))).text());
-    forgetPageMedia({ device: "phone" });
-    expect(pageMediaResponse(phone!, "10.0.0.2")).toBeNull();
     expect(await plays(laptop!, "10.0.0.3")).toBe(true);
     forgetPageMedia({ client: "10.0.0.4" });
     expect(pageMediaResponse(shared!, "10.0.0.4")).toBeNull();
     expect(await plays(laptop!, "10.0.0.3")).toBe(true);
   });
 
-  it("keeps no page media for a device or client forgotten while its page was being drawn", async () => {
+  it("keeps no page media for a client that signed out while its page was being drawn", async () => {
     const root = temp();
     const page = fileInfo(streamedPage(root))!;
-    // the render runs as a file task, after this turn: the device is revoked and the client signs out meanwhile
-    const revoked = fileResponse(page, false, true, owner("10.0.0.2", "phone"));
+    // the render runs as a file task, after this turn: the client signs out meanwhile
     const signedOut = fileResponse(page, false, true, owner("10.0.0.4"));
-    const kept = fileResponse(page, false, true, owner("10.0.0.3", "laptop"));
-    forgetPageMedia({ device: "phone" });
+    const kept = fileResponse(page, false, true, owner("10.0.0.3"));
     forgetPageMedia({ client: "10.0.0.4" });
-    const [phone] = tokensOf(await (await revoked).text());
     const [shared] = tokensOf(await (await signedOut).text());
     const [laptop] = tokensOf(await (await kept).text());
-    expect(pageMediaResponse(phone!, "10.0.0.2")).toBeNull();
     expect(pageMediaResponse(shared!, "10.0.0.4")).toBeNull();
     expect(await plays(laptop!, "10.0.0.3")).toBe(true);
   });
 
-  it("keeps no page media for a device revoked while its request was still finding the page", async () => {
+  it("keeps no page media for a client that signed out while its request was still finding the page", async () => {
     const root = temp();
     const page = fileInfo(streamedPage(root))!;
-    // the request notes the forgetting before it looks for the file; the revocation lands during that look
+    // the request notes the forgetting before it looks for the file; the sign-out lands during that look
     const watch = watchPageMedia();
-    forgetPageMedia({ device: "phone" });
+    forgetPageMedia({ client: "10.0.0.2" });
     try {
-      const [phone] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.2", "phone"), null, watch)).text());
-      expect(pageMediaResponse(phone!, "10.0.0.2")).toBeNull();
+      const [signedOut] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.2"), null, watch)).text());
+      expect(pageMediaResponse(signedOut!, "10.0.0.2")).toBeNull();
     } finally { watch.done(); }
     // a request begun after it is not held to it
-    const [later] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.2", "phone"))).text());
+    const [later] = tokensOf(await (await fileResponse(page, false, true, owner("10.0.0.2"))).text());
     expect(await plays(later!, "10.0.0.2")).toBe(true);
   });
 
@@ -471,7 +443,7 @@ describe("page files read through the descriptor that was validated", () => {
   const windows = process.platform === "win32";
   const BIG = 9 * 1024 * 1024;
   const source = "http://127.0.0.1:1/api/fs/page-media/";
-  const owner = (device: string | null = null) => ({ source, client: null, device });
+  const owner = () => ({ source, client: null });
   const tokensOf = (html: string): string[] => [...html.matchAll(/page-media\/([A-Za-z0-9_-]{32})/g)].map((match) => match[1]!);
   const render = async (page: string, media: ReturnType<typeof owner> | null = owner()) => (await (await fileResponse(fileInfo(page)!, false, true, media)).text());
   const png = (text: string) => Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.from(text)]);
@@ -967,7 +939,7 @@ describe("page files read through the descriptor that was validated", () => {
       const bytes = Buffer.alloc(BIG);
       for (let index = 0; index < BIG; index += 1) bytes[index] = index % 251;
       writeFileSync(join(sub, "clip.mp4"), bytes);
-      const [token] = drawn(await render(page, owner("phone"))).tokens;
+      const [token] = drawn(await render(page, owner())).tokens;
       const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (request) => {
         const response = pageMediaResponse(token!, null, request);
         if (response === null) return new Response(null, { status: 404 });
@@ -1095,7 +1067,7 @@ describe("page files read through the descriptor that was validated", () => {
       }
     });
 
-    it("plays nothing, and opens nothing, once its device is revoked", async () => {
+    it("plays nothing, and opens nothing, once its client has signed out", async () => {
       const { opened, url, stop } = await serve();
       try {
         const before = await fetch(url, { headers: { range: "bytes=0-0" } });
@@ -1103,7 +1075,7 @@ describe("page files read through the descriptor that was validated", () => {
         await before.arrayBuffer();
         await closing(opened.at(-1)!);
         const count = opened.length;
-        forgetPageMedia({ device: "phone" });
+        forgetPageMedia({ client: null });
         expect((await fetch(url)).status).toBe(404);
         expect(opened).toHaveLength(count);
       } finally { stop(); }

@@ -181,7 +181,7 @@ describe("read finishes shared by the browsers of a server", () => {
     const manager = { subscribe: () => () => undefined } as unknown as MachineManager;
     const abort = new AbortController();
     const response = await handleMachineRequest(new Request("http://127.0.0.1:7317/api/machines/events", { signal: abort.signal }), manager,
-      undefined, undefined, false, undefined, store);
+      undefined, undefined, store);
     const reader = response.body!.getReader();
     const events: MachineEvent[] = [];
     let buffer = "";

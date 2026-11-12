@@ -33,7 +33,7 @@ describe("GET /api/fonts", () => {
     // a link could name any file this user may read
     writeFileSync(join(root, "secret.ttf"), "outside the folder");
     if (process.platform !== "win32") symlinkSync(join(root, "secret.ttf"), join(fonts, "Linked.ttf"));
-    server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: TOKEN, machines: false, sidecar: false, tailscaleOwner: null });
+    server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: TOKEN, machines: false, sidecar: false });
   });
   afterAll(() => {
     server.stop();
@@ -81,7 +81,7 @@ describe("GET /api/fonts", () => {
 
   it("lists nothing while the folder does not exist", async () => {
     const state = mkdtempSync(join(tmpdir(), "ovis-user-fonts-none-"));
-    const bare = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: TOKEN, machines: false, sidecar: false, tailscaleOwner: null });
+    const bare = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: TOKEN, machines: false, sidecar: false });
     try {
       const response = await fetch(`http://127.0.0.1:${bare.port}/api/fonts`, { headers: { authorization: `Bearer ${TOKEN}` } });
       expect(response.status).toBe(200);

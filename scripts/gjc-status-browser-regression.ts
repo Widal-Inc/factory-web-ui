@@ -161,7 +161,7 @@ try {
   const native = history(transcript), delayed = history(delayedTranscript);
   native.append(native.message("user", "Synthetic initial request"), native.message("assistant", "Synthetic GJC completed answer"));
   const paneId = await fixture(transcript), delayedPaneId = await fixture(delayedTranscript);
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), tailscaleOwner: null, usage: new UsageService(undefined, []) });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), usage: new UsageService(undefined, []) });
   origin = `http://127.0.0.1:${server.port}`;
   statusSocket = new WebSocket(`ws://127.0.0.1:${server.port}/ws`);
   statusSocket.addEventListener("message", (event) => {

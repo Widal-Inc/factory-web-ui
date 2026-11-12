@@ -65,7 +65,7 @@ afterEach(async () => {
 it("uses the shared transport for pane stats and resolves inline bytes once", async () => {
   const resources: string[] = [];
   let stats = 0;
-  setTransport({ ...nativeTransport, kind: "relay",
+  setTransport({ ...nativeTransport, kind: "custom",
     fetch: (input, init) => { stats++; return nativeTransport.fetch(input, init); },
     resourceUrl: (path) => { resources.push(path); return `blob:transport-image`; },
   });
@@ -92,7 +92,7 @@ it("keeps transport byte failures out of inline viewer controls and retries them
     )).length);
   };
   const bytes: Array<{ path: string; resolve: (url: string) => void; reject: (error: Error) => void }> = [];
-  setTransport({ ...nativeTransport, kind: "relay", resourceUrl: (path) => new Promise<string>((resolve, reject) => {
+  setTransport({ ...nativeTransport, kind: "custom", resourceUrl: (path) => new Promise<string>((resolve, reject) => {
     bytes.push({ path, resolve, reject });
   }) });
   const render = async (connected: boolean) => {
@@ -117,8 +117,8 @@ it("keeps transport byte failures out of inline viewer controls and retries them
 
   // When transport byte loads fail before an img can receive an error.
   await act(async () => {
-    bytes[0]!.reject(new TypeError("relay closed"));
-    bytes[1]!.reject(new TypeError("relay closed"));
+    bytes[0]!.reject(new TypeError("transport closed"));
+    bytes[1]!.reject(new TypeError("transport closed"));
   });
 
   // Then the inline fallback is one file action, not nested in an image action.

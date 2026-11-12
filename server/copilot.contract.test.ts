@@ -145,7 +145,7 @@ console.log("fixture ready");`);
   workspace = created.workspace.workspace_id;
   pane = created.root_pane.pane_id;
   await startFixture(pane, id);
-  app = createServer({ hostname: "127.0.0.1", port: 0, token: "", stateDir: join(root, "state"), tailscaleOwner: null });
+  app = createServer({ hostname: "127.0.0.1", port: 0, token: "", stateDir: join(root, "state") });
 });
 
 afterAll(async () => {

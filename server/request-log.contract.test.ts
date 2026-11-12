@@ -1,12 +1,10 @@
 import { expect, it, spyOn } from "bun:test";
 import { createConnection } from "node:net";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "./index.ts";
-import { DeviceStore } from "./devices.ts";
 import { MachineManager } from "./machines.ts";
-import { PortalService } from "./portal.ts";
 import { fileInfo, fileResponse } from "./file-view.ts";
 import { serveStatic } from "./static.ts";
 import { compressResponse } from "./compress.ts";
@@ -19,7 +17,7 @@ function records(root: string): Record<string, unknown>[] {
 it("attributes reserved setup job lookups to the dispatch branch rather than a machine proxy", async () => {
   // Given: job ids collide with valid proxy endpoint names.
   const root = mkdtempSync(join(tmpdir(), "herdr-request-route-dispatch-"));
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", tailscaleOwner: null, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", sidecar: false });
   try {
     for (const jobId of ["session", "agents", "settings", "events"]) {
       // When: the reserved setup branch answers the missing job.
@@ -34,7 +32,6 @@ it("attributes reserved setup job lookups to the dispatch branch rather than a m
     // Adjacent dispatch branches keep their own templates and never copy private segments.
     for (const [path, route, status] of [
       ["/api/machines/private-pc/pane/conversation", "/api/machines/:machine_id/pane/conversation", 503],
-      ["/api/devices/private-label", "/api/devices/:device_id", 400],
       ["/api/fs/page-media/private-token", "/api/fs/page-media/:media_id", 404],
       ["/api/pane/private-pane", "unmatched", 404],
       ["/api/machines/private-pc/private-path", "unmatched", 404],
@@ -87,10 +84,6 @@ function handshake(port: number, path: string, extra = ""): Promise<{ status: nu
 it("records exactly one completion for HTTP responses, early refusals, streams and both 101 paths", async () => {
   // Given: temporary state and a wire-level remote WebSocket stand-in, never SSH.
   const root = mkdtempSync(join(tmpdir(), "herdr-request-contract-"));
-  const store = new DeviceStore(root);
-  const watch = store.pair(store.startPairing().code, "fictional-watch-label", "watch");
-  if (watch === null) throw new Error("Watch fixture did not pair");
-  store.match(watch.token);
   const upstream = Bun.serve({
     port: 0, hostname: "127.0.0.1",
     fetch(request, server) {
@@ -102,7 +95,7 @@ it("records exactly one completion for HTTP responses, early refusals, streams a
   });
   const endpoint = spyOn(MachineManager.prototype, "endpoint").mockImplementation((id) =>
     id === "fictional-remote" ? { url: `http://127.0.0.1:${upstream.port}`, token: "fictional-remote" } : undefined);
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "fictional-owner", tailscaleOwner: null, sidecar: false });
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "fictional-owner", sidecar: false });
   const base = `http://127.0.0.1:${app.port}`;
   const auth = { authorization: "Bearer fictional-owner" };
   const upstreamPort = upstream.port;
@@ -124,10 +117,8 @@ it("records exactly one completion for HTTP responses, early refusals, streams a
     // When / Then: the exact outer boundary covers every response class.
     check(await fetch(`${base}/api/preferences`, { headers: auth }), 200);
     check(await fetch(`${base}/api/auth`, { method: "DELETE", headers: auth }), 204);
-    check(await fetch(`${base}/api/devices/pair`, { method: "POST", body: "{}" }), 400);
     check(await fetch(`${base}/api/session`), 401);
     check(await fetch(`${base}/api/preferences`, { method: "PUT", headers: { ...auth, origin: "https://other.example" }, body: "{}" }), 403);
-    check(await fetch(`${base}/api/fs/file?path=/fictional-secret`, { headers: { cookie: `ovis_device=${watch.token}` } }), 403);
     check(await fetch(`${base}/api/fictional-secret?token=fictional-secret`, { headers: auth }), 404);
     const shell = await fetch(`${base}/`, { headers: { ...auth, "accept-encoding": "identity" } });
     check(shell, 200);
@@ -182,41 +173,12 @@ it("records exactly one completion for HTTP responses, early refusals, streams a
         : ["client_request_id", "latency_ms", "method", "request_id", "route", "status"]);
     }
     const raw = readFileSync(join(root, "http-requests.jsonl"), "utf8");
-    for (const secret of [root, "fictional-secret", "fictional-watch-label", "fictional-owner", "fictional-remote", watch.token]) expect(raw).not.toContain(secret);
+    for (const secret of [root, "fictional-secret", "fictional-owner", "fictional-remote"]) expect(raw).not.toContain(secret);
   } finally {
     abort.abort();
     app.stop(); upstream.stop(true); endpoint.mockRestore();
     rmSync(root, { recursive: true, force: true });
     expect(existsSync(root)).toBe(false);
     console.log(`CLEANUP pid=${process.pid} ports=${app.port},${upstreamPort} removed=${root} sockets=closed readers=closed`);
-  }
-});
-
-for (const writable of [true, false]) it(`correlates portal startup failure with writable log ${writable}`, async () => {
-  // Given: a failed startup before dispatch, and a non-file log path.
-  const root = mkdtempSync(join(tmpdir(), "herdr-request-startup-"));
-  if (!writable) mkdirSync(join(root, "http-requests.jsonl"));
-  const portal = new PortalService({ stateDir: root });
-  const resume = spyOn(portal, "resume").mockRejectedValue(new Error("fictional-private-startup"));
-  const log = spyOn(console, "error").mockImplementation(() => {});
-  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir: root, token: "", tailscaleOwner: null, machines: false, sidecar: false, portal });
-  try {
-    // When
-    const response = await fetch(`http://127.0.0.1:${app.port}/api/preferences`);
-    // Then
-    expect(response.status).toBe(500);
-    const id = response.headers.get("x-request-id");
-    expect(id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(await response.json()).toMatchObject({ error: { message: `internal error (${id})` } });
-    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-    if (writable) {
-      expect(records(root)).toHaveLength(1);
-      expect(records(root)[0]).toMatchObject({ request_id: id, status: 500, route: "startup" });
-    }
-  } finally {
-    app.stop(); resume.mockRestore(); log.mockRestore();
-    rmSync(root, { recursive: true, force: true });
-    console.log(`CLEANUP pid=${process.pid} ports=${app.port} removed=${root} sockets=closed readers=closed`);
   }
 });

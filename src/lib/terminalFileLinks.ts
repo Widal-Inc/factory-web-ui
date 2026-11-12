@@ -1,14 +1,14 @@
 import type { IBuffer, ILink, ILinkDecorations, ILinkProvider } from "@xterm/xterm";
 import { fileUriPath } from "../../shared/fileUri.ts";
 import { isCodeName } from "./filePaths.ts";
-import { inMacApp, inNativeApp } from "./nativeApp.ts";
+import { inMacApp } from "./macApp.ts";
 
 /**
- * Whether this page can keep a browser tab to reuse. The iOS, Android, Mac and desktop apps hand an
+ * Whether this page can keep a browser tab to reuse. The Mac and desktop apps hand an
  * external address to the system browser, so the window they give back is never that tab.
  */
 export function canReuseExternalLinkTab(): boolean {
-  return !inNativeApp() && !inMacApp() && !(typeof navigator !== "undefined" && /\bElectron\//.test(navigator.userAgent));
+  return !inMacApp() && !(typeof navigator !== "undefined" && /\bElectron\//.test(navigator.userAgent));
 }
 
 /** what a name is made of: letters, digits and the marks that complete them (a decomposed `é` is two) */

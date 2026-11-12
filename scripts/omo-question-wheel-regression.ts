@@ -72,7 +72,7 @@ process.stdout.write(Array.from({ length: 400 }, (_, n) => "history " + n + "\\r
     fixtures.push({ pane, omo, log, transcript });
   }
   server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(state, "server"),
-    tailscaleOwner: null, usage: new UsageService(undefined, []) });
+    usage: new UsageService(undefined, []) });
   browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "en-US", hasTouch: true });
   await context.addInitScript(() => localStorage.setItem("ovis:settings", JSON.stringify({

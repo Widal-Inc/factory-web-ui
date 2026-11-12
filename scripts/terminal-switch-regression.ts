@@ -22,10 +22,13 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "ovis-terminal-switch-")));
 const evidence = process.env["UI_EVIDENCE_DIR"];
 if (evidence) mkdirSync(evidence, { recursive: true });
 const baseline = process.env["SWITCH_BASELINE"] === "1";
-const server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), usage: new UsageService(undefined, []) });
+const mirrored = process.env["SWITCH_MIRRORED"] === "1";
+const server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), usage: new UsageService(undefined, []), ...(mirrored ? { sidecar: false } : {}) });
 const browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
 let workspace: string | null = null;
 try {
+  const health = await (await fetch(`http://127.0.0.1:${server.port}/api/health`)).json() as { herdr: { terminal_attach: boolean; terminal_mirror?: boolean } };
+  assert.equal(health.herdr.terminal_attach, !mirrored, "this run requires its declared terminal mode; use SWITCH_MIRRORED=1 to check a runtime without a PTY host");
   const made = await workspaceCreate({ cwd: root, label: "terminal-switch-fixture" });
   workspace = made.workspace.workspace_id;
   const panes = [made.root_pane.pane_id];
@@ -62,6 +65,27 @@ try {
         await ready(id);
       };
       await ready(panes[0]!);
+      if (mirrored) {
+        // Mirrors have no attach stream or cached watch. Assert their visible screen path directly,
+        // including output produced while hidden, with the same desktop/phone and theme matrix.
+        for (let i = 0; i < 10; i++) {
+          const index = i % 2 === 0 ? 1 : 0;
+          await select(panes[index]!);
+          await frame(panes[index]!).locator(shownRows(), { hasText: `OVIS-SWITCH-${index}` }).waitFor({ state: "attached" });
+        }
+        const hidden = `OVIS-MIRROR-HIDDEN-${width}-${theme}`;
+        await paneSendText(panes[1]!, `printf '${hidden}\\n'\n`);
+        await select(panes[1]!);
+        await frame(panes[1]!).locator(shownRows(), { hasText: hidden }).waitFor({ state: "attached" });
+        await select(panes[0]!);
+        for (const id of panes.slice(2)) await select(id);
+        await frame(panes[1]!).waitFor({ state: "detached" });
+        assert.equal(await page.locator("[data-layout-pane]").count(), 4, "mirrors keep the four-tab bound");
+        assert.ok(!frames.some((sent) => sent.type === "watch"), "a mirror uses its screen, not cached attach watches");
+        assert.deepEqual(errors, []);
+        console.log(`PASS mirrored terminal switch, hidden output and eviction: ${width} ${theme}`);
+        continue;
+      }
       // A cold switch: the tab left behind starts its view only after the selected pane's attach
       const cold = frames.length;
       const viewStarted = Promise.withResolvers<void>();

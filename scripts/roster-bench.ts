@@ -37,7 +37,7 @@ else await bench();
 async function serve(stateDir: string): Promise<void> {
   const { createServer } = await import("../server/index.ts");
   const { UsageService } = await import("../server/usage.ts");
-  const server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir, tailscaleOwner: null, usage: new UsageService(undefined, []) });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir, usage: new UsageService(undefined, []) });
   const stats = (): ServerStats => {
     const cpu = process.cpuUsage();
     const memory = process.memoryUsage();

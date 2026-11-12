@@ -203,7 +203,6 @@ if ($server.running) {
                 $port = if ($scheme -eq 'https://') { '443' } else { '80' }
             }
             Write-Host "Ovis: from your own computer, run: ssh -L ${port}:127.0.0.1:${port} <this-pc>, then open http://127.0.0.1:${port} and click Install in the address bar"
-            Write-Host 'Ovis: Phone setup in herdr shows the Tailscale address when there is one'
         } elseif ($origin -match '^https?://(127\.0\.0\.1|localhost)(:\d+)?(?:/|$)') {
             Write-Host "Ovis: open $origin in your browser and click Install in the address bar"
         } else {
@@ -211,7 +210,6 @@ if ($server.running) {
         }
     }
 } else { Write-Host 'Ovis: starts with herdr. Open a new terminal and run: herdr' }
-Write-Host 'Ovis: open Phone setup in herdr for phone access.'
 
 # One gh api call: gh's exit code and the HTTP status GitHub answered with, or nothing when gh is
 # not there or does not answer in 10 seconds. A gh that hangs must not hold up an install that is done:

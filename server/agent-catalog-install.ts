@@ -4,7 +4,7 @@
  * by the agent's id and this PC's platform; a request never carries a command. It opens a terminal
  * tab and types the command into its shell, so every line shows and Ctrl+C stops it; nothing is run
  * in the background. What was installed is read again through GET /api/agent-catalog.
- * The dispatcher in index.ts runs the access gate first: a watching device cannot reach these.
+ * The dispatcher in index.ts runs the access gate first.
  */
 import { homedir } from "node:os";
 import { AGENT_CATALOG, catalogPlatform, commandProblems, type AgentCatalogEntry, type AgentTabStarted, type CatalogPlatform } from "../shared/agent-catalog.ts";

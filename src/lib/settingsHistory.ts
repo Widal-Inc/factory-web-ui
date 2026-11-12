@@ -132,7 +132,7 @@ function rewind(by: number): void {
     request.expired = true;
     if (request.reopened) request.claim = false;
   }, LANDING_MS);
-  // a sheet opened inside Settings closed a moment ago (Connect a phone, once the phone paired) and
+  // a sheet opened inside Settings closed a moment ago (Add a connection, once a PC was added) and
   // its entry, which copies the Settings entry under it, is still the current one: step over it too
   window.history.go(-by - (sheetStep.takeLeaving(window.history.state) ? 1 : 0));
 }

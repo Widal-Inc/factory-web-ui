@@ -258,4 +258,6 @@ export const COMPOSER_JA: Record<string, string> = {
   "Not sent: no agent is running in this pane. Your message stayed here.": "未送信: このペインではエージェントが動いていません。メッセージはここに残っています。",
   "1 comment": "コメント1件",
   "{count} comments": "コメント{count}件",
+  "Deny": "拒否",
+  "Approve": "承認",
 };

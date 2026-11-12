@@ -4,9 +4,9 @@
  * device's subscription is told once, over the pane and in Settings alike, repaired once from
  * Settings, and the line leaves on the success the repair proves. Then the states around it: a
  * refusal (no repair, Alerts opens Settings), a key mismatch, a denied permission, no push
- * support, the PC out of reach, a look still under way, and a test refused to a watching
- * device. No notification is sent to any real device; all files and HTTP traffic stay in this
- * disposable, loopback-only app, and no herdr session is opened.
+ * support, the PC out of reach and a look still under way. No notification is sent to any real
+ * device; all files and HTTP traffic stay in this disposable, loopback-only app, and no herdr
+ * session is opened.
  *
  * UI_EVIDENCE_DIR: push-health-<390|1440>-<light|dark>[-ko][-<state>].png and manifest.json.
  */
@@ -256,18 +256,6 @@ async function run(browser: Browser, origin: string, width: number, theme: Theme
         await capture(page, width, theme, language, "settings-end");
       }
       results[`${tag} retired-device-repair`] = { notices: 1, subscribeCalls: 3, testCalls: 1, cleared: true };
-
-      // a watching device: it may receive alerts, but its test is refused (403 read_only); the line says it can only
-      // watch, Send test becomes unavailable, nothing is registered and no banner appears
-      await page.evaluate(() => window.__push.refuse("POST /api/push/test", 403, "read_only"));
-      const registered = await count(page, "POST /api/push/subscribe");
-      await dialog.getByRole("button", { name: label("Send test"), exact: true }).click();
-      await hint(page).filter({ hasText: label("This device can only watch.") }).waitFor();
-      assert.equal(await count(page, "POST /api/push/subscribe"), registered, `${tag}: a refused test changes no registration`);
-      assert.equal(await page.locator(".update-notice.is-alerts").count(), 0);
-      assert.equal(await dialog.getByRole("button", { name: label("Send test"), exact: true }).isDisabled(), true, `${tag}: a watching device cannot send a test`);
-      await capture(page, width, theme, language, "observe");
-      await page.evaluate(() => window.__push.answerAgain("POST /api/push/test"));
       await closeSettings(page);
 
       // a subscription made for another server key: the longest line, repaired from the notice
@@ -353,7 +341,7 @@ async function run(browser: Browser, origin: string, width: number, theme: Theme
       assert.deepEqual(errors, []);
     } finally { await context.close(); }
   }
-  console.log(`PASS push health ${tag}: one notice over the pane and in Settings, repaired once, cleared on the proven push; refusal, key mismatch, missing, transient, denied, unsupported, offline, loading and a watching device's refused test`);
+  console.log(`PASS push health ${tag}: one notice over the pane and in Settings, repaired once, cleared on the proven push; refusal, key mismatch, missing, transient, denied, unsupported, offline and loading`);
 }
 
 const app = mkdtempSync(join(tmpdir(), "herdr-push-health-demo-"));

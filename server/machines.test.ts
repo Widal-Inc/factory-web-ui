@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 import { describeProgress } from "../src/lib/bridgeProgress.ts";
 import type { SetupJob } from "../shared/machines.ts";
-import type { PanePromptResponse } from "../shared/protocol.ts";
 import { paneNotificationTag } from "../shared/notify-policy.ts";
 import { BRIDGE_PROTOCOL, machinePath, paneStorageId, REMOTE_BUNDLE_VERSION } from "../shared/machines.ts";
 import { canSendSecret, sameOrigin, shellQuote, validateTarget } from "./machine-security.ts";
@@ -145,78 +144,6 @@ describe("independently managed bridge updates", () => {
 });
 
 describe("machine boundaries", () => {
-  for (const older of [false, true]) it(`strips command previews for observers while preserving ${older ? "older" : "current"} bridge responses`, async () => {
-    const dir = mkdtempSync(join(tmpdir(), "herdr-outcome-proxy-"));
-    const manager = new MachineManager(dir, {} as PushService, new CompletionTracker(null), async () => { throw new Error("fixture offline"); });
-    const answer: PanePromptResponse = { prompt: null, ...(older ? {} : { outcomes: [{
-      id: "send-1", pane_id: "pane-1", text: "/context", state: "accepted" as const, evidence: [],
-      preview: "fixture-preview", result_text: "fixture-result", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-20T00:00:00Z",
-    }] }) };
-    const bridge = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => Response.json(answer) });
-    const endpoint = spyOn(manager, "endpoint").mockReturnValue({ url: `http://127.0.0.1:${bridge.port}`, token: "fixture" });
-    try {
-      const request = new Request("http://localhost/api/machines/fixture/pane/prompt?pane_id=pane-1");
-      const watched = await (await handleMachineRequest(request, manager, undefined, undefined, true)).json() as PanePromptResponse;
-      expect(watched.prompt).toBeNull();
-      if (older) expect(watched.outcomes).toBeUndefined();
-      else {
-        expect(watched.outcomes?.[0]?.state).toBe("accepted");
-        expect(watched.outcomes?.[0]).not.toHaveProperty("preview");
-        expect(watched.outcomes?.[0]).not.toHaveProperty("result_text");
-        const owner = await (await handleMachineRequest(request, manager)).json() as PanePromptResponse;
-        expect(owner.outcomes?.[0]?.preview).toBe(answer.outcomes?.[0]?.preview);
-        expect(owner.outcomes?.[0]?.result_text).toBe(answer.outcomes?.[0]?.result_text);
-      }
-    } finally { endpoint.mockRestore(); bridge.stop(true); manager.stop(); rmSync(dir, { recursive: true, force: true }); }
-  });
-  it("redacts watched prompt after bounded read", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "herdr-watched-prompt-cap-"));
-    const manager = new MachineManager(dir, {} as PushService, new CompletionTracker(null), async () => { throw new Error("fixture offline"); });
-    const answer = {
-      prompt: { id: "prompt-1", agent: "claude", kind: "plan", title: "Plan", question: "Proceed?", body: "fixture-plan-text", options: [], multi_select: false, custom_option_index: null, plan_file: "/home/u/.claude/plans/fixture-plan.md" },
-      outcomes: [{ id: "send-1", pane_id: "pane-1", text: "/context", state: "accepted", evidence: [], preview: "fixture-preview", result_text: "fixture-result", created_at: "2026-10-20T00:00:00Z", updated_at: "2026-10-20T00:00:00Z" }],
-    } as PanePromptResponse;
-    let serve = () => new Response("{}");
-    const bridge = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => serve() });
-    const url = `http://127.0.0.1:${bridge.port}`;
-    const endpoint = spyOn(manager, "endpoint").mockReturnValue({ url, token: "fixture-token" });
-    let tracked = 0;
-    const track = spyOn(manager, "trackTerminal").mockImplementation(() => { tracked++; return () => { tracked--; }; });
-    const logged: string[] = [];
-    const error = spyOn(console, "error").mockImplementation((...args: unknown[]) => { logged.push(args.join(" ")); });
-    const watch = () => handleMachineRequest(new Request("http://localhost/api/machines/fixture/pane/prompt?pane_id=pane-1"), manager, undefined, undefined, true);
-    try {
-      // exactly at its 1 MiB the answer is still parsed, and loses the plan file and the previews
-      serve = () => new Response(padded(answer, MiB).stream);
-      const kept = await watch();
-      expect(kept.status).toBe(200);
-      const card = await kept.json() as PanePromptResponse;
-      expect(card.prompt).toMatchObject({ question: "Proceed?", body: null });
-      expect(card.prompt).not.toHaveProperty("plan_file");
-      expect(card.outcomes?.[0]).not.toHaveProperty("preview");
-      expect(card.outcomes?.[0]).not.toHaveProperty("result_text");
-      // one byte past it, and the answer is refused rather than passed on unredacted
-      const over = padded(answer, MiB + 32 * MiB);
-      serve = () => new Response(over.stream);
-      const refused = await watch();
-      expect(refused.status).toBe(502);
-      const tooLarge = await refused.text();
-      expect(JSON.parse(tooLarge).error.code).toBe("remote_response_too_large");
-      await within(over.cancelled);
-      // an answer that is not JSON cannot be redacted, so none of it is passed on
-      serve = () => new Response(`{"prompt":{"plan_file":"fixture-plan-secret","body":"fixture-plan-text"`);
-      const malformed = await watch();
-      expect(malformed.status).toBe(502);
-      const invalid = await malformed.text();
-      expect(JSON.parse(invalid).error.code).toBe("remote_response_invalid");
-      for (const text of [tooLarge, invalid, logged.join("\n")]) {
-        expect(text).not.toContain("fixture-plan");
-        expect(text).not.toContain("fixture-token");
-        expect(text).not.toContain(url);
-      }
-      expect(tracked).toBe(0);
-    } finally { error.mockRestore(); track.mockRestore(); endpoint.mockRestore(); bridge.stop(true); manager.stop(); rmSync(dir, { recursive: true, force: true }); }
-  });
   it("caps a buffered proxy answer and recovers on the next one", async () => {
     const dir = mkdtempSync(join(tmpdir(), "herdr-proxy-cap-"));
     const manager = new MachineManager(dir, {} as PushService, new CompletionTracker(null), async () => { throw new Error("fixture offline"); });
@@ -284,52 +211,6 @@ describe("machine boundaries", () => {
       expect(unchanged.headers.get("etag")).toBe('"v1"');
       expect(await unchanged.text()).toBe("");
     } finally { rest.resolve(); endpoint.mockRestore(); bridge.stop(true); manager.stop(); rmSync(dir, { recursive: true, force: true }); }
-  });
-  it("refuses a watching connection's writes to another PC before anything reaches that PC", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "herdr-watch-proxy-"));
-    const manager = new MachineManager(dir, {} as PushService, new CompletionTracker(null), async () => { throw new Error("fixture offline"); });
-    const hits: string[] = [];
-    const bridge = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => { hits.push(`${request.method} ${new URL(request.url).pathname}`); return Response.json({ ok: true, commands: [] }); } });
-    const endpoint = spyOn(manager, "endpoint").mockReturnValue({ url: `http://127.0.0.1:${bridge.port}`, token: "fixture" });
-    const ask = (method: string, path: string, readOnly: boolean) => handleMachineRequest(new Request(`http://localhost/api/machines/fixture/${path}`, {
-      method, headers: { origin: "http://localhost", "x-herdr-machine": "1", "content-type": "application/json" }, ...(method === "GET" ? {} : { body: "{}" }),
-    }), manager, undefined, undefined, readOnly);
-    try {
-      for (const [method, path] of [["POST", "pane/input"], ["POST", "tab/create"]] as const) {
-        const refused = await ask(method, path, true);
-        expect(refused.status, path).toBe(403);
-        expect((await refused.json() as { error: { code: string } }).error.code, path).toBe("read_only");
-      }
-      expect(hits).toEqual([]);
-      // the block is the access check's own rule (index.ts `mutating`): what it lets a watcher send goes through
-      expect((await ask("GET", "pane/read?pane_id=p", true)).status).toBe(200);
-      expect((await ask("OPTIONS", "pane/input", true)).status).not.toBe(403);
-      expect(hits).toEqual(["GET /api/pane/read", "OPTIONS /api/pane/input"]);
-      // a connection that may drive goes through
-      expect((await ask("POST", "pane/input", false)).status).toBe(200);
-      expect(hits).toEqual(["GET /api/pane/read", "OPTIONS /api/pane/input", "POST /api/pane/input"]);
-    } finally { endpoint.mockRestore(); bridge.stop(true); manager.stop(); rmSync(dir, { recursive: true, force: true }); }
-  });
-  it("refuses a watching connection another PC's folder commands before anything reaches that PC", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "herdr-watch-proxy-"));
-    const manager = new MachineManager(dir, {} as PushService, new CompletionTracker(null), async () => { throw new Error("fixture offline"); });
-    const hits: string[] = [];
-    const bridge = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => { hits.push(`${request.method} ${new URL(request.url).pathname}`); return Response.json({ ok: true, commands: [] }); } });
-    const endpoint = spyOn(manager, "endpoint").mockReturnValue({ url: `http://127.0.0.1:${bridge.port}`, token: "fixture" });
-    const ask = (method: string, path: string, readOnly: boolean) => handleMachineRequest(new Request(`http://localhost/api/machines/fixture/${path}`, {
-      method, headers: { origin: "http://localhost", "x-herdr-machine": "1", "content-type": "application/json" }, ...(method === "GET" ? {} : { body: "{}" }),
-    }), manager, undefined, undefined, readOnly);
-    try {
-      for (const [method, path] of [["GET", "agent/commands?agent=claude"]] as const) {
-        const refused = await ask(method, path, true);
-        expect(refused.status, path).toBe(403);
-        expect((await refused.json() as { error: { code: string } }).error.code, path).toBe("read_only");
-      }
-      expect(hits).toEqual([]);
-      // a connection that may drive goes through
-      expect((await ask("GET", "agent/commands?agent=claude", false)).status).toBe(200);
-      expect(hits).toEqual(["GET /api/agent/commands"]);
-    } finally { endpoint.mockRestore(); bridge.stop(true); manager.stop(); rmSync(dir, { recursive: true, force: true }); }
   });
   it("separates equal pane IDs while preserving historical local storage", () => {
     expect(paneStorageId("local", "p:1")).toBe("p:1");
@@ -1189,7 +1070,7 @@ describe("bridge verification failures", () => {
   /** a bridge whose herdr socket is `socket` */
   function bridge(socket: string): number {
     process.env["HERDR_SOCKET"] = socket;
-    const server = createServer({ port: 0, hostname: "127.0.0.1", token: TOKEN, stateDir: temp(), machines: false, registerBridge: false, tailscaleOwner: null });
+    const server = createServer({ port: 0, hostname: "127.0.0.1", token: TOKEN, stateDir: temp(), machines: false, registerBridge: false });
     stops.push(() => server.stop());
     return server.port!;
   }

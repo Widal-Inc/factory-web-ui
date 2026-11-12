@@ -27,7 +27,7 @@ export function validScroll(value: PaneScrollInfo | null | undefined): value is 
 export const SCROLL_POLL_BUSY_MS = 250;
 /** While output is all that moved and the view follows the bottom, a read only learns that the history
  * grew: this pace keeps the scroll bar current without a request every 250 ms for every busy pane (each one
- * is a round trip, and behind a metered relay a billed request). A key, wheel or drag that needs fresh
+ * is a round trip). A key, wheel or drag that needs fresh
  * metrics still asks at once. */
 export const SCROLL_POLL_FOLLOW_MS = 2000;
 /** Output after this long a quiet spell starts a burst (a program starting, one entering its alternate screen),

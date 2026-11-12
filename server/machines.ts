@@ -1,5 +1,5 @@
 import { authenticatedWebSocket } from "./remote-websocket.ts";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as tcpServer } from "node:net";
 import { hostname } from "node:os";
@@ -8,6 +8,7 @@ import { BRIDGE_PROTOCOL, LOCAL_MACHINE, OWN_UPDATE_OFFER, REMOTE_BUNDLE_VERSION
 import type { ServerMessage, SessionSnapshot, HerdrPane } from "../shared/protocol.ts";
 import type { PushService } from "./push.ts";
 import { alertStatus } from "../shared/notify-policy.ts";
+import { alertIdentity, savedAlertIdentity } from "./alert-identity.ts";
 import type { BridgeDescriptor } from "./bridge.ts";
 import { HerdrError, sessionSnapshot } from "./herdr/client.ts";
 import { ConnectionDiagnostics, transportFailureCode } from "./connection-diagnostics.ts";
@@ -24,31 +25,18 @@ import { DESKTOP_APP_UPDATES, REVISION, type UpdateStatus } from "../shared/upda
 import { discard, readCappedJson, REMOTE_LIMITS } from "./remote-json.ts";
 import { SshConnection, sshClient } from "./ssh.ts";
 import { WAITING_FOR_WINDOWS_LOGIN } from "./windows-herdr-start.ts";
-import { decodeOffer, SERVER_ID_PATTERN, isWssOrigin, type RelayOffer } from "../shared/relay-offer.ts";
-import { offerFromCode, TypedCodeError } from "../shared/relay-code-offer.ts";
-import { TailnetPcError, TailnetPcs, type TailnetPcsOptions } from "./tailnet-pcs.ts";
 import { sshCandidates, type SshCandidatesOptions } from "./ssh-candidates.ts";
 import { followOwnUpdate, offerFromStatus, readOwnStatus, cancelledWords, cancelOwnUpdate, installIdOf, OwnUpdateCancelled } from "./pc-update.ts";
 import { appRelease, INSTALLER, installPlanFor, PcInstaller, samePc, type InstallConnect, type InstallPlan } from "./pc-install.ts";
 import { warmSshAddresses } from "./ssh-address.ts";
 import { readMoveOffer } from "./remote-move.ts";
 
-import type { RelaySocket } from "../shared/relay-channel.ts";
-import { newRouteProbes, openRelayPcTunnel, RelayPcKey, RelayPcRefused, relayPcLabel, removeRelayPcKey, type RelayPcTunnel, type RouteProbes } from "./relay-pc.ts";
 import type { HcMachine, MachineBridge } from "./herdr-core/machine-bridge.ts";
 
-/** a PC keeps the six-digit code in its offer for 10 minutes at most (server/devices.ts) */
-const RELAY_FOUND_MS = 10 * 60_000;
-
-type StoredMachine = { id: string; name: string; enabled: boolean; snapshot?: SessionSnapshot | null }
-  & ({ kind?: "ssh"; target: SshTarget; server_id?: string } | { kind: "relay"; relay: NonNullable<Machine["relay"]> });
+type StoredMachine = { id: string; name: string; enabled: boolean; snapshot?: SessionSnapshot | null; kind?: "ssh"; target: SshTarget; server_id?: string };
 interface Runtime {
   machine: Machine;
   ssh?: SshConnection;
-  /** a PC added through the relay: its connection and loopback forward (server/relay-pc.ts) */
-  tunnel?: RelayPcTunnel;
-  /** when its earlier routes were last probed, kept across its tunnels (relay-pc.ts RouteProbes) */
-  routeProbes?: RouteProbes;
   /** another machine of this PC's herdr-core (kind "hc"): what the core calls it, and its server once started (herdr-core/machine-bridge.ts) */
   hc?: { id: string; name: string; bridge?: MachineBridge };
   endpoint?: { url: string; token: string };
@@ -150,7 +138,6 @@ const INSTALL_FROM_CARD = "This PC needs Ovis installed again over SSH, which ch
 export const OWN_UPDATES_AT_ONCE = 4;
 /** a setup job's phases once it has ended */
 const TERMINAL = new Set<SetupJob["phase"]>(["connected", "failed", "cancelled"]);
-const RELAY_PC_UPDATES = "A PC added through the relay runs its own Ovis, which updates itself: use Update on its card.";
 const JOBS_FULL = "Finish or cancel the current connection jobs first";
 /** connection jobs (setups and bridge updates) that may run at once */
 const SETUP_JOBS_AT_ONCE = 4;
@@ -365,9 +352,6 @@ export class MachineManager {
   private statePath: string;
   /** machines.json as this manager last wrote it (persist) */
   private written: string | undefined;
-  /** the PCs added through the relay, apart from machines.json (constructor) */
-  private relayStatePath: string;
-  private relayWritten: string | undefined;
   /** the state files that were not JSON at startup, by the name they were moved to (settings) */
   private setAside: string[] = [];
   private sshDir: string;
@@ -410,30 +394,13 @@ export class MachineManager {
   /** each PC waiting in Update all's queue, by the token of its one entry there: a stale entry (cancelled, then queued again) is not it */
   private updateQueued = new Map<string, symbol>();
   private moveOfferMs: { idle: number; active: number };
-  /** how a relay PC's connection reaches the relay; tests point it at a local one */
-  private relaySocket?: (url: string) => RelaySocket;
-  /** how a relay PC's connection dials that PC's direct carriers; tests point it at a local one */
-  private relayDirectSocket?: (url: string) => RelaySocket;
-  /**
-   * PCs typed codes found (relayFoundByCode), waiting for the person to match their IDs, by a random ticket only the
-   * asking window gets: each offer holds that PC's one-time code, so another client naming the PC's public ID takes none.
-   */
-  private foundByCode = new Map<string, { offer: RelayOffer; at: number }>();
-  /** this server's own relay ID, where it has one: the local PC's `server_id` */
-  private serverId?: () => string | undefined;
-  /** other PCs of this PC's Tailscale login, added through the relay with one tap (server/tailnet-pcs.ts) */
-  private readonly tailnet: TailnetPcs;
   /** where the SSH tab's list is read from (server/ssh-candidates.ts) */
   private readonly sshCandidateOptions: SshCandidatesOptions;
 
   constructor(readonly stateDir: string, private push: PushService, private completions: CompletionTracker, private readLocal: () => Promise<SessionSnapshot> = () => this.completions.readSnapshot(sessionSnapshot, labelOmoPanes),
-    options: { /** Settings -> Experimental -> PCs: start a replaced server again (PcInstaller) */ restoreReplaced?: () => boolean; bootId?: string; localFinishEpoch?: () => string; now?: () => number; ownUpdate?: { pollMs?: number; startMs?: number; checkMs?: number; offerMs?: number }; moveOfferMs?: { idle: number; active: number }; relaySocket?: (url: string) => RelaySocket; relayDirectSocket?: (url: string) => RelaySocket; serverId?: () => string | undefined; tailnet?: TailnetPcsOptions; sshCandidates?: SshCandidatesOptions } = {}) {
+    options: { /** Settings -> Experimental -> PCs: start a replaced server again (PcInstaller) */ restoreReplaced?: () => boolean; bootId?: string; localFinishEpoch?: () => string; now?: () => number; ownUpdate?: { pollMs?: number; startMs?: number; checkMs?: number; offerMs?: number }; moveOfferMs?: { idle: number; active: number }; sshCandidates?: SshCandidatesOptions } = {}) {
     this.bootId = options.bootId;
-    this.tailnet = new TailnetPcs(options.tailnet);
-    this.sshCandidateOptions = options.sshCandidates ?? (options.tailnet?.readStatus === undefined ? {} : { readStatus: options.tailnet.readStatus });
-    this.serverId = options.serverId;
-    this.relaySocket = options.relaySocket;
-    this.relayDirectSocket = options.relayDirectSocket;
+    this.sshCandidateOptions = options.sshCandidates ?? {};
     this.localFinishEpoch = options.localFinishEpoch;
     this.ownUpdatePollMs = options.ownUpdate?.pollMs ?? OWN_UPDATE_POLL_MS;
     this.ownUpdateStartMs = options.ownUpdate?.startMs ?? OWN_UPDATE_START_MS;
@@ -444,7 +411,7 @@ export class MachineManager {
     if (this.bootId) this.local.source_boot_id = this.bootId;
     this.profileState = new HerdrProfileState(stateDir);
     this.statePath = join(stateDir, "machines.json");
-    this.relayStatePath = join(stateDir, "relay-pcs.json");
+    this.local.server_id = savedAlertIdentity(stateDir);
     this.sshDir = join(stateDir, "ssh");
     this.installer = new PcInstaller({ sshDir: this.sshDir, connect: (request) => this.installConnect(request), onChange: (job) => this.showInstall(job), restore: () => options.restoreReplaced?.() === true });
     this.settingsPath = join(stateDir, "machine-settings.json");
@@ -459,10 +426,8 @@ export class MachineManager {
     if (this.profileState.setAside !== null) this.setAside.push(basename(this.profileState.setAside));
     // bytes that are not JSON (a crash can leave the file all NULs) are moved aside and the app starts
     // without saved PCs; JSON that is not a list of PCs still refuses to start, so nothing replaces it
-    // PCs added through the relay live in a file of their own: a release from before them reads machines.json and
-    // refuses one it does not know, so a rollback would not start (docs/development.md, rollback restores code)
-    for (const path of [this.statePath, this.relayStatePath]) {
-      const relayPcs = path === this.relayStatePath;
+    {
+      const path = this.statePath;
       const read = readStateDocument(path);
       if (read.kind === "malformed") {
         const aside = setAsideDamaged(path);
@@ -474,15 +439,7 @@ export class MachineManager {
         if (!Array.isArray(saved)) throw new Error(`Invalid ${basename(path)}; registrations were preserved`);
         for (const item of saved as StoredMachine[]) {
           if (!/^[a-f0-9-]{36}$/.test(item.id) || typeof item.name !== "string" || typeof item.enabled !== "boolean") throw new Error("Invalid machine registration");
-          const common = { id: item.id, name: item.name, enabled: item.enabled, state: "disconnected" as const, snapshot: item.snapshot ?? null, error: null };
-          let machine: Machine;
-          if (relayPcs) {
-            if (item.kind !== "relay") throw new Error("Invalid machine registration");
-            if (typeof item.relay?.server_id !== "string" || !SERVER_ID_PATTERN.test(item.relay.server_id) || typeof item.relay.relay !== "string" || !isWssOrigin(item.relay.relay)) throw new Error("Invalid machine registration");
-            machine = { ...common, kind: "relay", relay: { server_id: item.relay.server_id, relay: item.relay.relay } };
-          } else if (item.kind === "relay") throw new Error("Invalid machine registration");
-          // its relay ID as its health last said it, so its alerts are known by it before it answers again
-          else machine = { ...common, kind: "ssh", target: validateTarget(item.target), ...(typeof item.server_id === "string" && SERVER_ID_PATTERN.test(item.server_id) ? { server_id: item.server_id } : {}) };
+          const machine: Machine = { id: item.id, name: item.name, enabled: item.enabled, state: "disconnected", snapshot: item.snapshot ?? null, error: null, kind: "ssh", target: validateTarget(item.target), server_id: alertIdentity(item.server_id) };
           const runtime = this.runtime(machine);
           this.machines.set(item.id, runtime);
           if (item.enabled) queueMicrotask(() => void this.reconnect(runtime));
@@ -661,10 +618,9 @@ export class MachineManager {
   }
   private runtime(machine: Machine): Runtime { return { machine, attempts: 0, generation: 0, refreshing: false, refreshQueued: false, snapshotRevision: 0, terminals: new Set(), finishes: new FinishEpochLedger(machine.snapshot) }; }
   list(): Machine[] {
-    const own = this.serverId?.();
     // ovis_update is derived from the PC's state at each read; the roster hands out its live PCs
     for (const runtime of this.machines.values()) if (runtime.machine.kind !== "hc") runtime.machine.ovis_update = this.updateOffer(runtime);
-    return [own ? { ...this.local, server_id: own } : this.local, ...[...this.machines.values()].map((r) => r.machine)];
+    return [this.local, ...[...this.machines.values()].map((r) => r.machine)];
   }
   /**
    * The update a PC can take from here (Machine.ovis_update): a connected PC's own Ovis's offer, else what its last
@@ -707,12 +663,12 @@ export class MachineManager {
     return null;
   }
   /**
-   * A connected PC's own Ovis (a relay PC's, or an SSH PC's own server), asked what it offers now and every few
+   * A connected SSH PC's own Ovis, asked what it offers now and every few
    * minutes while connected. A bridge this app installed never updates itself, so it is not asked.
    */
   private watchOwnOffer(runtime: Runtime, generation: number): void {
     const target = runtime.machine.target;
-    const own = runtime.machine.kind === "relay" || runtime.machine.kind === "ssh" && !!target && !!runtime.ownOvisAt && sameSshSession(runtime.ownOvisAt, target);
+    const own = runtime.machine.kind === "ssh" && !!target && !!runtime.ownOvisAt && sameSshSession(runtime.ownOvisAt, target);
     if (!own) return;
     const read = async () => {
       const endpoint = runtime.endpoint;
@@ -838,15 +794,12 @@ export class MachineManager {
    * The registrations cannot be recomputed, so they are written durably (writePrivateState): a
    * crash after a plain rename can leave the file its old length in NULs. Every refresh of a remote
    * PC saves soon, mostly with the same snapshot, so only a document that differs from the one on
-   * disk pays for the write and its fsync. `relayLast` is for the save that adds a relay PC
-   * (addRelay): relay-pcs.json, its registration, goes last instead, so a save that fails before it
-   * leaves the PC off disk, as it leaves no key (#2833).
+   * disk pays for the write and its fsync.
    */
-  private persist(relayLast = false): void {
-    if (!relayLast) this.persistRelayPcs();
+  private persist(): void {
     // herdr's saved machines and herdr-core's are their catalogs': read again, never saved here
     const owned = [...this.machines.values()].filter(({ machine }) => !machine.herdr_profile_id && machine.kind !== "hc").map(({ machine }) => machine);
-    const data: StoredMachine[] = owned.filter((m) => m.kind !== "relay").map((m) => ({ id: m.id, name: m.name, target: m.target!, ...(m.server_id ? { server_id: m.server_id } : {}), enabled: m.enabled, snapshot: m.snapshot }));
+    const data: StoredMachine[] = owned.map((m) => ({ id: m.id, name: m.name, target: m.target!, enabled: m.enabled, snapshot: m.snapshot, ...(m.server_id ? { server_id: m.server_id } : {}) }));
     const text = JSON.stringify(data);
     // the PCs' registrations are written last: a save that fails before them leaves them as they were on disk, so a
     // PC moved to another address (setup) is saved there only when nothing else of its save can still fail (#2075)
@@ -854,17 +807,6 @@ export class MachineManager {
     this.profileState.flush();
     // the file on disk may have been deleted or replaced since this manager wrote it
     if (text !== this.written || !holdsDocument(this.statePath, text)) { writePrivateState(this.statePath, data); this.written = text; }
-    if (relayLast) this.persistRelayPcs();
-  }
-  private persistRelayPcs(): void {
-    const relayPcs: StoredMachine[] = [...this.machines.values()].map(({ machine }) => machine).filter((m) => !m.herdr_profile_id && m.kind === "relay")
-      .map((m) => ({ id: m.id, name: m.name, kind: "relay", relay: m.relay!, enabled: m.enabled, snapshot: m.snapshot }));
-    const relayText = JSON.stringify(relayPcs);
-    if (relayText !== this.relayWritten || !holdsDocument(this.relayStatePath, relayText)) {
-      // never an empty file where none was: an install without relay PCs keeps none
-      if (relayPcs.length > 0 || this.relayWritten !== undefined || existsSync(this.relayStatePath)) writePrivateState(this.relayStatePath, relayPcs);
-      this.relayWritten = relayText;
-    }
   }
   job(id: string): SetupJob | undefined { return this.jobs.get(id)?.public; }
   settings(): MachineSettings { return { ...this.preferences, ...(this.setAside.length > 0 ? { set_aside: [...this.setAside] } : {}) }; }
@@ -887,7 +829,6 @@ export class MachineManager {
   updateBridge(id: string, scheduled = false, expectedRevision?: string): SetupJob {
     const runtime = this.machines.get(id);
     if (!runtime) throw new Error("PC not found");
-    if (runtime.machine.kind === "relay") throw new Error(RELAY_PC_UPDATES);
     if (runtime.machine.kind === "hc") throw new Error(HC_MACHINE_MANAGED);
     // its own Ovis updating itself: a bridge update would disconnect it and take over its progress
     if (runtime.ownJob) throw new PcUpdateRefused("This PC is already updating.");
@@ -1214,7 +1155,6 @@ export class MachineManager {
     // an update that asks for a setup slot when none is free cannot run now: told as any update that cannot (409)
     if ([...this.jobs.values()].filter((j) => !["connected", "failed", "cancelled"].includes(j.public.phase)).length >= SETUP_JOBS_AT_ONCE) throw (request.update_remote ? new PcUpdateRefused(JOBS_FULL) : new Error(JOBS_FULL));
     if (request.machine_id && !existing) throw new Error("PC not found");
-    if (existing?.machine.kind === "relay") throw new Error(RELAY_PC_UPDATES);
     if (existing?.machine.kind === "hc") throw new Error(HC_MACHINE_MANAGED);
     if (existing && [...this.jobs.values()].some((j) => j.public.machine_id === existing.machine.id && !["connected", "failed", "cancelled"].includes(j.public.phase))) throw new Error("A connection job for this PC is already running");
     // and one per PC as ssh resolves it, for another saved PC or a new one too, whatever herdr session each names
@@ -1735,7 +1675,7 @@ export class MachineManager {
       try { response = await get("/api/updates"); }
       catch (error) { return { refused: bridgeUnreachable(descriptor, error) }; }
       // an older Ovis takes the tunnel as this PC's own connection only on its loopback and without OVIS_TOKEN (server/access.ts)
-      if (response.status === 401 || response.status === 403) { await discard(response); return { refused: `That PC's Ovis refused this app's request: it asks for its own access token (OVIS_TOKEN) or a paired device, and this app has neither. ${there}` }; }
+      if (response.status === 401 || response.status === 403) { await discard(response); return { refused: `That PC's Ovis refused this app's request: it asks for its own access token (OVIS_TOKEN), and this app has none. ${there}` }; }
       if (!response.ok) { await discard(response); return { refused: `That PC's Ovis did not tell its update status (${response.status}). ${there}` }; }
       try { return { status: await readCappedJson<Partial<UpdateStatus> | null>(response, REMOTE_LIMITS.ownUpdates) }; }
       catch { return { refused: `That PC's Ovis did not tell its update status. ${there}` }; }
@@ -1901,8 +1841,8 @@ export class MachineManager {
     runtime?.terminals.add(close);
     return () => runtime?.terminals.delete(close);
   }
-  /** What runs a relay PC's terminals, from its /api/health; left unknown while it does not say. */
-  private async readRelayHerdr(runtime: Runtime, endpoint: { url: string; token: string }, generation: number): Promise<void> {
+  /** What runs a machine's terminals, from its /api/health; left unknown while it does not say. */
+  private async readHealthHerdr(runtime: Runtime, endpoint: { url: string; token: string }, generation: number): Promise<void> {
     try {
       const r = await fetch(endpoint.url + "/api/health", { headers: { authorization: `Bearer ${endpoint.token}` }, signal: AbortSignal.timeout(15_000) });
       if (!r.ok) { await discard(r); return; }
@@ -1918,9 +1858,9 @@ export class MachineManager {
     const endpoint = runtime.endpoint;
     const generation = runtime.generation;
     try {
-      // a PC added through the relay has no bridge identity: its own health says what runs its terminals
-      if ((runtime.tunnel || runtime.hc) && !runtime.machine.herdr) {
-        await this.readRelayHerdr(runtime, endpoint, generation);
+      // a machine of herdr-core has no bridge identity: its own health says what runs its terminals
+      if (runtime.hc && !runtime.machine.herdr) {
+        await this.readHealthHerdr(runtime, endpoint, generation);
         // a reconnect while it was read: its queued load runs from the finally below, on the new endpoint
         if (generation !== runtime.generation || this.stopped) return;
       }
@@ -1957,15 +1897,13 @@ export class MachineManager {
     await this.refresh(runtime);
     if (generation !== runtime.generation || this.stopped) throw new Error("Connection cancelled");
     runtime.machine.state = "connected"; runtime.machine.action_required = null; runtime.machine.remote_ovis = null; runtime.remoteRevision = undefined; runtime.installFix = undefined; runtime.attempts = 0; runtime.updateCancelled = false;
-    // told only for a connected PC (shared/machines.ts)
-    if (runtime.tunnel) runtime.machine.route = runtime.tunnel.route;
     this.openObserver(runtime, generation);
     this.watchOwnOffer(runtime, generation);
     if (runtime.ssh) runtime.ssh.onExit = () => this.lost(runtime, generation, new Error("SSH connection ended"));
     runtime.poll = setInterval(() => void this.refresh(runtime).catch((e) => this.lost(runtime, generation, e)), 5000);
     runtime.poll.unref();
-    // an SSH or relay PC may still serve herdr's TUI; an hc machine is herdr-core's own
-    if (runtime.ssh || runtime.tunnel) this.watchMove(runtime, generation);
+    // an SSH PC may still serve herdr's TUI; an hc machine is herdr-core's own
+    if (runtime.ssh) this.watchMove(runtime, generation);
   }
   /**
    * Reads a connected PC's move badge (Machine.runtime_move) now, then again after a while; a read that
@@ -2014,7 +1952,7 @@ export class MachineManager {
       // session-changed queues one follow-up, but lets the active roster publish.
       if (["snapshot", "pane-status", "pane-exited"].includes(message.type)) runtime.snapshotRevision++;
       // a frame may have been overtaken by an HTTP read: it holds its epoch, it proves no other ended
-      if (message.type === "snapshot" && this.admitRemote(runtime, message.snapshot)) { runtime.machine.snapshot = message.snapshot; runtime.finishes.hold(message.snapshot.finish_epoch, message.snapshot.order_epoch); this.push.seed(forAlerts(message.snapshot.panes), runtime.machine.id, runtime.machine.name, pcServerId(runtime.machine)); this.emit(); }
+      if (message.type === "snapshot" && this.admitRemote(runtime, message.snapshot)) { runtime.machine.snapshot = message.snapshot; runtime.finishes.hold(message.snapshot.finish_epoch, message.snapshot.order_epoch); this.push.seed(forAlerts(message.snapshot.panes), runtime.machine.id, runtime.machine.name, runtime.machine.server_id); this.emit(); }
       // a status names no server: it is the proven one's, or not known while health is asked (the cached roster's
       // order epoch may be another server's)
       if (message.type === "pane-status") {
@@ -2027,44 +1965,14 @@ export class MachineManager {
       this.emit({ type: "machine-message", machine_id: runtime.machine.id, message });
       if (["pane-status", "pane-exited", "session-changed"].includes(message.type)) void this.refresh(runtime).catch((e) => this.lost(runtime, generation, e));
     };
-    ws.onclose = () => this.lost(runtime, generation, new Error(runtime.tunnel ? "Relay connection to this PC was lost" : runtime.hc ? "This machine's server connection was lost" : "SSH bridge connection interrupted"));
+    ws.onclose = () => this.lost(runtime, generation, new Error(runtime.hc ? "This machine's server connection was lost" : "SSH bridge connection interrupted"));
     ws.onerror = () => ws.close();
-  }
-  /** How a relay PC's connection reaches it, and what this manager hears back from it. */
-  private tunnelOptions(runtime: Runtime, generation: number): Parameters<typeof openRelayPcTunnel>[2] {
-    return {
-      ...(this.relaySocket ? { socket: this.relaySocket } : {}), ...(this.relayDirectSocket ? { directSocket: this.relayDirectSocket } : {}),
-      onLost: (error) => this.lost(runtime, generation, error),
-      onMoved: () => this.moved(runtime, generation),
-      probes: runtime.routeProbes ??= newRouteProbes(),
-    };
-  }
-  /**
-   * A relay PC's connection moved to a better route (server/relay-pc.ts): the streams of the old one end, so the
-   * status socket opens again on the new one. Open terminals end with their stream as on any reconnect (their clients
-   * come back by themselves, and nothing typed is sent again); requests waiting for the move go on the new route, so
-   * nothing tracked here is ended. The PC stays connected throughout: nothing was lost.
-   */
-  private moved(runtime: Runtime, generation: number): void {
-    // before the first roster read finished, observe() has yet to open the status socket and tell the route: it will
-    if (generation !== runtime.generation || this.stopped || !runtime.tunnel || runtime.machine.state !== "connected") return;
-    this.openObserver(runtime, generation);
-    runtime.machine.route = runtime.tunnel.route;
-    // what changed while the status socket was away
-    void this.refresh(runtime).catch((e) => this.lost(runtime, generation, e));
-    this.emit();
   }
   private lost(runtime: Runtime, generation: number, error: unknown): void {
     if (generation !== runtime.generation || !runtime.machine.enabled || this.stopped) return;
     this.remoteDiagnostics.failed(runtime.machine.id, error instanceof MachineActionRequired ? "action_required" : "connection_lost", { operation: "bridge", machine_id: runtime.machine.id });
     this.disconnect(runtime);
     runtime.machine.error = error instanceof Error ? error.message : String(error);
-    // the other PC turned this one away for good (revoked it, say): trying again could only fail the same way
-    if (error instanceof RelayPcRefused) {
-      runtime.machine.state = "error"; runtime.machine.action_required = null;
-      this.emit();
-      return;
-    }
     if (error instanceof MachineActionRequired && error.action !== "windows_login") {
       runtime.machine.state = "error"; runtime.machine.action_required = error.action;
       this.emit();
@@ -2117,27 +2025,6 @@ export class MachineManager {
       } catch (e) { this.lost(runtime, generation, e); }
       return;
     }
-    if (runtime.machine.kind === "relay") {
-      try {
-        let key: RelayPcKey;
-        const wanted = () => !this.stopped && runtime.generation === generation && this.machines.get(runtime.machine.id) === runtime;
-        try { key = await RelayPcKey.load(this.relayKeyPath(runtime.machine.id), wanted); }
-        catch (error) {
-          // a key that is gone or damaged cannot come back by retrying; another read error (EIO, EACCES) may
-          const lostForGood = (error as NodeJS.ErrnoException).code === "ENOENT" || !("code" in (error as object));
-          if (!lostForGood) throw error;
-          throw new RelayPcRefused("This PC's relay key could not be read. Remove it and add it again with a new pairing link.", { cause: error });
-        }
-        if (generation !== runtime.generation || this.stopped) return;
-        // the PC may run another version or runtime since the last connection: read again once connected
-        delete runtime.machine.herdr;
-        const tunnel = await openRelayPcTunnel(key.offer, key, this.tunnelOptions(runtime, generation));
-        if (generation !== runtime.generation || this.stopped) { tunnel.close(); return; }
-        runtime.tunnel = tunnel; runtime.endpoint = tunnel.endpoint;
-        await this.observe(runtime); this.emit();
-      } catch (e) { this.lost(runtime, generation, e); }
-      return;
-    }
     runtime.ssh = new SshConnection(runtime.machine.target!, this.sshDir, join(this.sshDir, runtime.machine.id));
     try {
       await runtime.ssh.start(); await this.prepare(runtime);
@@ -2168,7 +2055,6 @@ export class MachineManager {
     runtime.observer?.close(); runtime.observer = undefined;
     for (const close of runtime.terminals) close(); runtime.terminals.clear();
     runtime.ssh?.close(); runtime.ssh = undefined; runtime.endpoint = undefined;
-    runtime.tunnel?.close(); runtime.tunnel = undefined; delete runtime.machine.route;
     if (runtime.hc?.bridge) { runtime.hc.bridge.stop(); runtime.hc.bridge = undefined; }
     // what this connection proved goes with it; the start interval stays (sourceStarts)
     runtime.verification?.abort.abort(); runtime.verification = undefined;
@@ -2221,8 +2107,8 @@ export class MachineManager {
         const webUi = (await readCappedJson<{ web_ui?: { boot_id?: unknown; server_id?: unknown } } | null>(response, REMOTE_LIMITS.health))?.web_ui;
         const boot = webUi?.boot_id;
         if (!current() || typeof boot !== "string" || boot === "") return null;
-        // its relay ID, which a device turns its alerts off by (shared/machines.ts pcAlertKey)
-        if (typeof webUi?.server_id === "string" && SERVER_ID_PATTERN.test(webUi.server_id) && runtime.machine.server_id !== webUi.server_id) { runtime.machine.server_id = webUi.server_id; this.saveSoon(); }
+        const identity = alertIdentity(webUi?.server_id);
+        if (identity && runtime.machine.server_id !== identity) { runtime.machine.server_id = identity; this.saveSoon(); }
         this.proved(runtime, boot);
         return boot;
       } catch { return null; }
@@ -2241,7 +2127,7 @@ export class MachineManager {
     runtime.machine.snapshot = snapshot;
     if (settled) runtime.finishes.settle(snapshot); else runtime.finishes.hold(snapshot.finish_epoch, server);
     this.saveSoon();
-    this.push.seed(forAlerts(snapshot.panes), runtime.machine.id, runtime.machine.name, pcServerId(runtime.machine));
+    this.push.seed(forAlerts(snapshot.panes), runtime.machine.id, runtime.machine.name, runtime.machine.server_id);
   }
   /** the PC's server proved itself: its epoch is the accepted one, and a held snapshot of it is published */
   private proved(runtime: Runtime, boot: string): void {
@@ -2315,116 +2201,15 @@ export class MachineManager {
     runtime.machine.enabled = false; this.disconnect(runtime);
     for (const [jobId, job] of this.jobs) if (job.public.machine_id === id) this.cancelJob(jobId);
     this.dropUpdate(runtime);
-    // the key goes first: a registration saved without the PC must not leave its credential behind
-    if (runtime.machine.kind === "relay") removeRelayPcKey(this.relayKeyPath(id));
     this.machines.delete(id); this.persist();
     for (const suffix of ["", ".pub"]) try { unlinkSync(join(this.sshDir, id + suffix)); } catch {}
     this.emit();
   }
-  private relayKeyPath(id: string): string { return join(this.stateDir, "relay-pcs", `${id}.json`); }
-  /**
-   * Settings → Remote PCs, with the code another PC shows (its Settings → Phone & devices → Show a code to type):
-   * finds that PC as a phone does (shared/relay-code-offer.ts) and holds its offer here, the one-time code in it
-   * included, while the person compares the ID with the one that PC shows; addRelay with `found` then pairs with
-   * it. One exchange per call; throws TypedCodeError.
-   */
-  async relayFoundByCode(code: unknown, signal?: AbortSignal): Promise<{ ticket: string; server_id: string; name: string | null }> {
-    if (this.stopped) throw new Error("Server stopping");
-    if (typeof code !== "string" || code.length > 64) throw new TypedCodeError("not-a-code");
-    const offer = await offerFromCode(code, { ...(this.relaySocket ? { connect: this.relaySocket } : {}), ...(signal ? { signal } : {}) });
-    if (this.stopped) throw new Error("Server stopping");
-    const now = this.now();
-    for (const [ticket, held] of this.foundByCode) if (now - held.at > RELAY_FOUND_MS) this.foundByCode.delete(ticket);
-    // a few windows at once at most; the oldest gives way
-    if (this.foundByCode.size >= 8) this.foundByCode.delete(this.foundByCode.keys().next().value!);
-    const ticket = randomBytes(32).toString("base64url");
-    this.foundByCode.set(ticket, { offer, at: now });
-    return { ticket, server_id: offer.server_id, name: offer.name ?? null };
-  }
-
-  /** the relay IDs of the PCs added through the relay */
-  private relayServerIds(): Set<string> {
-    return new Set([...this.machines.values()].flatMap(({ machine }) => machine.relay ? [machine.relay.server_id] : []));
-  }
-
   /** Settings → Add a connection → SSH: the ssh config's hosts and this login's Tailscale PCs, to add over SSH. */
   listSshCandidates() {
     return sshCandidates(this.sshCandidateOptions);
   }
 
-  /** Settings → Connect a device → PCs on your Tailscale: those not added yet (server/tailnet-pcs.ts). */
-  listTailnet() {
-    return this.tailnet.list(this.relayServerIds());
-  }
-
-  /**
-   * Settings → Connect a device → PCs on your Tailscale → Add: asks that PC for its code over the tailnet and adds it
-   * as a typed code would. The ID the relay found must be the one that PC named, which the person compares for a
-   * code typed by hand. A code left unspent ends at its own expiry: cancelling it could end a newer one that PC shows.
-   */
-  async addTailnet(url: unknown): Promise<Machine> {
-    const name = this.tailnet.foundAt(url);
-    if (name === null) throw new TailnetPcError("not_found", "That PC is not among those found on Tailscale. Look again.");
-    const asked = await this.tailnet.code(url as string, this.relayServerIds());
-    const found = await this.relayFoundByCode(asked.code);
-    if (found.server_id !== asked.server_id) {
-      this.foundByCode.delete(found.ticket);
-      throw new TailnetPcError("mismatch", "The relay found a different PC than the one asked. Nothing was added.");
-    }
-    return this.addRelay(undefined, name, found.ticket);
-  }
-
-  /**
-   * Settings → Remote PCs → Add a PC through the relay: pairs with the PC whose pairing link (its Settings → Phone &
-   * devices → Copy link) this is, as a phone would, and adds it once that PC admitted this one. The link's code is
-   * spent here; later connections sign in with the key this pairing made.
-   * `found` instead of `link`: the ticket relayFoundByCode gave for the PC it found, once the person matched its ID.
-   */
-  async addRelay(link: unknown, name?: unknown, found?: unknown): Promise<Machine> {
-    if (this.stopped) throw new Error("Server stopping");
-    let offer: RelayOffer | null = null;
-    if (found !== undefined) {
-      const held = typeof found === "string" ? this.foundByCode.get(found) : undefined;
-      if (held === undefined || this.now() - held.at > RELAY_FOUND_MS) throw new Error("That PC is no longer waiting. Show a new code on it and type that.");
-      this.foundByCode.delete(found as string);
-      offer = held.offer;
-    } else if (typeof link === "string" && link.length <= 4096) try { offer = decodeOffer(link.trim()); } catch { offer = null; }
-    if (!offer?.code) throw new Error("That is not a pairing link. On the other PC, turn the relay on in Settings → Phone & devices and copy its link.");
-    if (name !== undefined && (typeof name !== "string" || !name.trim() || name.length > 100)) throw new Error("Enter a PC name (1–100 characters)");
-    const serverId = offer.server_id;
-    if ([...this.machines.values()].some(({ machine }) => machine.relay?.server_id === serverId)) throw new Error("That PC is already added.");
-    const id = randomUUID();
-    const keyPath = this.relayKeyPath(id);
-    const key = await RelayPcKey.create(keyPath, offer, () => !this.stopped);
-    const runtime = this.runtime({
-      id, name: (typeof name === "string" ? name.trim() : offer.name?.trim()) || "PC", kind: "relay", relay: { server_id: serverId, relay: offer.relay },
-      enabled: true, state: "connecting", error: null, snapshot: null,
-    });
-    const generation = runtime.generation;
-    let tunnel: RelayPcTunnel;
-    try { tunnel = await openRelayPcTunnel(offer, key, this.tunnelOptions(runtime, generation)); }
-    catch (error) {
-      removeRelayPcKey(keyPath);
-      throw new Error(error instanceof RelayPcRefused ? error.message : `That PC could not be reached through the relay: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-    }
-    if (this.stopped || [...this.machines.values()].some(({ machine }) => machine.relay?.server_id === serverId)) {
-      tunnel.close();
-      removeRelayPcKey(keyPath);
-      throw new Error(this.stopped ? "Server stopping" : "That PC is already added.");
-    }
-    runtime.tunnel = tunnel; runtime.endpoint = tunnel.endpoint;
-    this.machines.set(id, runtime);
-    // the PC is added only once its registration is on disk: a save that fails leaves no PC, connection or key behind
-    try { this.persist(true); } catch (error) {
-      this.machines.delete(id);
-      runtime.machine.enabled = false; this.disconnect(runtime);
-      removeRelayPcKey(keyPath);
-      throw new Error(`This PC could not be saved (${error instanceof Error ? error.message : String(error)}). That PC already lists it under Phone & devices as ${relayPcLabel()}: revoke it there.`, { cause: error });
-    }
-    this.emit();
-    try { await this.observe(runtime); this.emit(); } catch (e) { this.lost(runtime, generation, e); }
-    return runtime.machine;
-  }
   stop(): void {
     this.stopped = true; clearTimeout(this.discoveryTimer); clearTimeout(this.hcTimer); clearInterval(this.localTimer); clearTimeout(this.saveTimer);
     for (const id of this.jobs.keys()) this.cancelJob(id);
@@ -2453,11 +2238,6 @@ function snapshotAfterStatus(snapshot: SessionSnapshot, message: Extract<ServerM
     const { finish_id: _finish, ...rest } = pane;
     return rest;
   }) };
-}
-
-/** the relay ID a PC's alerts are turned off by (shared/machines.ts pcAlertKey), where it has one */
-function pcServerId(machine: Machine): string | undefined {
-  return machine.relay?.server_id ?? machine.server_id;
 }
 
 /** A remote PC's panes as its alerts take them: one waiting on its turn's background work is working. */

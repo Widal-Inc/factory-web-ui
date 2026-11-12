@@ -56,11 +56,11 @@ describe("WebSocket liveness ping", () => {
   }
 
   beforeAll(() => {
-    bridge = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-ping", machines: false, tailscaleOwner: null });
+    bridge = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-ping", machines: false });
     // a remote PC's socket, as /ws?machine_id= relays it, with this bridge as the remote
     const manager = { endpoint: () => ({ url: `http://127.0.0.1:${bridge!.port}`, token: "test-ping" }), trackTerminal: () => () => {} } as unknown as MachineManager;
     proxy = Bun.serve<{ relay: MachineRelay }>({ port: 0, hostname: "127.0.0.1", async fetch(request, instance) {
-      const relay = new MachineRelay(manager, "remote", false, (snapshot) => snapshot); relays.push(relay);
+      const relay = new MachineRelay(manager, "remote", (snapshot) => snapshot); relays.push(relay);
       await relay.ready;
       if (instance.upgrade(request, { data: { relay } })) return;
       relay.close(); return new Response(null, { status: 426 });

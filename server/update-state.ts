@@ -64,21 +64,8 @@ const isDir = (path: string): boolean => {
  * bridge start creates it there again. It is never app state.
  */
 const BRIDGE_REGISTRY = "bridges";
-/**
- * What the merge of the two dirs (state-merge.ts) writes into the old one while it is not linked:
- * copies of the new dir's files, which are not state of the old dir's own while they are the same
- * bytes, and the backups of what it replaced, which move along.
- */
-const MERGE_COPIES = ["devices.json", "preferences.json", "muted-panes.json", "preferences-id.json", "state-merge.json", "state-merge-devices-incomplete.json"];
-const MERGE_BACKUPS = "state-merge-backups";
-
-const sameFile = (left: string, right: string): boolean => {
-  try { return readFileSync(left).equals(readFileSync(right)); } catch { return false; }
-};
-
-/** An entry of the old dir that is not state of its own: the registry, the merge's backups, or an unchanged copy. */
-const linkable = (legacy: string, next: string, entry: string): boolean =>
-  entry === BRIDGE_REGISTRY || entry === MERGE_BACKUPS || MERGE_COPIES.includes(entry) && sameFile(join(legacy, entry), join(next, entry));
+/** An entry of the old dir that is not state of its own: the registry. */
+const linkable = (entry: string): boolean => entry === BRIDGE_REGISTRY;
 
 /**
  * What the dir under its name from before the rename holds, when it is not the new dir itself:
@@ -89,7 +76,7 @@ function legacyContents(legacy: string, next: string): "state" | "registry" | nu
     if (!isDir(legacy)) return null;
     const entries = readdirSync(legacy);
     if (entries.length === 0 || isDir(next) && realpathSync(legacy) === realpathSync(next)) return null;
-    return entries.every((entry) => linkable(legacy, next, entry)) ? "registry" : "state";
+    return entries.every(linkable) ? "registry" : "state";
   } catch (error) {
     // ENOENT: another process of this install is moving it right now. An old dir this process
     // cannot read is not one it can use; the new one then reports what it cannot write.
@@ -120,8 +107,7 @@ export function currentStateDir(legacy: string, next: string): string {
  *
  * The link is made first, under another name, so that where no link can be made nothing moves.
  * A bridge that runs writes its state under the old name by path, so the move waits until no
- * bridge registered there runs. A step that fails leaves the rest for the next start; the old dir
- * meanwhile gets a closed copy of the paired devices from every server start (state-merge.ts).
+ * bridge registered there runs. A step that fails leaves the rest for the next start.
  */
 export function linkLegacyRegistry(legacy: string, next: string): void {
   finishInterruptedLink(legacy, next);
@@ -134,20 +120,13 @@ export function linkLegacyRegistry(legacy: string, next: string): void {
   removeLink(link);
   try { symlinkSync(next, link, "junction"); }
   catch (error) {
-    console.error(`cannot link ${legacy} to ${next}, so it stays a dir of its own, with a closed copy of the paired devices: ${(error as Error).message}`);
+    console.error(`cannot link ${legacy} to ${next}, so it stays a dir of its own: ${(error as Error).message}`);
     return;
   }
   try {
-    if (!existsSync(from)) { /* only the merge's files */ }
+    if (!existsSync(from)) { /* nothing to move */ }
     else if (!existsSync(to)) renameSync(from, to);
     else moveInto(from, to);
-    for (const entry of readdirSync(legacy)) {
-      const source = join(legacy, entry);
-      if (entry === MERGE_BACKUPS) {
-        if (!existsSync(join(next, MERGE_BACKUPS))) renameSync(source, join(next, MERGE_BACKUPS));
-        else moveInto(source, join(next, MERGE_BACKUPS));
-      } else if (MERGE_COPIES.includes(entry) && sameFile(source, join(next, entry))) unlinkSync(source);
-    }
     try { rmdirSync(legacy); }
     catch (error) {
       // a writer put something back under the old name in between: it joins the new dir, once
@@ -158,7 +137,7 @@ export function linkLegacyRegistry(legacy: string, next: string): void {
   } catch (error) {
     removeLink(link);
     // ENOENT: another process of this install moved it first, and links it
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(`cannot link ${legacy} to ${next}, so it stays a dir of its own, with a closed copy of the paired devices; what moved is in ${to}: ${(error as Error).message}`);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(`cannot link ${legacy} to ${next}, so it stays a dir of its own; what moved is in ${to}: ${(error as Error).message}`);
     return;
   }
   try { renameSync(link, legacy); }
@@ -167,10 +146,9 @@ export function linkLegacyRegistry(legacy: string, next: string): void {
     // a bridge registered under the old name in between: the next start moves it and links
     if (["EEXIST", "ENOTEMPTY", "EISDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return;
     // The old name must not be left free: a bridge would make it again with its registry alone, where
-    // a launcher from before 0.4.16 starts ungated. Empty, those launchers pass it by, and the merge
-    // leaves its closed copy of the devices in it (state-merge.ts).
+    // a launcher from before 0.4.16 starts ungated. Empty, those launchers pass it by.
     try { mkdirSync(legacy, { mode: 0o700 }); } catch { /* reported below */ }
-    console.error(`moved the bridge registry into ${next} but cannot link ${legacy} to it, so it stays a dir of its own, with a closed copy of the paired devices: ${(error as Error).message}`);
+    console.error(`moved the bridge registry into ${next} but cannot link ${legacy} to it, so it stays a dir of its own: ${(error as Error).message}`);
   }
 }
 
@@ -191,15 +169,14 @@ function finishInterruptedLink(legacy: string, next: string): void {
     if (pointsAtNext && !existsSync(legacy)) {
       try { renameSync(link, legacy); continue; }
       catch (error) {
-        // the name must not stay free (as in linkLegacyRegistry): empty, older launchers pass it by,
-        // and the merge leaves its closed copy of the devices in it
+        // the name must not stay free (as in linkLegacyRegistry): empty, older launchers pass it by
         try { mkdirSync(legacy, { mode: 0o700 }); }
         catch {
           // the link stays, for the next start to try again
           console.error(`cannot finish linking ${legacy} to ${next}, and cannot make it again: ${(error as Error).message}`);
           continue;
         }
-        console.error(`cannot finish linking ${legacy} to ${next}, so it stays a dir of its own, with a closed copy of the paired devices: ${(error as Error).message}`);
+        console.error(`cannot finish linking ${legacy} to ${next}, so it stays a dir of its own: ${(error as Error).message}`);
       }
     }
     removeLink(link);

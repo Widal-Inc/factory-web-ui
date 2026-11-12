@@ -6,6 +6,9 @@ import { chromePath } from "./chrome-path.ts";
 
 /** Replay Safari replacement edits and assert emitted bytes, commit order and pane isolation. */
 export async function checkSafariIme(browser: Browser, origin: string, pane: string, otherPane: string): Promise<void> {
+  const startedAt = performance.now();
+  const progress = (operation: string) => console.log(`Safari replay +${Math.round(performance.now() - startedAt)}ms: ${operation}`);
+  progress("start");
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/26.6.2 Safari/605.1.15",
     viewport: { width: 1100, height: 700 },
@@ -62,12 +65,18 @@ export async function checkSafariIme(browser: Browser, origin: string, pane: str
     });
   });
   const input = page.locator(".pane-frame.is-current .xterm-helper-textarea");
+  let resetCount = 0;
   const reset = async () => {
+    const label = `reset ${++resetCount}`;
+    progress(`${label}: navigation start`);
     const ready = signal("ready");
     await page.goto(`${origin}/?pane=${encodeURIComponent(pane)}`);
+    progress(`${label}: navigation finished, waiting for input-ready`);
     await ready;
+    progress(`${label}: input-ready, focusing terminal`);
     await input.focus();
     sent.length = 0;
+    progress(`${label}: ready`);
   };
   // Safari 26.6.2 edits the DOM BEFORE keydown 229, with no composition events. Each
   // beforeinput selection is the range Safari replaces, including final consonants.
@@ -102,11 +111,13 @@ export async function checkSafariIme(browser: Browser, origin: string, pane: str
     for (const part of parts.slice(1)) await edit("insertReplacementText", part, at, at + 1);
   };
   const check = async (expected: string, label: string, owner = pane) => {
+    progress(`check start: ${label}`);
     const received = signal("input:\x07");
     await input.press("Control+g");
     await received;
     assert.equal(sent.map((frame) => frame.text).join(""), expected + "\x07", label);
     assert(sent.every((frame) => frame.pane_id === owner), `input stays with its pane ${owner}: ${JSON.stringify(sent)}`);
+    progress(`check passed: ${label}`);
   };
   // the pane and the exact bytes a named assertion saw, JSON-escaped
   const report = (label: string, owner = pane) => console.log(`  ok ${label}: pane ${owner} bytes ${JSON.stringify(sent.map((frame) => frame.text).join(""))}`);
@@ -212,7 +223,11 @@ export async function checkSafariIme(browser: Browser, origin: string, pane: str
     // Every case runs and every failure is reported together.
     const failures: string[] = [];
     const variant = async (run: () => Promise<void>) => {
-      try { await run(); } catch (error) { failures.push(error instanceof Error ? error.message : String(error)); }
+      try { await run(); } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        progress(`variant failed: ${message}`);
+        failures.push(message);
+      }
     };
     for (const order of ["after", "before"] as const) {
       await variant(async () => {
@@ -430,7 +445,11 @@ export async function checkSafariIme(browser: Browser, origin: string, pane: str
     await check("x", "refused context cannot seed the next accepted rewrite: a pane switch mid-dictation", otherPane);
     report("refused context cannot seed the next accepted rewrite: pane switched mid-dictation", otherPane);
     console.log("PASS Safari native-event replay: English/Hangul, commit keys, final consonants, deletion, blur, pane reset, dictation, SwiftKey and refused contexts");
-  } finally { await context.close(); }
+  } finally {
+    progress("context close start");
+    await context.close();
+    progress("context close finished");
+  }
 }
 
 if (import.meta.main) {

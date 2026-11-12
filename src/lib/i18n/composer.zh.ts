@@ -258,4 +258,6 @@ export const COMPOSER_ZH: Record<string, string> = {
   "Not sent: no agent is running in this pane. Your message stayed here.": "未发送：此窗格中没有运行的代理。消息仍保留在这里。",
   "1 comment": "1 条评论",
   "{count} comments": "{count} 条评论",
+  "Deny": "拒绝",
+  "Approve": "批准",
 };

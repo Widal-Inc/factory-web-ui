@@ -2,8 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { accountServiceUrl } from "./account/mailbox.ts";
-import { accountServiceOrigin, accountShell, appName, CONTENT_SECURITY_POLICY, contentSecurityPolicy, manifestBody, relateManifest, renameManifest, renameShell, requestOrigin, shellContentSecurityPolicy } from "./static.ts";
+import { appName, CONTENT_SECURITY_POLICY, contentSecurityPolicy, manifestBody, relateManifest, renameManifest, renameShell, requestOrigin } from "./static.ts";
 
 // The sources Vite builds from: public/ is copied into dist/ as it is, and the meta survives the build.
 const root = join(import.meta.dir, "..");
@@ -84,72 +83,5 @@ describe("OVIS_APP_NAME", () => {
   it("escapes the name in the shell", () => {
     const renamed = renameShell(shell, `a"b<c>&$1 $&`);
     expect(renamed).toContain('content="a&quot;b&lt;c&gt;&amp;$1 $&amp;"');
-  });
-});
-
-describe("the hosted shell's policy", () => {
-  const directives = (policy: string) => new Map(policy.split("; ").map((directive) => [directive.slice(0, directive.indexOf(" ")), directive]));
-
-  it("differs from the app's only in connect-src, media-src and frame-src", () => {
-    const app = directives(CONTENT_SECURITY_POLICY);
-    const hosted = directives(shellContentSecurityPolicy());
-    expect([...hosted.keys()]).toEqual([...app.keys()]);
-    const changed = [...app.keys()].filter((name) => app.get(name) !== hosted.get(name));
-    expect(changed).toEqual(["connect-src", "media-src", "frame-src"]);
-    expect(hosted.get("connect-src")).toBe("connect-src 'self' wss: https://account.ovis.sh");
-    expect(hosted.get("media-src")).toBe("media-src 'self' blob:");
-    expect(hosted.get("frame-src")).toBe("frame-src 'self' blob:");
-  });
-
-  it("keeps the inline styles xterm and the measured layouts need, and the bundled data: fonts", () => {
-    const hosted = directives(shellContentSecurityPolicy());
-    expect(hosted.get("style-src")).toBe("style-src 'self' 'unsafe-inline'");
-    expect(hosted.get("font-src")).toBe("font-src 'self' data:");
-    expect(hosted.get("script-src")).toBe("script-src 'self' 'wasm-unsafe-eval'");
-  });
-});
-
-describe("the PC's own pages and the account service", () => {
-  const connect = () => contentSecurityPolicy().split("; ").find((directive) => directive.startsWith("connect-src "));
-  const saved = process.env["OVIS_ACCOUNT_SERVICE_URL"];
-  const restore = () => { if (saved === undefined) delete process.env["OVIS_ACCOUNT_SERVICE_URL"]; else process.env["OVIS_ACCOUNT_SERVICE_URL"] = saved; };
-
-  it("may reach account.ovis.sh by default, exactly the https origin OVIS_ACCOUNT_SERVICE_URL names, and nothing when it is off or not https", () => {
-    try {
-      delete process.env["OVIS_ACCOUNT_SERVICE_URL"];
-      expect(connect()).toBe("connect-src 'self' https://account.ovis.sh");
-      process.env["OVIS_ACCOUNT_SERVICE_URL"] = "https://account.example.com/some/path";
-      expect(connect()).toBe("connect-src 'self' https://account.example.com");
-      process.env["OVIS_ACCOUNT_SERVICE_URL"] = "off";
-      expect(connect()).toBe("connect-src 'self'");
-      process.env["OVIS_ACCOUNT_SERVICE_URL"] = "http://127.0.0.1:8787";
-      expect(connect()).toBe("connect-src 'self'");
-      expect(accountServiceOrigin("https://bad host")).toBeNull();
-    } finally { restore(); }
-  });
-
-  it("names the same service in the shell's own meta as its policy admits, and none when it is off or not https", () => {
-    const meta = (html: string) => /<meta name="ovis-pc-account-service" content="([^"]*)" \/>\n<\/head>/.exec(html)?.[1] ?? null;
-    try {
-      delete process.env["OVIS_ACCOUNT_SERVICE_URL"];
-      expect(meta(accountShell(shell))).toBe("https://account.ovis.sh");
-      process.env["OVIS_ACCOUNT_SERVICE_URL"] = "https://account.example.com/some/path";
-      expect(meta(accountShell(shell))).toBe("https://account.example.com");
-      for (const value of ["off", "http://127.0.0.1:8787"]) {
-        process.env["OVIS_ACCOUNT_SERVICE_URL"] = value;
-        expect(accountShell(shell)).toBe(shell);
-      }
-    } finally { restore(); }
-  });
-
-  it("collects the mailbox from account.ovis.sh by default, and from none when the service is off", () => {
-    try {
-      delete process.env["OVIS_ACCOUNT_SERVICE_URL"];
-      expect(accountServiceUrl()).toBe("https://account.ovis.sh");
-      expect(accountServiceUrl("http://127.0.0.1:8787/v1")).toBe("http://127.0.0.1:8787");
-      process.env["OVIS_ACCOUNT_SERVICE_URL"] = "off";
-      expect(() => accountServiceUrl()).toThrow("turned off");
-      expect(() => accountServiceUrl(" OFF ")).toThrow("turned off");
-    } finally { restore(); }
   });
 });

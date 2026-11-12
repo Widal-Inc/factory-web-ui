@@ -16,18 +16,10 @@ import { routeDrained } from "./drained-route.ts";
 import { contextMenuKey } from "./context-menu-key.ts";
 import { checkTerminalFileInput } from "./terminal-file-input-regression.ts";
 import { checkTerminalAttach } from "./terminal-attach-regression.ts";
-import { checkTerminalInput } from "./terminal-input-regression.ts";
-import { checkSafariIme } from "./terminal-safari-ime-regression.ts";
-import { checkIpadIme } from "./terminal-ipad-ime-regression.ts";
-import { checkLinuxIme } from "./terminal-linux-ime-regression.ts";
 import { checkHeldDraftPaneSwitch } from "./terminal-draft-regression.ts";
-import { checkCommandBackspace } from "./terminal-command-backspace-regression.ts";
-import { checkCtrlEnter } from "./terminal-ctrl-enter-regression.ts";
-import { checkCommandArrows } from "./terminal-command-arrows-regression.ts";
 import { checkFolderFilter, checkNewFolder } from "./folder-filter-regression.ts";
 import { checkPaletteKeys } from "./palette-keys-regression.ts";
 import { checkFollowHerdrFocus } from "./follow-focus-regression.ts";
-import { checkRelayPanel } from "./relay-panel-regression.ts";
 import { systemUsageContext, UsageService } from "../server/usage.ts";
 import { openSettingsFolds, openSettingsPage } from "./settings-page.ts";
 import { assertCspClean, watchCsp } from "./csp-violations.ts";
@@ -118,7 +110,7 @@ try {
   }
   const [paneA, paneB] = panes as [string, string];
   // no provider is asked with the test machine's own sign-ins
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "push"), usage: new UsageService({ ...systemUsageContext(), home: root, env: {} }, []), tailnetPcs: { readStatus: async () => null }, sshCandidates: { sshDir: join(root, "no-ssh"), readStatus: async () => null } });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "push"), usage: new UsageService({ ...systemUsageContext(), home: root, env: {} }, []), sshCandidates: { sshDir: join(root, "no-ssh"), readStatus: async () => null } });
   const origin = `http://127.0.0.1:${server.port}`;
   browser = await chromium.launch({
     executablePath: chromePath(),
@@ -707,9 +699,7 @@ try {
     "a pending IME commit must precede Shift+Enter without a delayed duplicate");
   console.log("PASS terminal Shift+Enter sends a newline chord once and preserves Enter, Alt+Enter and IME");
   console.log("PASS pending IME commit precedes Shift+Enter without duplicate text");
-  await checkCommandBackspace(browser, origin, paneA);
-  await checkCtrlEnter(browser, origin, paneA);
-  await checkCommandArrows(browser, origin, paneA);
+  // Platform shortcut sequences run in terminal-shortcuts-regression.ts with their own fixture.
   // a pane shortcut switches panes and types nothing: xterm used to send ESC[1;6B / ESC[1;6A too
   const selectedTitle = () => page.locator(".pane-item.is-selected .pane-select").getAttribute("title");
   // A pane just picked shows the lens of the pane before it for a moment, and the message box
@@ -1479,6 +1469,12 @@ try {
   assert.deepEqual(limitedUploads, Array(6).fill(paneB), "every picked file is uploaded");
   assert.equal(await page.getByRole("alert").filter({ hasText: /the first \d+ of \d+ files/ }).count(), 0, "nothing was left out");
   limitedUploads.length = 0;
+  const uploadResponses: Array<{ status: number; elapsedMs: number }> = [];
+  const uploadStarted = performance.now();
+  const onUploadResponse = (response: import("playwright-core").Response): void => {
+    if (new URL(response.url()).pathname === "/api/pane/image") uploadResponses.push({ status: response.status(), elapsedMs: Math.round(performance.now() - uploadStarted) });
+  };
+  page.on("response", onUploadResponse);
   // the first file is over the size limit: its error and the count left out both stay in the note
   // Paths let Chromium pick the real files. A buffer sends 32 MB through Playwright's injected
   // base64 decoder on the page before the app can reject it by size, timing out on a busy runner.
@@ -1491,7 +1487,19 @@ try {
     return path;
   });
   await page.locator('input[type="file"]').setInputFiles([hugeFile, ...manyFiles]);
-  await until(async () => (await ready.count()) === readyBefore + 6 + 99, "the files within both limits uploaded");
+  try {
+    // This checks the 100-file limit, not aggregate throughput. Keep the same stall deadline
+    // for each completion: three active uploads can keep progressing beyond one 15s batch.
+    for (let completed = 1; completed <= 99; completed++) {
+      await until(async () => (await ready.count()) >= readyBefore + 6 + completed, `upload ${completed} of 99 within both limits`);
+    }
+    assert.equal(await ready.count(), readyBefore + 6 + 99, "every accepted file is attached once");
+  } catch (error) {
+    console.error("UPLOAD_COMPLETION_EVIDENCE", JSON.stringify({ started: limitedUploads.length, responses: uploadResponses, ready: await ready.count(), expected: readyBefore + 6 + 99,
+      attachments: await page.locator(".composer-attachment").evaluateAll((tiles) => tiles.map((tile) => ({ state: tile.className, text: tile.textContent }))),
+      composerLength: (await composer.inputValue()).length }));
+    throw error;
+  } finally { page.off("response", onUploadResponse); }
   const note = page.getByRole("alert").filter({ hasText: "Too large to attach: huge.bin" });
   await note.waitFor();
   assert.match(await note.innerText(), /the first 100 of 101 files were taken/);
@@ -2344,10 +2352,8 @@ try {
   assertCspClean(csp, "the suggestion chip loads with no CSP violation");
   console.log("PASS a phone offers Claude's suggestion as a chip once Settings turns it on");
 
-  await checkTerminalInput(browser, origin, paneA, paneB);
-  await checkSafariIme(browser, origin, paneA, paneB);
-  await checkIpadIme(browser, origin, paneA, paneB);
-  await checkLinuxIme(browser, origin, paneA);
+  // The input and native IME replays run as their existing standalone scripts in both browser
+  // entrypoints. Each owns its fixtures and watchdog instead of sharing this script's deadline.
   await checkHeldDraftPaneSwitch(browser, origin, paneA, paneB);
 
   // the terminal lens on a touch screen starts in direct typing without raising the keyboard;
@@ -2496,7 +2502,7 @@ try {
   if (pageEvidence) await pageEvidence.finish();
   await page.close();
 
-  const secured = createServer({ port: 0, hostname: "127.0.0.1", token: "browser-test-token", stateDir: join(root, "secured"), tailscaleOwner: null, tailnetPcs: { readStatus: async () => null }, sshCandidates: { sshDir: join(root, "no-ssh"), readStatus: async () => null } });
+  const secured = createServer({ port: 0, hostname: "127.0.0.1", token: "browser-test-token", stateDir: join(root, "secured"), sshCandidates: { sshDir: join(root, "no-ssh"), readStatus: async () => null } });
   releases.push(() => secured.stop());
   const securedOrigin = `http://127.0.0.1:${secured.port}`;
   const securedContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -2540,9 +2546,7 @@ try {
   await signOutConfirm.getByRole("button", { name: "Sign out", exact: true }).click();
   await securedPage.getByTestId("token-gate").waitFor();
   assert.equal((await securedContext.request.get(`${securedOrigin}/api/session`)).status(), 401);
-  const pairing = await securedContext.request.post(`${securedOrigin}/api/devices/pair/start`, { headers: { authorization: "Bearer browser-test-token", "x-herdr-machine": "1" } });
-  const { code } = await pairing.json();
-  await securedContext.request.post(`${securedOrigin}/api/devices/pair`, { data: { code, label: "Browser test device" } });
+  await securedContext.request.post(`${securedOrigin}/api/auth`, { data: { token: "browser-test-token" } });
   await securedPage.setViewportSize({ width: 390, height: 844 });
   await securedPage.reload();
   await securedPage.locator(".app-header.is-zoned").waitFor();
@@ -2555,9 +2559,7 @@ try {
   if (securedEvidence) await securedEvidence.finish();
   await securedContext.close();
   assertCspClean(csp, "the token gate loads with no CSP violation");
-  console.log("PASS Settings sign out: cancel preserves access, failure permits retry, token and paired-device sign out return to the access gate");
-
-  await checkRelayPanel(browser);
+  console.log("PASS Settings sign out: cancel preserves access, failure permits retry, signing out again on a phone returns to the access gate each time");
 } catch (error) {
   for (const evidence of evidenceSessions) {
     if (evidence.isOpen()) await evidence.captureFailure(error);

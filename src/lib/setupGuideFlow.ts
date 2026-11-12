@@ -1,13 +1,10 @@
 /**
  * Where the first-run setup guide stands (components/SetupGuide.tsx): the welcome, then one setup
  * screen that checks the PC for coding agents and either starts the first workspace with one it found
- * or installs one, with Connect your phone beside Start: the Ovis relay's QR code first where the relay
- * can lead (phoneWay), else the page's own address or Settings → Phone (phoneBoxMode). It opens by
- * itself only on a fresh install, and once: the record in this browser says it was closed, or that it
- * was left open.
+ * or installs one. It opens by itself only on a fresh install, and once: the record in this browser
+ * says it was closed, or that it was left open.
  */
 import type { AgentCatalogEntry, AgentCatalogRow } from "../../shared/agent-catalog.ts";
-import type { HealthAuth, RelayStatus } from "../../shared/protocol.ts";
 import type { SetupStep } from "./agentSetup.ts";
 import type { ProviderUsage } from "../../shared/usage.ts";
 
@@ -80,66 +77,6 @@ export function agentRows(catalog: readonly AgentCatalogRow[] | null, ready: rea
   const first = FIRST.flatMap((id) => harness.filter((row) => row.id === id));
   const rest = harness.filter((row) => !FIRST.includes(row.id));
   return [...first, ...rest.filter((row) => installedHere(row, ready)), ...rest.filter((row) => !installedHere(row, ready))];
-}
-
-/**
- * Which way the guide's Connect your phone box leads with: the Ovis relay where it is offered here (a
- * server with the route, a direct page, not the hosted shell), this browser may control it (not a
- * watching device, not a Portal visitor: the server refuses both) and nothing blocks it (a serve-only
- * install, an unreadable identity); else the other ways (phoneBoxMode). It waits for the relay's first
- * answer, so a page on the PC's loopback is not sent to Settings before the relay could lead.
- */
-export function phoneWay(relay: { unsupported: boolean; status: Pick<RelayStatus, "blocked"> | null }, shell: boolean, auth: HealthAuth | null): "wait" | "relay" | "other" {
-  if (shell || relay.unsupported) return "other";
-  if (auth === null) return "wait";
-  if (auth.role === "watch" || auth.via === "portal") return "other";
-  if (relay.status === null) return "wait";
-  return relay.status.blocked === null ? "relay" : "other";
-}
-
-/** How Connect your phone's box came open: a tap on it, or by itself (phoneBoxOpensFirst). */
-export type PhoneBoxOpening = "tap" | "first-run";
-
-/**
- * Whether Connect your phone's box is open when the setup screen first shows: on a first run on the
- * PC itself (its loopback: the desktop app, or a browser on the PC), where a phone is the next device
- * to add. Not on a guide reopened from Settings, nor on a page another device opened (a phone).
- */
-export function phoneBoxOpensFirst(state: GuideState, onThisPc: boolean): boolean {
-  return state.reopened !== true && onThisPc;
-}
-
-/**
- * Whether the box stays open: one that came open by itself leads with the relay only, so where the
- * relay cannot lead it closes again rather than sending the page to Settings → Phone untapped. Once
- * the relay led in it (`led`), the box is the user's, who may have tapped Turn on: a relay blocked
- * since shows the other ways there, and never closes it.
- */
-export function phoneBoxStays(opening: PhoneBoxOpening, way: "wait" | "relay" | "other", led: boolean): boolean {
-  return opening === "tap" || led || way !== "other";
-}
-
-/**
- * What the relay part of the box shows: the button that turns it on; its state while it connects (or
- * retries); a start that failed before its link existed (the relay is off and nothing retries it,
- * server/relay/service.ts), with Try again; the pairing QR code once it is online.
- */
-export function relayStep(status: Pick<RelayStatus, "phase" | "error">): "off" | "not-started" | "starting" | "online" {
-  if (status.phase === "online") return "online";
-  if (status.phase === "off") return status.error === null ? "off" : "not-started";
-  return "starting";
-}
-
-/**
- * What the guide's Connect your phone box does: wait until the address a phone can open and this
- * browser's access are known; leave it to Settings → Phone where there is no such address (the PC's
- * loopback) or the server does not say how this browser got in; pair this browser first where it is
- * in only because nothing is paired yet (a paired phone turns sign-in on); else show the QR.
- */
-export function phoneBoxMode(address: string | null | undefined, auth: HealthAuth | null): "wait" | "settings" | "pair-self" | "qr" {
-  if (address === undefined || auth === null) return "wait";
-  if (address === null || auth.via === undefined) return "settings";
-  return auth.via === "open" ? "pair-self" : "qr";
 }
 
 /** How long a tile's install may run without the PC listing the agent before it stops spinning (a prompt, a closed tab). */
@@ -232,15 +169,11 @@ export interface FreshFacts {
   savedSettings: boolean;
   /** GET /api/preferences: 0 until a browser of this server first shared a setting */
   sharedRevision: number | null;
-  /** closed: a device was paired with this server */
-  pairingGate: "open" | "closed" | "unavailable" | null;
-  /** a watching device sets nothing up */
-  watching: boolean;
 }
 
 export function autoOpen(facts: FreshFacts): boolean {
-  if (facts.workspaces === null || facts.sharedRevision === null || facts.watching) return false;
-  return facts.workspaces === 0 && !facts.savedSettings && facts.sharedRevision === 0 && facts.pairingGate !== "closed";
+  if (facts.workspaces === null || facts.sharedRevision === null) return false;
+  return facts.workspaces === 0 && !facts.savedSettings && facts.sharedRevision === 0;
 }
 
 export const GUIDE_STORAGE_KEY = "ovis:setup-guide";

@@ -549,7 +549,7 @@ try {
         assert.deepEqual(await fitState(phone), { folded: false, fold: false, fits: true }, "a driving phone's grid is its own, fitted: nothing folded");
         assert.ok(!(await sheetItems(phone)).includes("Original width"), "a driving phone's menu offers no Original width");
 
-        // watching (a device paired to watch): the grid is the pty's, the other device's, wider than the phone: folded whole
+        // observing (the socket's observe role): the grid is the pty's, the other device's, wider than the phone: folded whole
         await phone.evaluate(() => window.foldFixture.sockets.at(-1)!.send(JSON.stringify({ type: "role", mode: "observe" })));
         await phone.locator(".pane-frame.is-current .terminal-banner-observe").waitFor();
         await phone.evaluate(({ pane, cols, rows, data }) => {

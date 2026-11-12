@@ -53,25 +53,23 @@ describe("upstreamCloseCode", () => {
 });
 
 describe("MachineRelay receipt isolation", () => {
-  test("receipt IDs survive reconnects only within their server, PC, device and browser scope", () => {
+  test("receipt IDs survive reconnects only within their server, PC and browser scope", () => {
     const ids = new RelayReceiptIds(), browser = crypto.randomUUID();
-    const owner = ids.scope("pc-a", "device-a", browser)!;
+    const owner = ids.scope("pc-a", browser)!;
     expect(owner).toMatch(RECEIPT_RESUME_ID);
     expect(owner).not.toBe(browser);
-    expect(ids.scope("pc-a", "device-a", browser)).toBe(owner);
-    expect(ids.scope("pc-b", "device-a", browser)).not.toBe(owner);
-    expect(ids.scope("pc-a", "device-b", browser)).not.toBe(owner);
-    expect(ids.scope("pc-a", undefined, browser)).not.toBe(owner);
-    expect(ids.scope("pc-a", "device-a", crypto.randomUUID())).not.toBe(owner);
-    expect(new RelayReceiptIds().scope("pc-a", "device-a", browser)).not.toBe(owner);
-    expect(ids.scope("pc-a", "device-a", "not-a-uuid")).toBeUndefined();
-    expect(ids.scope("pc-a", "device-a", "x".repeat(4096))).toBeUndefined();
-    expect(ids.scope("pc-a", "device-a", browser.toUpperCase())).toBeUndefined();
-    expect(ids.scope("pc-a", "device-a", "12345678-1234-1234-8234-123456789abc")).toBeUndefined();
+    expect(ids.scope("pc-a", browser)).toBe(owner);
+    expect(ids.scope("pc-b", browser)).not.toBe(owner);
+    expect(ids.scope("pc-a", crypto.randomUUID())).not.toBe(owner);
+    expect(new RelayReceiptIds().scope("pc-a", browser)).not.toBe(owner);
+    expect(ids.scope("pc-a", "not-a-uuid")).toBeUndefined();
+    expect(ids.scope("pc-a", "x".repeat(4096))).toBeUndefined();
+    expect(ids.scope("pc-a", browser.toUpperCase())).toBeUndefined();
+    expect(ids.scope("pc-a", "12345678-1234-1234-8234-123456789abc")).toBeUndefined();
   });
 
-  for (const readOnly of [false, true]) for (const scoped of [false, true]) {
-    test(`only forwards scoped receipt IDs for interact clients (observe=${readOnly}, scoped=${scoped})`, async () => {
+  for (const scoped of [false, true]) {
+    test(`only forwards scoped receipt IDs (scoped=${scoped})`, async () => {
       const received: Record<string, unknown>[] = [];
       let resolve!: () => void;
       const delivered = new Promise<void>((done) => { resolve = done; });
@@ -92,8 +90,8 @@ describe("MachineRelay receipt isolation", () => {
         trackTerminal: () => () => {},
       } as unknown as MachineManager;
       const ids = new RelayReceiptIds();
-      const relay = new MachineRelay(manager, "pc", readOnly, (snapshot) => snapshot,
-        scoped ? (browser) => ids.scope("pc", "device", browser) : undefined);
+      const relay = new MachineRelay(manager, "pc", (snapshot) => snapshot,
+        scoped ? (browser) => ids.scope("pc", browser) : undefined);
       try {
         await relay.ready;
         const attach = { type: "attach", pane_id: "p", cols: 93, rows: 37, flow_control: "ack", keep_size: true };
@@ -104,7 +102,7 @@ describe("MachineRelay receipt isolation", () => {
           relay.message(JSON.stringify({ ...attach, receipt_resume_id: invalid }));
         }
         await delivered;
-        const expected = scoped && !readOnly ? { ...attach, receipt_resume_id: ids.scope("pc", "device", withResume.receipt_resume_id) } : attach;
+        const expected = scoped ? { ...attach, receipt_resume_id: ids.scope("pc", withResume.receipt_resume_id) } : attach;
         expect(received).toEqual([expected, expected, attach, attach, attach, attach]);
         expect(received.every((message) => message.receipt_resume_id !== withResume.receipt_resume_id)).toBe(true);
       } finally {
@@ -132,7 +130,7 @@ describe("MachineRelay stall timer", () => {
       endpoint: () => ({ url: `http://127.0.0.1:${upstream.port}`, token: "test" }),
       trackTerminal: () => () => {},
     } as unknown as MachineManager;
-    const relay = new MachineRelay(manager, "pc", false, (snapshot) => snapshot);
+    const relay = new MachineRelay(manager, "pc", (snapshot) => snapshot);
     await relay.ready;
     const closes: number[] = [];
     const client = {
@@ -168,7 +166,7 @@ describe("MachineRelay stall timer behind a large frame (#2573)", () => {
       websocket: { message() {} },
     });
     const manager = { endpoint: () => ({ url: `http://127.0.0.1:${upstream.port}`, token: "test" }), trackTerminal: () => () => {} } as unknown as MachineManager;
-    const relay = new MachineRelay(manager, "pc", false, (snapshot) => snapshot);
+    const relay = new MachineRelay(manager, "pc", (snapshot) => snapshot);
     try {
       await relay.ready;
       let large = 1_200_000;
@@ -187,34 +185,6 @@ describe("MachineRelay stall timer behind a large frame (#2573)", () => {
     }
   });
 
-  test("tells a watch-only browser a PC's features without its upload folder, and a driving one with it (#2771)", async () => {
-    const features = JSON.stringify({ type: "features", features: ["submit"], connection: "c1", paste_dir: "/srv/uploads" });
-    const upstream = Bun.serve({
-      port: 0, hostname: "127.0.0.1",
-      fetch(request, server) { return server.upgrade(request) ? undefined : new Response("no", { status: 400 }); },
-      websocket: { open(socket) { socket.send(features); }, message() {} },
-    });
-    const manager = { endpoint: () => ({ url: `http://127.0.0.1:${upstream.port}`, token: "test" }), trackTerminal: () => () => {} } as unknown as MachineManager;
-    try {
-      for (const readOnly of [true, false]) {
-        const relay = new MachineRelay(manager, "pc", readOnly, (read: SessionSnapshot) => read);
-        const told = Promise.withResolvers<string>();
-        const deadline = setTimeout(() => told.reject(new Error("timed out waiting for the relayed features")), 5_000);
-        try {
-          await relay.ready;
-          relay.bind({ getBufferedAmount: () => 0, send: (raw: string) => { told.resolve(raw); return raw.length; }, close: () => {} } as unknown as ServerWebSocket<unknown>);
-          const frame = await told.promise;
-          if (readOnly) expect(JSON.parse(frame)).toEqual({ type: "features", features: ["submit"], connection: "c1" });
-          else expect(frame).toBe(features);
-        } finally {
-          clearTimeout(deadline);
-          relay.close();
-        }
-      }
-    } finally {
-      upstream.stop(true);
-    }
-  });
 });
 
 describe("MachineRelay snapshot frames", () => {
@@ -229,7 +199,7 @@ describe("MachineRelay snapshot frames", () => {
     });
     const manager = { endpoint: () => ({ url: `http://127.0.0.1:${upstream.port}`, token: "test" }), trackTerminal: () => () => {} } as unknown as MachineManager;
     const rows = agentRowTokens(Bun.TOML.parse(`[ui.sidebar.agents]\nrows = [[{ token = "$quota", rules = [{ starts_with = "off", hide = true }] }, "$eta"]]`));
-    const relay = new MachineRelay(manager, "pc", true, (read: SessionSnapshot) => snapshotWithoutHiddenTokens(rows, read));
+    const relay = new MachineRelay(manager, "pc", (read: SessionSnapshot) => snapshotWithoutHiddenTokens(rows, read));
     const sent: string[] = [];
     const both = Promise.withResolvers<void>();
     const deadline = setTimeout(() => both.reject(new Error("timed out waiting for the relayed frames")), 5_000);

@@ -188,18 +188,6 @@ describe("notification clicks", () => {
     expect(cold.opened).toEqual(["/?machine=pc2&pane=pane-b&view=chat"]);
   });
 
-  it("keeps a PC's pane out of the hosted shell's request: a cold start names it in the fragment, and a reader there is no app window", async () => {
-    const shell = "https://app.example";
-    const scope = `/s/${"ab".repeat(16)}/`;
-    const reader = client(undefined, true, `${shell}${scope}#read=notes.md&machine=local`);
-    const cold = notifications([reader], undefined, undefined, `${shell}${scope}`);
-    await cold.click("w1:p9", "pc2", "w1");
-    expect(reader.selected).toEqual([]);
-    expect(cold.opened).toEqual([`${scope}#machine=pc2&ws=w1&pane=w1%3Ap9&view=chat`]);
-    const { isAppWindow } = loadWorker({ addEventListener: () => {}, registration: { scope: `${shell}${scope}` } });
-    expect(isAppWindow(`${shell}${scope}#read=notes.md&machine=local`)).toBe(false);
-    expect(isAppWindow(`${shell}${scope}#machine=pc2&pane=w1%3Ap9`)).toBe(true);
-  });
 
   it("names the workspace an alert's pane was last seen in, to an open window and a cold start", async () => {
     const quiet = notifications([]);
@@ -589,10 +577,6 @@ describe("answer buttons (#2916)", () => {
     const local = worker();
     await local.push(alert);
     expect(local.shown[0]!.options.actions).toEqual([{ action: "answer-0", title: "Allow once" }, { action: "answer-1", title: "Deny" }]);
-    // the hosted shell's worker cannot reach its PC (only a window holds the relay channel): no buttons there
-    const hosted = worker(undefined, `https://app.ovis.test/s/${"a".repeat(32)}/`);
-    await hosted.push(alert);
-    expect(hosted.shown[0]!.options.actions).toBeUndefined();
     // an alert without them, as before
     const plain = worker();
     await plain.push({ ...alert, prompt_id: undefined, actions: undefined });

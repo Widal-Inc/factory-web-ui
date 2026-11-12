@@ -131,7 +131,6 @@ export function TextFileEditor({ path, paneId, name, onDone, onChanged }: TextFi
       case "mixed_line_endings": return t("This file mixes line endings. Edit it in the terminal.");
       case "unsupported_platform": return t("Saving files from the app isn't available on this PC yet.");
       case "not_writable": case "linked_file": case "not_owner": case "access_list": return t("This file can't be written here.");
-      case "drive_only": case "read_only": return t("Only a device that drives this PC can edit its files.");
       default: return t("The file could not be saved.");
     }
   };

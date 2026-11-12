@@ -4,8 +4,6 @@
 # BROWSER_WORKERS: worker count for parallel mode (default: min(cores/2, 6))
 set -euo pipefail
 
-# The relay scripts drive the hosted shell, a build of its own (dist-shell/).
-bun run build:shell
 if [ "${BROWSER_PARALLEL:-}" = "1" ]; then
   exec bun scripts/ci-browser-parallel.ts
 fi
@@ -50,21 +48,22 @@ if [ -n "${CI:-}${CHECK_DIR:-}" ]; then
 fi
 CHROME_PATH="$(bash scripts/ci-chromium.sh)"
 export CHROME_PATH
-# the relay media run encodes its test video with the pinned ffmpeg
-FFMPEG="${FFMPEG:-$(bash scripts/ci-ffmpeg.sh)}"
-export FFMPEG
 # The demo scripts below all show the same client: it is built once here and each copies it
 # (scripts/demo-build.ts), instead of each building it again.
 HERDR_DEMO_BUILD="$(mktemp -d)"
 export HERDR_DEMO_BUILD
 run_script scripts/demo-build.ts "$HERDR_DEMO_BUILD"
 run_script scripts/ui-regression.ts
+run_script scripts/terminal-shortcuts-regression.ts
+run_script scripts/terminal-input-regression.ts
+run_script scripts/terminal-safari-ime-regression.ts
+run_script scripts/terminal-ipad-ime-regression.ts
+run_script scripts/terminal-linux-ime-regression.ts
 run_script scripts/ui-contexts-regression.ts
 run_script scripts/ui-contexts-layout-regression.ts
 run_script scripts/machine-events-browser-regression.ts
 run_script scripts/workspace-rows-regression.ts
 run_script scripts/pending-pane-switch-regression.ts
-run_script scripts/lan-exposure-notice-regression.ts
 run_script scripts/terminal-dispose-browser-qa.ts
 run_script scripts/herdr-restart-regression.ts
 run_script scripts/sticky-modifiers-regression.ts
@@ -93,7 +92,6 @@ run_script scripts/terminal-bundled-mono-regression.ts
 run_script scripts/terminal-served-font-regression.ts
 run_script scripts/application-paging-regression.ts
 run_script scripts/pane-paging-demo-regression.ts
-run_script scripts/link-menu-demo-regression.ts
 run_script scripts/external-link-tab-regression.ts
 run_script scripts/key-bar-customization-demo-regression.ts
 run_script scripts/key-bar-hold-repeat-regression.ts
@@ -110,9 +108,7 @@ run_script scripts/old-safari-demo-regression.ts
 run_script scripts/security-summary-demo-regression.ts
 run_script scripts/push-health-demo-regression.ts
 run_script scripts/alert-webhook-demo-regression.ts
-run_script scripts/relay-direct-demo-regression.ts
 run_script scripts/install-hint-demo-regression.ts
-run_script scripts/device-security-demo-regression.ts
 run_script scripts/cliproxy-settings-regression.ts
 run_script scripts/usage-account-management-regression.ts
 run_script scripts/pane-input-focus-demo-regression.ts
@@ -120,7 +116,6 @@ run_script scripts/terminal-keyboard-demo-regression.ts
 run_script scripts/unconfirmed-input-demo-regression.ts
 run_script scripts/shortcut-exact-modifiers-demo-regression.ts
 run_script scripts/herdr-prefix-keys-demo-regression.ts
-run_script scripts/portal-regression.ts
 run_script scripts/deep-link-demo-regression.ts
 run_script scripts/chat-history-browser-qa.ts
 run_script scripts/session-history-browser-qa.ts
@@ -235,5 +230,3 @@ run_script scripts/machine-dialog-regression.ts
 run_script scripts/machine-conflict-regression.ts
 run_script scripts/machine-own-ovis-regression.ts
 run_script scripts/herdr-profiles-browser-qa.ts
-# runs relay-shell-browser-qa.ts and relay-media-browser-qa.ts too
-run_script scripts/relay-e2e-regression.ts

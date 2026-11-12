@@ -36,7 +36,7 @@ let shown: Readonly<Record<string, string>> = {};
 const listeners = new Set<() => void>();
 /** labels learned for a pane whose terminal this page has not seen yet, by `paneStorageId`; `shared` once a user's action shares it */
 const pending = new Map<string, { label: string; shared: boolean }>();
-/** off on a watching device, and while the setting is off: nothing is learned */
+/** off while the setting is off: nothing is learned */
 let learning = true;
 /** the labels whose pane and terminal this page has seen live: only those can be seen gone */
 const seen = new Set<string>();
@@ -155,9 +155,9 @@ export function shortTabLabel(text: string, uploadFolder?: string): string | nul
   return line;
 }
 
-/** The setting, and whether this device may learn (a watching device takes the labels and learns none). */
-export function setTabLabelLearning(setting: boolean, watching: boolean): void {
-  learning = setting && !watching;
+/** The setting: while it is off nothing is learned. */
+export function setTabLabelLearning(setting: boolean): void {
+  learning = setting;
   if (!learning) pending.clear();
   // the setting off deletes this page's own labels too (the server deletes the shared ones), so none comes back on, or with a send
   if (!setting) setLocalLabels({});

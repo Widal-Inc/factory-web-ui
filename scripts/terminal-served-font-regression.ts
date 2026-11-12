@@ -75,7 +75,7 @@ setInterval(() => {}, 1 << 30);
   const stateDir = join(state, "server");
   mkdirSync(join(stateDir, "fonts"), { recursive: true });
   copyFileSync(new URL("../src/fonts/JetBrainsMono-Regular.woff2", import.meta.url), join(stateDir, "fonts", `${FAMILY}.woff2`));
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir, tailscaleOwner: null, usage: new UsageService(undefined, []) });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir, usage: new UsageService(undefined, []) });
   browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
 
   // When: the terminal font names FAMILY, on a desktop and on a phone, light and dark.
@@ -186,7 +186,7 @@ setInterval(() => {}, 1 << 30);
     const lockedDir = join(state, "locked");
     mkdirSync(join(lockedDir, "fonts"), { recursive: true });
     copyFileSync(new URL("../src/fonts/JetBrainsMono-Regular.woff2", import.meta.url), join(lockedDir, "fonts", `${FAMILY}.woff2`));
-    locked = createServer({ port: 0, hostname: "127.0.0.1", token: "served-font-token", stateDir: lockedDir, tailscaleOwner: null, usage: new UsageService(undefined, []) });
+    locked = createServer({ port: 0, hostname: "127.0.0.1", token: "served-font-token", stateDir: lockedDir, usage: new UsageService(undefined, []) });
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: "block" });
     await context.addInitScript((family) => {
       localStorage.setItem("ovis:settings", JSON.stringify({ language: "en", alertsOn: false, chatFontFamily: family }));

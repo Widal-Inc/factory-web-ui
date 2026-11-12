@@ -6,7 +6,6 @@ import "./InstallHint.css";
 import { useInstallPrompt } from "../lib/install.ts";
 import { installHintKind, readHintDismissed, writeHintDismissed } from "../lib/installHint.ts";
 import { useT } from "../lib/i18n.ts";
-import { inNativeApp } from "../lib/nativeApp.ts";
 
 /**
  * One line on a phone's browser tab: add Ovis to the home screen, where alerts reach it (rules in
@@ -29,7 +28,6 @@ export function InstallHint() {
     maxTouchPoints: navigator.maxTouchPoints ?? 0,
     secure: window.isSecureContext,
     installed: prompt.installed,
-    nativeApp: inNativeApp(),
     dismissed,
   });
   if (kind === null) return null;

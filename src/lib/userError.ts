@@ -63,7 +63,7 @@ function ownWords(cause: unknown): string {
 }
 
 const SENTENCE: Record<FailureKind, () => string> = {
-  "signed-out": () => t("This browser is not signed in to this PC any more. Pair it again in Settings → Devices and PCs."),
+  "signed-out": () => t("This browser is not signed in to this PC any more. Sign in again with the access token."),
   gone: () => t("That item no longer exists on the PC. Refresh and try again."),
   changed: () => t("It changed on the PC while you were acting. Check it and try again."),
   slow: () => t("The PC took too long to answer. Try again."),
@@ -83,7 +83,7 @@ const CAUSE: Record<FailureKind, (() => string) | null> = {
 };
 
 const ADVICE: Record<FailureKind, (() => string) | null> = {
-  "signed-out": () => t("Pair it again in Settings → Devices and PCs."),
+  "signed-out": () => t("Sign in again with the access token."),
   gone: () => t("Refresh and try again."),
   changed: () => t("Check it and try again."),
   slow: null,

@@ -3,12 +3,11 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "./index.ts";
-import { DeviceStore } from "./devices.ts";
 import type { DirectoryListing, FileInfo, ProjectFavicon } from "../shared/protocol.ts";
 
 /**
  * The answer every JSON route gives before it reaches herdr: the wrong method, a body that is not
- * JSON or not an object, a watching device and another site. Nothing here calls an RPC, so the
+ * JSON or not an object and another site. Nothing here calls an RPC, so the
  * table holds for every route that reads a JSON body, wherever its handler lives.
  */
 const JSON_ROUTES = [
@@ -31,27 +30,15 @@ const OWN_GET: Partial<Record<(typeof JSON_ROUTES)[number], [number, string | nu
 
 const root = mkdtempSync(join(tmpdir(), "ovis-route-envelope-"));
 let owner: ReturnType<typeof createServer>;
-let watched: ReturnType<typeof createServer>;
 let ownBase = "";
-let watchBase = "";
-let watchCookie = "";
 
 beforeAll(() => {
   owner = createServer({ port: 0, stateDir: join(root, "owner") });
   ownBase = `http://127.0.0.1:${owner.port}`;
-  const watchState = join(root, "watch");
-  const devices = new DeviceStore(watchState);
-  const paired = devices.pair(devices.startPairing().code, "Watch", "watch")!;
-  // a first pairing is dropped unless the device is seen once
-  expect(devices.match(paired.token)).not.toBeNull();
-  watchCookie = `ovis_device=${encodeURIComponent(paired.token)}`;
-  watched = createServer({ port: 0, stateDir: watchState });
-  watchBase = `http://127.0.0.1:${watched.port}`;
 });
 
 afterAll(() => {
   owner?.stop();
-  watched?.stop();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -81,12 +68,6 @@ describe("a JSON route's answer before herdr", () => {
       for (const body of ["[]", "null"]) {
         expect([route, body, await answer(await post(ownBase, route, body))]).toEqual([route, body, [400, "invalid_body"]]);
       }
-    }
-  });
-
-  it("refuses every one to a watching device", async () => {
-    for (const route of JSON_ROUTES) {
-      expect([route, await answer(await post(watchBase, route, "not json", { cookie: watchCookie }))]).toEqual([route, [403, "read_only"]]);
     }
   });
 
@@ -130,10 +111,6 @@ describe("a read that succeeds on this PC", () => {
     expect(await answer(await fetch(`${ownBase}${query}`, { method: "POST", headers: { origin: ownBase, "x-herdr-machine": "1" } }))).toEqual([400, "method_not_allowed"]);
     // another site's page may not use it to learn which files exist
     expect(await answer(await fetch(`${ownBase}${query}`, { headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors", "sec-fetch-dest": "image" } }))).toEqual([403, "cross_site"]);
-    // nor a watching device, on this PC or through a PC's route
-    for (const path of [query, `/api/machines/pc1${query.slice("/api".length)}`]) {
-      expect([path, await answer(await fetch(`${watchBase}${path}`, { headers: { cookie: watchCookie } }))]).toEqual([path, [403, "read_only"]]);
-    }
   });
 
   it("lists a folder's folders, and its files when asked", async () => {

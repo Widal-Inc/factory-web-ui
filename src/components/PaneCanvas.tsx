@@ -60,8 +60,6 @@ interface Props {
   renameRequest?: RenameRequest | null;
   /** a phone's header title lists the tabs (App): no row is drawn, and its sheet holds New terminal and New tab with agent… */
   tabsInHeader?: boolean;
-  /** a watching device sends no settings: it sees a locked pane's Unlock and cannot use it, as in the Agents list */
-  watching?: boolean;
 }
 type Menu = { paneId: string; anchor: HTMLElement; point?: { x: number; y: number }; previousFocus: HTMLElement | null };
 interface Drag {
@@ -84,7 +82,7 @@ interface Drag {
 }
 
 /** The active tab, drawn from herdr's rectangles. No browser-owned layout or PTY state. */
-export function PaneCanvas({ snapshot, pane, selectedPaneId, onSelect, onChanged, renderPane, actionsRef, onOpenInHalf, mirrored = false, onRecoverUnsent, onSearchConversation, onNewTab, onNewTerminal, onMoveToWorkspace, renameRequest = null, tabsInHeader = false, watching = false }: Props) {
+export function PaneCanvas({ snapshot, pane, selectedPaneId, onSelect, onChanged, renderPane, actionsRef, onOpenInHalf, mirrored = false, onRecoverUnsent, onSearchConversation, onNewTab, onNewTerminal, onMoveToWorkspace, renameRequest = null, tabsInHeader = false }: Props) {
   const t = useT();
   const { settings, update: updateSettings } = useSettings();
   const narrowScreen = useMediaQuery(MIRROR_WRAP_QUERY);
@@ -292,7 +290,7 @@ export function PaneCanvas({ snapshot, pane, selectedPaneId, onSelect, onChanged
       ...(onRecoverUnsent && paneLifetimes.unsent().length > 0 ? [{ id: "recover-unsent", label: t("Recover unsent text"), icon: ArchiveRestore, run: () => onRecoverUnsent(target) }] : []),
       // a locked pane is unlocked here in place of its Close: an agent that exited leaves the Agents list, and its Unlock with it (#2977)
       ...(paneLocked(target.pane_id)
-        ? [{ id: "unlock", label: t("Unlock agent"), icon: LockOpen, disabled: watching, run: () => {
+        ? [{ id: "unlock", label: t("Unlock agent"), icon: LockOpen, run: () => {
           const key = sidebarPinKey(machineId, target.pane_id);
           updateSettings(({ lockedAgents }) => ({ lockedAgents: lockedAgents.filter((held) => held !== key) }));
         } }]

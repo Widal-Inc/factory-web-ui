@@ -62,8 +62,8 @@ describe("project favicon probe", () => {
     }
   });
 
-  it("remembers a refusal: a watching device, or a PC whose bridge has no such route", async () => {
-    for (const refusal of [error(403, "read_only"), error(404, "not_found")]) {
+  it("remembers a refusal: a PC whose bridge has no such route", async () => {
+    for (const refusal of [error(404, "not_found")]) {
       forgetFaviconProbes();
       const asked = serve(refusal);
       expect(await probeFavicon("pc2", "/x")).toBeNull();

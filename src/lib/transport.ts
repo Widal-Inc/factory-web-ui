@@ -35,7 +35,8 @@ export interface EventSourceLike {
 }
 
 export interface Transport {
-  readonly kind: "native" | "relay";
+  /** `native`: the browser's own; `custom`: one installed with setTransport, which answers addresses and sockets itself */
+  readonly kind: "native" | "custom";
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   openSocket(url: string): WebSocketLike;
   openEventSource(url: string): EventSourceLike;

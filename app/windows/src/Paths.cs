@@ -19,7 +19,6 @@ namespace Ovis
         public const string InstallCommand = "irm https://ovis.sh/install.ps1 | iex";
         public const string Support = "https://ovis.sh/support/";
         public const string GitDownload = "https://git-scm.com/download/win";
-        public const string TailscaleDownload = "https://tailscale.com/download/windows";
     }
 
     internal static class Paths
