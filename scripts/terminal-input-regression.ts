@@ -900,12 +900,23 @@ async function checkCanonicalSubmit(browser: Browser): Promise<void> {
         await landed;
         assert.deepEqual(errors, []);
         console.log(`PASS canonical multiline submit, ${item.name}: browser mode ${item.server === "attached" ? browserMode() : "n/a (mirror)"}, frame ${JSON.stringify({ text: submits[0]!.text, payload: submits[0]!.payload })} -> pane ${JSON.stringify(bytes())}`);
-      } finally { await context.close(); }
+      } finally {
+        console.log(`canonical multiline submit, ${item.name}: context close start`);
+        await context.close();
+        console.log(`canonical multiline submit, ${item.name}: context close finished`);
+      }
     }
   } finally {
+    console.log("canonical multiline submit: server cleanup start");
     servers.attached.stop(); servers.mirror.stop();
-    for (const id of owned) await workspaceClose(id).catch(() => {});
+    console.log("canonical multiline submit: server cleanup finished");
+    for (const id of owned) {
+      console.log(`canonical multiline submit: workspace cleanup start ${id}`);
+      await workspaceClose(id).catch(() => {});
+      console.log(`canonical multiline submit: workspace cleanup finished ${id}`);
+    }
     rmSync(root, { recursive: true, force: true });
+    console.log("canonical multiline submit: cleanup finished");
   }
 }
 
