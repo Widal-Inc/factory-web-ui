@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import { useContext, useEffect, useState } from "react";
 import { Download, Info, X } from "lucide-react";
 import { CHECKOUT_CHANGED_REASON, DESKTOP_APP_UPDATES, SUMMARY_GROUPS, type SummaryGroup, type UpdateNotes, type UpdateStatus } from "../../shared/update.ts";
@@ -98,7 +99,7 @@ export function UpdateControls({ updates, bridgesFollow = false }: { updates: Up
       {/* the section keeps its name for a link and a screen reader, out of sight like a bare page's captions */}
       <h3 id="settings-updates-title" className="visually-hidden">{t("Updates")}</h3>
       <div className="settings-card">
-        <SettingsRow label="Ovis" icon={Info}>
+        <SettingsRow label={BRAND.name} icon={Info}>
           <span className="settings-fact">{t("Running {version}", { version: runningAppVersion(status, __APP_VERSION__) })}</span>
           {state && <span className="settings-hint" role="status">{state}</span>}
           {status?.managed && (status.available

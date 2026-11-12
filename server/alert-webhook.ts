@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * Settings → Alerts → Also send to (shared/alert-webhook.ts): the pane alerts web push sends
  * (server/push.ts, which decides what and when) also go to one destination outside the app, in its
@@ -153,18 +154,18 @@ interface Post { url: string; init: RequestInit }
 
 /** The request a preset makes of a message. */
 export function buildPost(stored: StoredWebhook, alert: WebhookAlert | null, telegramApi = "https://api.telegram.org"): Post {
-  const text = alert ? alertText(alert) : "Ovis: alerts reach this destination";
+  const text = alert ? alertText(alert) : `${BRAND.name}: alerts reach this destination`;
   const link = alert ? paneLink(stored.link_base, alert) : null;
   const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   switch (stored.preset) {
     case "ntfy":
       return { url: stored.secret, init: { method: "POST", headers: {
-        title: "Ovis",
+        title: `${BRAND.name}`,
         ...(link ? { click: link } : {}),
         ...(alert?.kind === "input" || alert?.kind === "permission" ? { priority: "high" } : {}),
       }, body: text } };
     case "slack":
-      return { url: stored.secret, init: json({ text: link ? `${text}\n<${link}|Open in Ovis>` : text }) };
+      return { url: stored.secret, init: json({ text: link ? `${text}\n<${link}|Open in ${BRAND.name}>` : text }) };
     case "discord":
       return { url: stored.secret, init: json({ content: link ? `${text}\n${link}` : text, allowed_mentions: { parse: [] } }) };
     case "telegram":

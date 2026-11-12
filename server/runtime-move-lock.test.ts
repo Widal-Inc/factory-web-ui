@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterAll, afterEach, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,7 +49,7 @@ it("lets one server of a herdr session move it at a time, and the other once tha
   const revision = ((await bridge.read()) as Extract<MovePlanResponse, { available: true }>).plan.revision;
   const refused = await handleRequest(new Request("http://127.0.0.1/api/runtime/move", { method: "POST", body: JSON.stringify({ revision }),
     headers: { host: "127.0.0.1", authorization: "Bearer fictional-token", "content-type": "application/json", "x-herdr-update": "1" } }), ctx);
-  expect([refused?.status, await refused?.json()]).toEqual([409, { error: { code: "already_moving", message: expect.stringContaining("Another Ovis on this PC is moving this herdr session already") } }]);
+  expect([refused?.status, await refused?.json()]).toEqual([409, { error: { code: "already_moving", message: expect.stringContaining(brandedExpected("Another Ovis on this PC is moving this herdr session already")) } }]);
   own.cancel();
   expect(existsSync(lockPath)).toBe(false);
   expect(await start(bridge)).toBeNull();

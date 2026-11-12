@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import type { Machine, MoveAllResponse, PcMoveOffer, PcMoveStatus } from "../shared/machines.ts";
 import type { MoveUnavailable } from "../shared/runtime-move.ts";
 import { isJsonObject } from "./http.ts";
@@ -6,7 +7,7 @@ import { discard, parseJson, readCapped, REMOTE_LIMITS } from "./remote-json.ts"
 
 /** the move routes the PC proxy forwards, under /api/machines/:id/ (docs/runtime-move.md, "On another PC") */
 export const PC_MOVE_PATH = /^runtime\/move(?:\/(?:stop|stop-all|install))?$/;
-export const PC_UPDATE_REQUIRED = "Update Ovis on that PC first, then move it.";
+export const PC_UPDATE_REQUIRED = `Update ${BRAND.name} on that PC first, then move it.`;
 const MOVE_UNKNOWN = "That PC did not answer in time; it may have started. Look at its move status before trying again.";
 
 export function answerCode(body: Uint8Array | null): string | null {

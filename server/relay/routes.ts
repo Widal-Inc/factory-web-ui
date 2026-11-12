@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import { errorResponse, jsonResponse, readJsonObject, setRequestRoute } from "../http.ts";
 import type { ServerContext } from "../dispatch.ts";
 import { updateRequestAllowed } from "../update-api.ts";
@@ -63,7 +64,7 @@ export async function handleRelayRequest(request: Request, pathname: string, con
         if (service.status().phase === "off" || service.status().blocked) return fail("relay_off", "Start the relay before pairing.", 409);
         if (service.status().phase === "error") return fail("relay_offline", "The relay is not reachable; wait until it is online before pairing.", 409);
         const code = await service.pairCode();
-        if (code === null) return fail("code_unavailable", "Pairing with a typed code works through Ovis's relay only; scan the QR code instead.", 409);
+        if (code === null) return fail("code_unavailable", `Pairing with a typed code works through ${BRAND.name}'s relay only; scan the QR code instead.`, 409);
         return reply(code);
       }
       case "/api/relay/code/cancel":

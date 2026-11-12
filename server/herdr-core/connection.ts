@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 /**
  * One framed connection to herdr-core (`hc`), the runtime the Herdr desktop app runs its
  * terminals on. It goes through `hc connect`, which speaks hc's protocol over stdin/stdout and
@@ -175,7 +176,7 @@ const SERVER_ENV = /^(?:PORT|HOST|OVIS_.*|HERDR_WEB_.*|HERDR_PLUGIN_.*|HERDR_(?:
 /** `hc connect` as a child process (in `env`, else this process's, either without SERVER_ENV); a program that cannot be started is an HcError (`closed`). */
 export function spawnHcConnect(bin: string, env?: Record<string, string | undefined>): HcTransport {
   // runtime.ts hands out this path that cannot exist while a moved hc is found again
-  if (bin === "/dev/null/herdr-core-moved") throw new HcError("closed", "herdr-core moved (an update?), and Ovis is looking for it again: try again in a moment");
+  if (bin === "/dev/null/herdr-core-moved") throw new HcError("closed", `herdr-core moved (an update?), and ${BRAND.name} is looking for it again: try again in a moment`);
   // a process that asked for an isolated herdr never reaches the user's default core, however it is named
   if (liveSessionsRefused(process.env) && userCore(env ?? process.env)) {
     throw new HcError("live_core_refused", "HERDR_TEST_SESSION is set, but hc would reach the user's own herdr-core: give it HC_SOCKET or an HC_SESSION of its own, or set OVIS_ALLOW_LIVE_HERDR=1");
@@ -510,7 +511,7 @@ export function parseHello(text: string): HelloInfo | string {
   }
   if (message.error) return `hc refused hello: ${typeof message.error.message === "string" ? message.error.message : "no reason given"}`;
   const result = message.result;
-  if (result?.generation !== HC_GENERATION) return `hc speaks protocol generation ${String(result?.generation)}; Ovis speaks ${HC_GENERATION}`;
+  if (result?.generation !== HC_GENERATION) return `hc speaks protocol generation ${String(result?.generation)}; ${BRAND.name} speaks ${HC_GENERATION}`;
   if (result.framed !== true) return "hc did not switch the connection to framed mode";
   if (typeof result.version !== "string" || typeof result.core?.id !== "string" || typeof result.core.name !== "string") return "hc's hello is missing its version or core";
   const strings = (list: unknown): string[] => (Array.isArray(list) ? list.filter((item): item is string => typeof item === "string") : []);

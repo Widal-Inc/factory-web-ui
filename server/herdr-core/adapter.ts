@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import { existsSync, rmSync } from "node:fs";
 import { basename } from "node:path";
 import { createConnection } from "node:net";
@@ -127,7 +128,7 @@ export async function startHerdrCoreAdapter(hc: HcConnection, socketPath: string
         else reject(error);
       });
     });
-    if (live) throw new Error("Another Ovis owns this state directory: the herdr-core socket is still listening");
+    if (live) throw new Error(`Another ${BRAND.name} owns this state directory: the herdr-core socket is still listening`);
     rmSync(socketPath, { force: true });
   }
   // the turn each terminal had when this server first saw it: without `herdr.seen`, a turn that
@@ -449,13 +450,13 @@ function createAnswers(hc: HcConnection, firstTurn: FirstTurn, forgetTurns: (liv
    * and where a newer Ovis wrote it in a schema this one does not know.
    */
   const editLayout = async (edit: (layout: OvisLayout) => OvisLayout | null): Promise<boolean> => {
-    if (!layoutCalls(await hc.hello())) throw new AdapterError("unsupported", "this herdr-core keeps no documents Ovis can write");
+    if (!layoutCalls(await hc.hello())) throw new AdapterError("unsupported", `this herdr-core keeps no documents ${BRAND.name} can write`);
     for (let attempt = 0; ; attempt++) {
       // the document before the terminals: a list read after it holds every terminal a writer of that version had
       const doc = await hc.call("doc.get", { name: OVIS_LAYOUT_DOC });
       const [list, app] = await Promise.all([hc.call("terminal.list", {}), hc.call("doc.get", { name: LAYOUT_DOC })]);
       if (!ownsLayout(app.value)) throw new AdapterError("unsupported", "the Herdr app arranges this core's workspaces, tabs and panes");
-      if (foreignLayout(doc.value)) throw new AdapterError("unsupported", "a newer Ovis keeps this core's layout");
+      if (foreignLayout(doc.value)) throw new AdapterError("unsupported", `a newer ${BRAND.name} keeps this core's layout`);
       const next = edit(keptLayout(list.terminals, doc.value));
       if (!next) return false;
       try {
@@ -957,9 +958,9 @@ function createAnswers(hc: HcConnection, firstTurn: FirstTurn, forgetTurns: (liv
       const labels = (await terminal(paneId)).labels ?? {};
       // only a tab its labels make takes another pane: one in Other terminals, or a helper's under its parent's tab, is one terminal's own
       if (labels[SPACE_LABEL] !== pane.workspace_id || labels[TAB_LABEL] !== pane.tab_id) throw new AdapterError("unsupported", `pane ${paneId} is in a tab of its own terminal: it does not split`);
-      if (!layoutCalls(await hc.hello())) throw new AdapterError("unsupported", "this herdr-core keeps no documents Ovis can write");
+      if (!layoutCalls(await hc.hello())) throw new AdapterError("unsupported", `this herdr-core keeps no documents ${BRAND.name} can write`);
       // no shell for a split the document cannot hold
-      if (foreignLayout((await hc.call("doc.get", { name: OVIS_LAYOUT_DOC })).value)) throw new AdapterError("unsupported", "a newer Ovis keeps this core's layout");
+      if (foreignLayout((await hc.call("doc.get", { name: OVIS_LAYOUT_DOC })).value)) throw new AdapterError("unsupported", `a newer ${BRAND.name} keeps this core's layout`);
       // the workspace's name as shown, and the tab's own where it has one, stay when the split pane closes
       const workspaceName = shown.workspaces.find((candidate) => candidate.workspace_id === pane.workspace_id)?.label;
       const names = { ...(workspaceName ? { [WORKSPACE_NAME_LABEL]: workspaceName } : {}), ...(labels[TAB_NAME_LABEL] ? { [TAB_NAME_LABEL]: labels[TAB_NAME_LABEL] } : {}), ...(labels[WORKTREE_LABEL] ? { [WORKTREE_LABEL]: labels[WORKTREE_LABEL] } : {}) };
@@ -1061,7 +1062,7 @@ function createAnswers(hc: HcConnection, firstTurn: FirstTurn, forgetTurns: (liv
       if (!shown.workspaces.some((candidate) => candidate.workspace_id === workspaceId)) throw new AdapterError("workspace_not_found", `workspace ${workspaceId} not found`);
       const listed = shown.workspaces.map((candidate) => candidate.workspace_id);
       await editLayout((layout) => {
-        if (!layout.workspaces.some((candidate) => candidate.id === workspaceId)) throw new AdapterError("unsupported", `workspace ${workspaceId} holds no tab Ovis places`);
+        if (!layout.workspaces.some((candidate) => candidate.id === workspaceId)) throw new AdapterError("unsupported", `workspace ${workspaceId} holds no tab ${BRAND.name} places`);
         const anchor = anchorOf(listed, workspaceId, params["insert_index"], new Set(layout.workspaces.map((candidate) => candidate.id)));
         return { ...layout, workspaces: moveBefore(layout.workspaces, workspaceId, anchor) };
       });
@@ -1205,7 +1206,7 @@ function createAnswers(hc: HcConnection, firstTurn: FirstTurn, forgetTurns: (liv
   return async (request) => {
     const method = methods[request.method];
     // git runs here, and another machine's checkouts are there
-    if (options.otherMachine && request.method.startsWith("worktree.")) return { error: { code: "unsupported", message: "worktrees open only on the PC that runs Ovis" } };
+    if (options.otherMachine && request.method.startsWith("worktree.")) return { error: { code: "unsupported", message: `worktrees open only on the PC that runs ${BRAND.name}` } };
     if (!method) return { error: { code: "unsupported", message: `${request.method} is not available on herdr-core` } };
     try {
       return { result: await method(request.params) };

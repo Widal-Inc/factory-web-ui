@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * POST /api/agent-catalog/install and /api/agent-catalog/sign-in: an agent's official install
  * command, or its sign-in, run where the user sees it. The server picks the command from the catalog
@@ -81,7 +82,7 @@ async function closeUnstarted(tabId: string): Promise<void> {
   await tabClose(tabId).catch(() => undefined);
 }
 
-const shellUnknown = () => conflictResponse("shell_unknown", "Ovis could not tell which shell the new tab runs, so it typed nothing there");
+const shellUnknown = () => conflictResponse("shell_unknown", `${BRAND.name} could not tell which shell the new tab runs, so it typed nothing there`);
 
 /** The fields each route takes; any other field is refused, so a request cannot carry a command or a platform. */
 const FIELDS: Record<string, readonly string[]> = { [INSTALL_PATH]: ["agent", "alternative"], [SIGN_IN_PATH]: ["agent"] };
@@ -144,8 +145,8 @@ export class AgentInstaller {
     const entry = AGENT_CATALOG.find((candidate) => candidate.id === body["agent"]);
     if (!entry) return badRequest("unknown_agent", "Name an agent from GET /api/agent-catalog");
     // another machine of the core: this PC's commands, paths and home folder are not that machine's
-    if (hcMachine() !== null) return conflictResponse("other_machine", "Install and sign in to agents from a terminal on this machine: Ovis cannot run them there for it");
-    if (this.platform === null) return conflictResponse("platform_unsupported", "Ovis has no install commands for this operating system");
+    if (hcMachine() !== null) return conflictResponse("other_machine", `Install and sign in to agents from a terminal on this machine: ${BRAND.name} cannot run them there for it`);
+    if (this.platform === null) return conflictResponse("platform_unsupported", `${BRAND.name} has no install commands for this operating system`);
     try {
       return pathname === INSTALL_PATH ? await this.#install(entry, this.platform, body) : await this.#signIn(entry, this.platform);
     } catch (error) {

@@ -22,6 +22,7 @@
  * order, no timestamps), and src/styles.css is only ever read.
  */
 
+import { BRAND } from "../shared/brand.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseThemeBlocks, resolveEntry } from "../src/lib/themeCss.ts";
@@ -36,7 +37,7 @@ export const OUTPUTS = {
 } as const;
 
 /** src/lib/themes.ts DEFAULT_THEME, kept apart so this script reads no generated module (settings.test.ts holds them equal) */
-export const DEFAULT_ID = "codex";
+export const DEFAULT_ID = BRAND.theme;
 
 export const DESIGN_BEGIN = "<!-- BEGIN GENERATED THEMES -->";
 export const DESIGN_END = "<!-- END GENERATED THEMES -->";

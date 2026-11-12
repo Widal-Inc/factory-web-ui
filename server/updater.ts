@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /** Build in a private checkout. The source tree and the serving build stay intact. */
 import { spawn } from "node:child_process";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, readSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -42,7 +43,7 @@ const SHA = /^[0-9a-f]{40,64}$/;
 const NOT_MAIN_REASON = "Switch the source checkout to main to update.";
 
 /** Shown when the launcher runs from an installed release instead of the checkout it was built from (#1373). */
-export const RELEASE_FOLDER_REASON = "This server runs from an installed update's folder, not from its source checkout. Restart Ovis from its source checkout (the herdr plugin's Stop, then Start, or bun run start there) to update.";
+export const RELEASE_FOLDER_REASON = `This server runs from an installed update's folder, not from its source checkout. Restart ${BRAND.name} from its source checkout (the herdr plugin's Stop, then Start, or bun run start there) to update.`;
 
 /**
  * Whether a directory is a release this updater installed: `<state>/updates/<16 hex>/release-*`

@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import "./AccessGate.css";
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -93,9 +94,9 @@ export function AccessGate({ reason, initialCode, consumePairCode, pairingUnconf
   return (
     <main className="access-gate-screen">
       <div className="access-gate" data-testid="token-gate">
-        <img src="/icons/icon-192.png?v=sheep1" alt="" width="44" height="44" className="access-gate-mark" />
+        <img src={BRAND.icon} alt="" width="44" height="44" className="access-gate-mark" />
         <h1 id="access-gate-title" className="access-gate-title">
-          Ovis
+          {BRAND.name}
         </h1>
         {reason === "other_user" && (
           <p className="access-gate-refused" role="status">{t("Tailscale says this device belongs to someone other than this PC's owner. The owner can still let it in with a pairing code.")}</p>

@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { createReadStream, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer as listenOn } from "node:net";
@@ -209,7 +210,7 @@ describe("installing Ovis on a PC over SSH", () => {
     ["its disk is full", { freeKb: 200_000 }, "disk", /only 195 MB free/],
     ["its home is not writable", { writable: false }, "permission", /cannot write to its own home folder/],
     ["this app's bridge serves it", { descriptors: [descriptor(4242, true)] }, "bridge_there", /runs this app's bridge/],
-    ["Ovis already runs there", { descriptors: [descriptor(4242)] }, "ovis_there", /Ovis already runs on that PC/],
+    ["Ovis already runs there", { descriptors: [descriptor(4242)] }, "ovis_there", brandedExpected(/Ovis already runs on that PC/)],
   ];
   for (const [when, pcState, code, words] of refusals) it(`says in plain words why it cannot install when ${when}, and installs nothing`, async () => {
     const pc = fixture(pcState);
@@ -232,7 +233,7 @@ describe("installing Ovis on a PC over SSH", () => {
     const pc = fixture({ installer: { exit: 1, output: "Ovis: needs herdr 0.9.0 or newer; this is 0.8.1." } });
     const job = await pc.settled(pc.installer.start({ target }));
     expect(job).toMatchObject({ phase: "failed", error_code: "installer_failed" });
-    expect(job.error).toBe("The Ovis installer failed on that PC: Ovis: needs herdr 0.9.0 or newer; this is 0.8.1.");
+    expect(job.error).toBe(`${brandedExpected("The Ovis installer failed on that PC:")} Ovis: needs herdr 0.9.0 or newer; this is 0.8.1.`);
   });
 
   it("fails in plain words when the installed Ovis never starts, or the connect after it fails", async () => {
@@ -359,7 +360,7 @@ describe("installing Ovis on a PC over SSH", () => {
   it("fails in plain words, with its code, when the launcher's start fails there", async () => {
     const pc = fixture({ launcher: "systemd", launcherFails: "Failed to start ovis.service: Unit not found." });
     const job = await pc.settled(pc.installer.start({ target, machine_id: "pc-1", plan: { mode: "restart", pid: 4242 } }));
-    expect(job).toMatchObject({ phase: "failed", error_code: "not_started", error: expect.stringContaining("Ovis could not be started on that PC: Failed to start ovis.service") });
+    expect(job).toMatchObject({ phase: "failed", error_code: "not_started", error: expect.stringContaining(brandedExpected("Ovis could not be started on that PC: Failed to start ovis.service")) });
   });
 
   it("says the server it stopped is gone only while nothing was started in its place", async () => {
@@ -409,7 +410,7 @@ describe("installing Ovis on a PC over SSH", () => {
     const late = fixture({ descriptors: [descriptor(4242)], startedLate: [4242], restoreOff: true });
     const job = await late.settled(late.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } }));
     expect(job).toMatchObject({ phase: "failed", error_code: "changed" });
-    expect(job.error).toContain("started after that Ovis registered");
+    expect(job.error).toContain(brandedExpected("started after that Ovis registered"));
     expect(late.alive.has(4242)).toBe(true);
     // the genuine old server, which started before it registered: stopped and replaced
     const genuine = fixture({ descriptors: [descriptor(4242)], restoreOff: true });
@@ -472,7 +473,7 @@ describe("installing Ovis on a PC over SSH", () => {
     pc.installer.cancel(job.id);
     const ended = await pc.settled(job);
     expect(ended.phase).toBe("cancelled");
-    expect(ended.error).toBe("Cancelled. The Ovis started by hand on that PC was stopped for the install, and has been started again as it was.");
+    expect(ended.error).toBe(brandedExpected("Cancelled. The Ovis started by hand on that PC was stopped for the install, and has been started again as it was."));
     expect(pc.alive.has(4243)).toBe(true);
   });
 

@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -849,7 +850,7 @@ it("tells every other subscriber of a durable enrollment at once, and never the 
     devices.match(tablet.token);
     expect(deliveries).toHaveLength(1);
     await Promise.all(deliveries);
-    expect(fake.received.map((push) => push.payload)).toEqual([{ pane_id: null, title: "Ovis", body: "New device paired: Tablet", tag: expect.stringMatching(/^herdr-device-paired-[0-9a-f]{16}$/) }]);
+    expect(fake.received.map((push) => push.payload)).toEqual([{ pane_id: null, title: brandedExpected("Ovis"), body: "New device paired: Tablet", tag: expect.stringMatching(/^herdr-device-paired-[0-9a-f]{16}$/) }]);
     expect(fake.received[0]!.urgency).toBe("high");
     expect(other.received).toHaveLength(0);
     // a gated pairing is durable at once: both the PC's browser and the tablet hear of the phone

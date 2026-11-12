@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 /**
  * The relay end to end, cross-origin as in production: the hosted shell (dist-shell/, served as
  * Cloudflare Pages serves it by scripts/pages-static.ts, under its real _headers and _redirects)
@@ -301,7 +302,7 @@ async function main(): Promise<void> {
     relay = null;
     // a drop is said once it outlasts the reconnect grace (src/lib/reconnectGrace.ts), a page timer: the frozen
     // clock runs it, and it must not be said before
-    const banner = page.locator(".terminal-banner-warning", { hasText: "Reconnecting to Ovis" });
+    const banner = page.locator(".terminal-banner-warning", { hasText: brandedExpected("Reconnecting to Ovis") });
     const droppedAt = await page.evaluate(() => Date.now());
     await frames(page, "Reconnecting to Ovis once the reconnect grace ran out", async () => await banner.count() === 1, 10_000);
     const graceRan = await page.evaluate((at) => Date.now() - at, droppedAt);

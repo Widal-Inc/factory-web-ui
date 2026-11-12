@@ -114,7 +114,7 @@ export async function checkTelemetrySettings(browser: Browser): Promise<void> {
     });
 
     await page.goto(origin);
-    const notice = page.locator(".update-notice").filter({ hasText: "Ovis sends anonymous usage counts" }).first();
+    const notice = page.locator(".update-notice").filter({ hasText: brandedExpected("Ovis sends anonymous usage counts") }).first();
     await notice.waitFor({ state: "visible" });
     await until(async () => (await statusAt(origin)).notice_seen, "the visible notice is reacknowledged");
     assert.ok(changes.some((change) => change.notice_seen === true && change.notice_version === NOTICE_VERSION), "the browser acknowledges exactly the current notice version");
@@ -222,3 +222,4 @@ if (import.meta.main) {
   try { await checkTelemetrySettings(browser); }
   finally { await browser.close(); }
 }
+import { brandedExpected } from "./brand-test-helpers.ts";

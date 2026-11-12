@@ -1,0 +1,15 @@
+{
+  "name": "Widal Factory",
+  "shortName": "Factory",
+  "description": "Your factory's agents, conversations and terminals in one web app.",
+  "theme": "codex",
+  "logo": "/brand/mark.svg",
+  "iconSource": "public/brand/mark.svg",
+  "icon": "/icons/icon-192.png?v=factory1",
+  "largeIcon": "/icons/icon-512.png?v=factory1",
+  "maskableIcon": "/icons/icon-maskable-512.png?v=factory1",
+  "badge": "/icons/badge-96.png?v=factory1",
+  "favicon": "/favicon.png?v=factory1",
+  "appleTouchIcon": "/apple-touch-icon.png?v=factory1",
+  "emailSender": { "name": "Widal Factory", "address": null }
+}

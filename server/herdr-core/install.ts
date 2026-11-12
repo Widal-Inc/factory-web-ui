@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 /**
  * Installing herdr-core (`hc`) for a person who asked for it in Settings, the way its own installer
  * does (releases.herdr.dev/core/install.sh): the release archive for this PC, checked against its
@@ -67,7 +68,7 @@ export async function installHc(options: InstallHcOptions): Promise<InstalledHc>
   if (options.home === "") throw new Error("no home folder to install herdr-core into (HOME is not set)");
   const bin = join(options.home, ".local", "bin");
   const dest = join(bin, "herdr-core");
-  if (present(dest)) throw new Error(`${dest} is already there; Ovis does not replace it`);
+  if (present(dest)) throw new Error(`${dest} is already there; ${BRAND.name} does not replace it`);
 
   const response = await (options.fetch ?? fetch)(target.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`downloading herdr-core failed (HTTP ${response.status})`);

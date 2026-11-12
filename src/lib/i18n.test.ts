@@ -5,6 +5,15 @@ import { JA, JA_PARTS } from "./i18n.ja.ts";
 import { KO, KO_PARTS } from "./i18n.ko.ts";
 import { ZH, ZH_PARTS } from "./i18n.zh.ts";
 import { resolveLanguage, translate } from "./i18n.ts";
+import { BRAND } from "../../shared/brand.ts";
+
+it("brands translated templates before inserting user content", () => {
+  for (const language of ["en", "zh", "ja", "ko"] as const) {
+    expect(translate(language, "Connecting to Ovis…")).toContain(BRAND.name);
+    expect(translate(language, "Connecting to Ovis…")).not.toContain("Ovis");
+    expect(translate(language, "{name} and Ovis", { name: "Ovis research" })).toBe(`Ovis research and ${BRAND.name}`);
+  }
+});
 
 const root = join(import.meta.dir, "..");
 

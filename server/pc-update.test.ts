@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { unmanagedUpdateStatus, type UpdateStatus } from "../shared/update.ts";
 import { followOwnUpdate, offerFromStatus } from "./pc-update.ts";
@@ -61,8 +62,8 @@ describe("followOwnUpdate", () => {
     const steps: string[] = [];
     await followOwnUpdate({ endpoint: () => pc.endpoint, signal: new AbortController().signal, onStep: (step) => steps.push(step), ...fast });
     expect(pc.installs).toEqual([{ expected_revision: OFFERED }]);
-    expect(steps).toContain("This PC's own Ovis is updating itself to v0.5.1: downloading…");
-    expect(steps).toContain("This PC's own Ovis is updating itself to v0.5.1: building…");
+    expect(steps).toContain(brandedExpected("This PC's own Ovis is updating itself to v0.5.1: downloading…"));
+    expect(steps).toContain(brandedExpected("This PC's own Ovis is updating itself to v0.5.1: building…"));
   });
 
   it("waits while the PC is away restarting, and ends once it answers again on the new revision", async () => {
@@ -77,7 +78,7 @@ describe("followOwnUpdate", () => {
   it("fails in the PC's own words when its install fails there", async () => {
     const pc = remote(offered(), [{ phase: "building", step: "build" }, { phase: "error", error: "The build failed." }]);
     await expect(followOwnUpdate({ endpoint: () => pc.endpoint, signal: new AbortController().signal, onStep: () => {}, ...fast }))
-      .rejects.toThrow("That PC's Ovis could not update itself: The build failed.");
+      .rejects.toThrow(brandedExpected("That PC's Ovis could not update itself: The build failed."));
   });
 
   it("fails in plain words when the PC refuses the install, or never starts it", async () => {
@@ -86,7 +87,7 @@ describe("followOwnUpdate", () => {
       .rejects.toThrow("That PC offers another release now than the one shown. Look at it again, then update.");
     const blocked = remote(offered(), [], { status: 409, code: "update_restart_required" });
     await expect(followOwnUpdate({ endpoint: () => blocked.endpoint, signal: new AbortController().signal, onStep: () => {}, ...fast }))
-      .rejects.toThrow("That PC's Ovis refused to update: refused here");
+      .rejects.toThrow(brandedExpected("That PC's Ovis refused to update: refused here"));
     const idle = remote(offered(), [{ phase: "idle" }]);
     await expect(followOwnUpdate({ endpoint: () => idle.endpoint, signal: new AbortController().signal, onStep: () => {}, ...fast }))
       .rejects.toThrow("did not start its update");

@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import { handleWorkspaceRequest } from "./workspace-routes.ts";
 import { handleAlertWebhookRequest } from "./alert-webhook.ts";
 import { connectionData, type createCore, type SocketData } from "./core/index.ts";
@@ -348,7 +349,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
   // the panes' files are on another machine: this disk's would be shown, listed, diffed or written as theirs
   if (options.localFiles === false && OTHER_MACHINE_FILES.test(pathname)) {
     setRequestRoute(pathname);
-    return jsonResponse({ error: { code: "unsupported", message: "Files on another machine of herdr-core are not reachable from Ovis yet" } }, 501);
+    return jsonResponse({ error: { code: "unsupported", message: `Files on another machine of herdr-core are not reachable from ${BRAND.name} yet` } }, 501);
   }
 
   if (pathname === "/api/bridge") {
@@ -652,7 +653,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
     try {
       const refused = await move.install();
       if (refused === null) return jsonResponse({ installed: true });
-      return jsonResponse({ error: { code: refused, message: refused === "installing" ? "herdr-core is already being installed" : "Ovis offers no herdr-core install here" } }, 409);
+      return jsonResponse({ error: { code: refused, message: refused === "installing" ? "herdr-core is already being installed" : `${BRAND.name} offers no herdr-core install here` } }, 409);
     } catch (error) {
       return jsonResponse({ error: { code: "install_failed", message: error instanceof Error ? error.message : String(error) } }, 502);
     }
@@ -728,7 +729,7 @@ export async function handleRequest(request: Request, ctx: ServerContext): Promi
       const refused = await move.start(revision);
       if (refused === null) return jsonResponse({ accepted: true }, 202);
       // another Ovis server of this herdr session (the PC's own, or a connection server's bridge) moves it
-      if (refused === "locked") return jsonResponse({ error: { code: "already_moving", message: `Another Ovis on this PC is moving this herdr session already. If none is (one that stopped without telling), delete ${moveLockPath(herdrSocketPath())} on this PC and try again.` } }, 409);
+      if (refused === "locked") return jsonResponse({ error: { code: "already_moving", message: `Another ${BRAND.name} on this PC is moving this herdr session already. If none is (one that stopped without telling), delete ${moveLockPath(herdrSocketPath())} on this PC and try again.` } }, 409);
       if (refused === "lock_unsafe") return jsonResponse({ error: { code: "move_lock_unsafe", message: MOVE_LOCK_UNSAFE } }, 409);
       return jsonResponse({ error: { code: refused, message: refused === "plan_changed" ? "the panes changed since the plan was shown: look again" : refused === "already_moving" ? "a move is already waiting or running" : refused === "runtime_switching" ? "the server is switching its runtime: try again once it is back" : "no move to herdr-core is offered here" } }, 409);
     } catch (error) {
@@ -847,9 +848,9 @@ function stopRefusalText(refused: StopRefusal): string {
     case "not_waiting": return "no move is waiting";
     case "not_running": return "that pane is not a shell running a command";
     case "changed": return "the panes changed since you looked: look again";
-    case "own_server": return "that pane runs this Ovis server";
-    case "own_group_unknown": return "Ovis cannot tell its own process group here, so it ends nothing";
+    case "own_server": return `that pane runs this ${BRAND.name} server`;
+    case "own_group_unknown": return `${BRAND.name} cannot tell its own process group here, so it ends nothing`;
     case "not_tried": return "send Ctrl+C first, and force only once it has had a few seconds";
-    case "not_local": return "this PC does not show that command in front of its shell, so Ovis does not signal it";
+    case "not_local": return `this PC does not show that command in front of its shell, so ${BRAND.name} does not signal it`;
   }
 }

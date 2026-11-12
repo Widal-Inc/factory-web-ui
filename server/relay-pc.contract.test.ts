@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
@@ -166,7 +167,7 @@ it("adds a PC through the relay, shows its panes, signs in again after a restart
   // B admitted A as one more paired device, by the same consent a phone needs
   const devices = b.context.services.devices;
   const paired = devices.list(null).find((device) => device.via_relay);
-  expect(paired?.label).toBe(`Ovis on ${hostname()}`.slice(0, 64));
+  expect(paired?.label).toBe(brandedExpected(`Ovis on ${hostname()}`).slice(0, 64));
 
   // B's roster reaches A's sidebar feed over the relay, and A's API routes reach B through it
   const connected = await machineWhen(a.base, (pc) => pc.id === machine.id && pc.state === "connected" && pc.snapshot !== null);
@@ -614,7 +615,7 @@ it("shows a relay PC's own update on its card and installs it from here, with it
   // nothing more on offer: asked again, it is refused in plain words
   const again = await machinePost(a.base, `${machine.id}/update`);
   expect(again.status).toBe(409);
-  expect(await again.json()).toEqual({ error: { code: "update_unavailable", message: "This PC's Ovis is up to date." } });
+  expect(await again.json()).toEqual({ error: { code: "update_unavailable", message: brandedExpected("This PC's Ovis is up to date.") } });
 });
 
 it("tells why a relay PC cannot update, and Update all skips it with that reason", async () => {
@@ -644,5 +645,5 @@ it("starts every relay PC's update with Update all, and reports a failure there 
   const { started } = await all.json() as PcUpdateAll;
   expect(started.map((entry) => entry.machine_id)).toEqual([machine.id]);
   const failed = await machineWhen(a.base, (pc) => pc.id === machine.id && !pc.updating && typeof pc.update_error === "string");
-  expect(failed.update_error).toBe("That PC's Ovis could not update itself: The build failed.");
+  expect(failed.update_error).toBe(brandedExpected("That PC's Ovis could not update itself: The build failed."));
 });

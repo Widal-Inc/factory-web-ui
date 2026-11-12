@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * Web Push: pane alerts that reach a device even when Ovis is closed there.
  *
@@ -944,14 +945,14 @@ export function createPushService(options: PushServiceOptions): PushService {
     async sendTest(endpoint) {
       const subscription = store().get(endpoint);
       if (!subscription) return null;
-      return deliver(subscription, { pane_id: null, title: "Ovis", body: "Alerts are on for this device", tag: "herdr-test" }, "normal");
+      return deliver(subscription, { pane_id: null, title: `${BRAND.name}`, body: "Alerts are on for this device", tag: "herdr-test" }, "normal");
     },
 
     async devicePaired(event, origin = []) {
       // its own tag per enrollment: a second delivery of the same event replaces the first instead of adding to it
       const others = [...store().values()].filter((subscription) => subscription.device_id !== event.device_id
         && !(subscription.browser_keys ?? []).some((key) => origin.includes(key)));
-      await broadcast({ pane_id: null, title: "Ovis", body: `New device paired: ${event.label}`, tag: `herdr-device-paired-${event.event_id}` }, "high", others);
+      await broadcast({ pane_id: null, title: `${BRAND.name}`, body: `New device paired: ${event.label}`, tag: `herdr-device-paired-${event.event_id}` }, "high", others);
     },
 
     seed(panes, machineId = "local", machineName, serverId) {

@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 /**
  * The hosted shell in a real browser against a real PC: dist-shell/ served as Cloudflare Pages
  * would serve it (pages-static.ts) under its enforced policy, a real `createServer` on the
@@ -635,8 +636,8 @@ export async function relayShellQa(tree: RelayServerTree): Promise<void> {
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const settings = page.locator(".settings-dialog");
       assert.equal(await settings.locator('[data-section="devices"]').count(), 1, "the shell's Devices and PCs lists the devices");
-      assert.equal(await settings.locator('[data-section="relay"]').count(), 0, "the hosted shell's Devices and PCs has no Ovis relay group");
-      assert.equal(await settings.getByRole("switch", { name: "Ovis relay", exact: true }).count(), 0, "no relay switch under the shell");
+      assert.equal(await settings.locator('[data-section="relay"]').count(), 0, brandedExpected("the hosted shell's Devices and PCs has no Ovis relay group"));
+      assert.equal(await settings.getByRole("switch", { name: brandedExpected("Ovis relay"), exact: true }).count(), 0, "no relay switch under the shell");
       note(`settings: Phone & devices in the shell lists the phone and has no relay group (relay statuses consumed: ${await relayStatuses()})`);
       await inApp(page);
       assert.equal(service.status().sessions, 1, "renaming keeps the admitted PC session");
@@ -1134,7 +1135,7 @@ export async function relayShellQa(tree: RelayServerTree): Promise<void> {
           const { context, page } = await open();
           await pairFrom(page, pc.offer);
           await state(page, "pc-outdated").waitFor();
-          await page.getByRole("heading", { name: `Update Ovis on PC ${below}` }).waitFor();
+          await page.getByRole("heading", { name: brandedExpected(`Update Ovis on PC ${below}`) }).waitFor();
           assert.equal(await page.locator(".app").count(), 0, "no app for a PC below the minimum");
           assert.equal(await page.locator(".relay-shell-command").count(), 0, "a managed PC shows no steps by hand");
           assert.deepEqual(updates.requests, [], "nothing is installed before the tap");

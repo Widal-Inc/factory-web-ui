@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import type { TailnetPcsOptions } from "./tailnet-pcs.ts";
 import type { SshCandidatesOptions } from "./ssh-candidates.ts";
 import "./adopt-legacy-env.ts";
@@ -114,7 +115,7 @@ export function herdrCoreInstaller(): HcInstaller {
       // one Ovis's own look does not find: taken out again, so the row offers the install once more
       if ((await rediscoverHc()) === null) {
         installed.undo();
-        throw new Error("herdr-core was installed, but Ovis does not find it; it was taken out again");
+        throw new Error(`herdr-core was installed, but ${BRAND.name} does not find it; it was taken out again`);
       }
     },
   };
@@ -339,7 +340,7 @@ export function createServer(
     usage.invalidate(provider);
     if (account !== null) {
       try { usageAccounts.restore(account); }
-      catch (error) { console.warn("Could not restore the signed-in account to Ovis", error instanceof Error ? error.message : String(error)); }
+      catch (error) { console.warn(`Could not restore the signed-in account to ${BRAND.name}`, error instanceof Error ? error.message : String(error)); }
     }
   });
   const voice = options.voice ?? new VoiceService({ stateDir, env: process.env, fetch });
@@ -629,7 +630,7 @@ if (import.meta.main) {
       herdrCore = null;
     }
   } catch (err) {
-    console.error(`Ovis cannot start: ${err instanceof Error ? err.message : String(err)}.`);
+    console.error(`${BRAND.name} cannot start: ${err instanceof Error ? err.message : String(err)}.`);
     process.exit(1);
   }
   const updates = connectUpdater();
@@ -657,11 +658,11 @@ if (import.meta.main) {
     const host = process.env["HOST"] ?? "127.0.0.1";
     const port = process.env["PORT"] || DEFAULT_PORT;
     const reason = code === "EADDRINUSE"
-      ? `the port is in use. Another app (or Ovis) may already use it; start with another PORT=, or open http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host}:${port} if it is this app`
+      ? `the port is in use. Another app (or ${BRAND.name}) may already use it; start with another PORT=, or open http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host}:${port} if it is this app`
       : code === "EADDRNOTAVAIL"
         ? "this PC has no such address; try HOST=127.0.0.1"
         : "the port needs permission; try a PORT above 1024";
-    console.error(`Ovis cannot listen on ${host}:${port}: ${reason}.`);
+    console.error(`${BRAND.name} cannot listen on ${host}:${port}: ${reason}.`);
     herdrCore?.stop();
     process.exit(1);
   }
@@ -683,7 +684,7 @@ if (import.meta.main) {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
   if (process.env["OVIS_MANAGED"] === "1") process.on("disconnect", shutdown);
-  console.log(`Ovis listening on http://${instance.hostname}:${instance.port}`);
+  console.log(`${BRAND.name} listening on http://${instance.hostname}:${instance.port}`);
   if (instance.lanHttps) {
     const { port, addresses, sha256 } = instance.lanHttps;
     const shown = addresses.includes("0.0.0.0") ? privateLanAddresses() : addresses;

@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -60,7 +61,7 @@ describe("OVIS_APP_NAME", () => {
   it("renames the iOS home-screen title in the shell and nothing else", () => {
     const renamed = renameShell(shell, "laptop");
     expect(renamed).toContain('<meta name="apple-mobile-web-app-title" content="laptop" />');
-    expect(renamed.replace("content=\"laptop\"", "content=\"Ovis\"")).toBe(shell);
+    expect(renamed.replace("content=\"laptop\"", brandedExpected("content=\"Ovis\""))).toBe(shell);
   });
 
   it("frames the other ports of the request's own host and no other host", () => {

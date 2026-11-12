@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -60,30 +61,30 @@ try {
 
   // it can update itself: one action on the card and in the line under the header
   await page.goto(server.url.href);
-  await card.getByText("This PC's Ovis is older than this app", { exact: true }).waitFor({ timeout: 10_000 });
-  await page.locator(".update-notice").getByText("QA remote's own Ovis needs an update to reconnect.", { exact: true }).waitFor();
+  await card.getByText(brandedExpected("This PC's Ovis is older than this app"), { exact: true }).waitFor({ timeout: 10_000 });
+  await page.locator(".update-notice").getByText(brandedExpected("QA remote's own Ovis needs an update to reconnect."), { exact: true }).waitFor();
   assert.equal(await page.getByText("Bridge update needed", { exact: true }).count(), 0, "not called a bridge this app installs");
   // the offer's own sentence is not repeated as a reason
   assert.equal(await card.locator(".machine-action-reason").count(), 0, "a plain offer shows no reason");
   await page.screenshot({ path: `${shots}/offer.png` });
-  await card.getByRole("button", { name: "Update this PC's Ovis to v0.4.18", exact: true }).click();
-  await card.getByText("Updating this PC's Ovis", { exact: true }).waitFor();
-  await page.locator(".update-notice").getByText("Updating QA remote's own Ovis", { exact: false }).waitFor();
+  await card.getByRole("button", { name: brandedExpected("Update this PC's Ovis to v0.4.18"), exact: true }).click();
+  await card.getByText(brandedExpected("Updating this PC's Ovis"), { exact: true }).waitFor();
+  await page.locator(".update-notice").getByText(brandedExpected("Updating QA remote's own Ovis"), { exact: false }).waitFor();
   assert.deepEqual(updates, [`/api/machines/${offered.id}/update-bridge`]);
   await page.screenshot({ path: `${shots}/updating.png` });
 
   // its update failed: the card says so and why, and offers it again; the line under the header says it failed
   roster = [local, { ...offered, error: failure }];
   await page.reload();
-  await card.getByText("Updating this PC's Ovis failed", { exact: true }).waitFor({ timeout: 10_000 });
+  await card.getByText(brandedExpected("Updating this PC's Ovis failed"), { exact: true }).waitFor({ timeout: 10_000 });
   await card.getByText(failure, { exact: true }).waitFor();
-  await card.getByRole("button", { name: "Update this PC's Ovis to v0.4.18", exact: true }).waitFor();
-  await page.locator(".update-notice").getByText("Updating QA remote's own Ovis failed.", { exact: true }).waitFor();
+  await card.getByRole("button", { name: brandedExpected("Update this PC's Ovis to v0.4.18"), exact: true }).waitFor();
+  await page.locator(".update-notice").getByText(brandedExpected("Updating QA remote's own Ovis failed."), { exact: true }).waitFor();
   assert.equal(await page.locator(".update-notice span[title]").getAttribute("title"), failure, "the line under the header holds why on hover");
   await page.screenshot({ path: `${shots}/failed.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await page.locator(".update-notice").getByText("Updating QA remote's own Ovis failed.", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.locator(".update-notice").getByText(brandedExpected("Updating QA remote's own Ovis failed."), { exact: true }).waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Open workspace list", exact: true }).click();
   await card.getByText(failure, { exact: true }).waitFor();
   await page.waitForFunction(() => document.getAnimations().every((animation) => !(animation instanceof CSSTransition) || animation.playState !== "running"));
@@ -95,19 +96,19 @@ try {
   // it cannot: why, and its address to copy, with no link that may not open from here
   roster = [local, refused(null)];
   await page.reload();
-  await card.getByText("Update this PC's Ovis on that PC", { exact: true }).waitFor({ timeout: 10_000 });
+  await card.getByText(brandedExpected("Update this PC's Ovis on that PC"), { exact: true }).waitFor({ timeout: 10_000 });
   await card.getByText(refusal, { exact: true }).waitFor();
   await card.getByText("Open it on that PC or through its own tailnet address:", { exact: true }).waitFor();
   assert.equal(await card.locator(".machine-own-address code").textContent(), "qa.invalid:7317");
-  assert.equal(await page.getByRole("link", { name: "Open that PC's Ovis" }).count(), 0);
-  await page.locator(".update-notice").getByText("QA remote's own Ovis needs an update on that PC.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("link", { name: brandedExpected("Open that PC's Ovis") }).count(), 0);
+  await page.locator(".update-notice").getByText(brandedExpected("QA remote's own Ovis needs an update on that PC."), { exact: true }).waitFor();
   await card.getByRole("button", { name: "Copy address", exact: true }).click();
   await card.getByRole("button", { name: "Copied", exact: true }).waitFor();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "qa.invalid:7317");
   await page.screenshot({ path: `${shots}/refused.png` });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await page.locator(".update-notice").getByText("QA remote's own Ovis needs an update on that PC.", { exact: true }).waitFor({ timeout: 10_000 });
+  await page.locator(".update-notice").getByText(brandedExpected("QA remote's own Ovis needs an update on that PC."), { exact: true }).waitFor({ timeout: 10_000 });
   await page.getByRole("button", { name: "Open workspace list", exact: true }).click();
   await card.getByRole("button", { name: "Copy address", exact: true }).waitFor();
   // the drawer slides in: the picture is taken once it has (the status dot's pulse never ends)
@@ -122,25 +123,25 @@ try {
   await page.reload();
   await page.locator(".update-notice").getByText("QA remote needs web access setup.", { exact: true }).waitFor({ timeout: 10_000 });
   await page.locator(".update-notice").getByRole("button", { name: "Set up web access", exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: /Update this PC's Ovis/ }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: brandedExpected(/Update this PC's Ovis/) }).count(), 0);
   assert.equal(await card.getByText("Setup needed", { exact: true }).count(), 1);
 
   // as the server tells it now: an update that ended on another version keeps where it answers, with why
   await page.setViewportSize({ width: 1280, height: 900 });
   roster = [local, { ...offered, action_required: "setup", error: differs, remote_ovis: { ...updatable, version: null, latest_version: null, updatable: false, reason: differs } }];
   await page.reload();
-  await card.getByText("Update this PC's Ovis on that PC", { exact: true }).waitFor({ timeout: 10_000 });
+  await card.getByText(brandedExpected("Update this PC's Ovis on that PC"), { exact: true }).waitFor({ timeout: 10_000 });
   await card.getByText(differs, { exact: true }).waitFor();
   assert.equal(await card.locator(".machine-own-address code").textContent(), "qa.invalid:7317");
-  await page.locator(".update-notice").getByText("QA remote's own Ovis needs an update on that PC.", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: /Update this PC's Ovis/ }).count(), 0);
+  await page.locator(".update-notice").getByText(brandedExpected("QA remote's own Ovis needs an update on that PC."), { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: brandedExpected(/Update this PC's Ovis/) }).count(), 0);
   await page.screenshot({ path: `${shots}/differs.png` });
 
   // the https address it says Tailscale serves it at is the link
   await page.setViewportSize({ width: 1280, height: 900 });
   roster = [local, refused("https://home-server.example.ts.net")];
   await page.reload();
-  const link = card.getByRole("link", { name: "Open that PC's Ovis", exact: true });
+  const link = card.getByRole("link", { name: brandedExpected("Open that PC's Ovis"), exact: true });
   await link.waitFor({ timeout: 10_000 });
   assert.equal(await link.getAttribute("href"), "https://home-server.example.ts.net");
   // the host that PC named stands beside the link, and no address to copy

@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 /**
  * Settings → Devices and PCs: the Ovis relay against a local Bun relay (relay/bun.ts). The page's one relay
  * switch is in More settings → Ovis relay, whose row says the relay's state and which holds Reset relay
@@ -137,7 +138,7 @@ function relayUi(page: Page) {
     relayGroup,
     // the Ovis relay row's description is the relay's state; read as text, so with More settings folded too
     moreState: relayGroup.locator(".settings-row").first().locator(".settings-description"),
-    moreSwitch: relayGroup.getByRole("switch", { name: "Ovis relay", exact: true }),
+    moreSwitch: relayGroup.getByRole("switch", { name: brandedExpected("Ovis relay"), exact: true }),
     moreReset: relayGroup.getByRole("button", { name: "Reset", exact: true }),
     /** More settings, unfolded */
     async openMore(): Promise<void> {
@@ -155,7 +156,7 @@ function relayUi(page: Page) {
     },
     relayTab,
     devicesTab,
-    toggle: relayTab.getByRole("switch", { name: "Ovis relay", exact: true }),
+    toggle: relayTab.getByRole("switch", { name: brandedExpected("Ovis relay"), exact: true }),
     /** the switch's tooltip that turning the relay on closes the device gate */
     gateNote: relayTab.locator(".connect-relay-switch[title]"),
     wifiCode: devicesTab.locator(".connect-phone-code .compact-pair-code"),
@@ -196,7 +197,7 @@ export async function checkRelayPanel(browser: Browser): Promise<void> {
     await ui.openMore();
     await moreState.filter({ hasText: "Off. Nothing goes through the relay." }).waitFor();
     assert.equal(await dialog.locator('[data-section="phone"]').count(), 0, "no separate phone group");
-    assert.equal(await dialog.getByRole("switch", { name: "Ovis relay", exact: true }).count(), 1, "the settings page's one relay switch is in More settings");
+    assert.equal(await dialog.getByRole("switch", { name: brandedExpected("Ovis relay"), exact: true }).count(), 1, "the settings page's one relay switch is in More settings");
     assert.equal(await moreSwitch.getAttribute("aria-checked"), "false", "the relay starts off");
     assert.equal(await dialog.getByRole("img").count(), 0, "the settings page itself shows no QR code");
     assert.equal((await relayState()).phase, "off");
@@ -206,14 +207,14 @@ export async function checkRelayPanel(browser: Browser): Promise<void> {
     await sheet.locator('[data-tab-panel="ssh"]').waitFor();
     assert.equal(await sheet.getByRole("group", { name: "How to connect", exact: true }).count(), 1, "the tabs are one labelled group");
     assert.deepEqual(await tabs.evaluateAll((buttons) => buttons.map((button) => [button.getAttribute("data-tab"), button.textContent, button.getAttribute("aria-pressed")])),
-      [["ssh", "SSH", "true"], ["devices", "Phones and devices", "false"], ["relay", "Ovis relay", "false"]], "an owner's PC window gets SSH, Phones and devices and Ovis relay, opened on SSH");
+      [["ssh", "SSH", "true"], ["devices", "Phones and devices", "false"], ["relay", brandedExpected("Ovis relay"), "false"]], brandedExpected("an owner's PC window gets SSH, Phones and devices and Ovis relay, opened on SSH"));
     assert.equal(await sheet.locator(".connect-other, .connect-way, .connect-way-body, .connect-phone-relay, .tailnet-pcs").count(), 0, "no other ways fold, no ways list, no relay pairing QR code and no tailnet PCs");
     assert.equal(await sheet.getByRole("img", { name: "QR code that pairs a phone through the relay", exact: true }).count(), 0, "the sheet offers no relay pairing QR code");
     assert.equal((await relayState()).phase, "off", "opening the sheet turns nothing on");
 
     // signed out, the relay's tab is the Ovis sign-in alone: it closes the sheet for the account in More settings
     await ui.openTab("relay");
-    const signInButton = relayTab.getByTestId("connect-signin").getByRole("button", { name: "Sign in to Ovis", exact: true });
+    const signInButton = relayTab.getByTestId("connect-signin").getByRole("button", { name: brandedExpected("Sign in to Ovis"), exact: true });
     await signInButton.waitFor();
     assert.equal(await relayTab.getByRole("switch").count(), 0, "signed out, the relay's tab has no switch");
     await signInButton.click();
@@ -230,7 +231,7 @@ export async function checkRelayPanel(browser: Browser): Promise<void> {
     assert.equal(await sheet.getByRole("switch").count(), 1, "the sheet carries the relay's switch once");
     assert.equal(await toggle.getAttribute("aria-checked"), "false", "the sheet's switch shows the relay off");
     assert.equal(await sheet.getByRole("button", { name: "Turn on the relay", exact: true }).count(), 0, "one way to turn it on: the switch");
-    assert.equal(await sheet.getByRole("button", { name: "Sign in to Ovis", exact: true }).count(), 0, "signed in, no sign-in");
+    assert.equal(await sheet.getByRole("button", { name: brandedExpected("Sign in to Ovis"), exact: true }).count(), 0, "signed in, no sign-in");
     await relayTab.getByRole("button", { name: "Open the account", exact: true }).waitFor();
     assert.equal(await sheet.getByTestId("relay-owner-help").count(), 0, "the direct owner needs no relay restriction explanation");
     assert.equal(await gateNote.getAttribute("title"), GATE_NOTE, "with no token and nothing paired, the switch's tooltip says turning the relay on closes the gate");
@@ -318,13 +319,13 @@ export async function checkRelayPanel(browser: Browser): Promise<void> {
     // the visitor's sheet holds only what it can use: Phones and devices, with no pairing code, no SSH and no relay
     // tab; More settings has no relay group for it
     await seen.connect.click();
-    await seen.devicesTab.getByText("Open Ovis on the PC itself to add a connection.", { exact: true }).waitFor();
+    await seen.devicesTab.getByText(brandedExpected("Open Ovis on the PC itself to add a connection."), { exact: true }).waitFor();
     assert.equal(await seen.sheet.locator(".connect-tabs").count(), 0, "a Portal visitor gets one way, so no tabs");
     assert.equal(await seen.relayTab.count(), 0, "nor the relay's tab");
     assert.equal(await seen.sheet.locator(".connect-phone-code").count(), 0, "a Portal visitor is offered no pairing code");
     assert.equal(await seen.sheet.locator(".compact-pair").count(), 0, "nor a code to type");
     assert.equal(await seen.sheet.getByRole("switch").count(), 0, "a Portal visitor gets no relay switch");
-    assert.equal(await seen.sheet.getByRole("button", { name: "Sign in to Ovis", exact: true }).count(), 0, "nor the sign-in");
+    assert.equal(await seen.sheet.getByRole("button", { name: brandedExpected("Sign in to Ovis"), exact: true }).count(), 0, "nor the sign-in");
     assert.equal(await seen.sheet.getByRole("img").count(), 0, "a Portal visitor is shown no pairing offer");
     assert.equal(await seen.relayGroup.count(), 0, "a Portal visitor's More settings has no relay group");
     assert.deepEqual(visitorMutations, [], "a Portal visitor never requests an owner-only relay mutation");

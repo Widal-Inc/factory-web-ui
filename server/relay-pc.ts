@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * Another PC added through the Ovis relay, with no SSH (docs/remote-pcs.md, "Through the relay"). This server pairs
  * with that PC's Ovis the way a phone does (shared/relay-channel.ts: Noise NK, Ovis Mux v1, a device key it signs
@@ -60,7 +61,7 @@ function sleptSince(probes: RouteProbes): boolean {
   return probes.wallAt !== undefined && (Date.now() - probes.wallAt) - (performance.now() - probes.at) > 60_000;
 }
 
-export function relayPcLabel(): string { return `Ovis on ${hostname()}`.slice(0, 64); }
+export function relayPcLabel(): string { return `${BRAND.name} on ${hostname()}`.slice(0, 64); }
 
 interface SavedKey {
   v: 1;
@@ -599,6 +600,6 @@ function refusal(error: Error, pairing: boolean): string {
   if (code === "auth_revoked" || code === "auth_failed" && !pairing) return "That PC removed this PC's access. Add it again with a new pairing link.";
   if (code === "auth_failed") return "That PC did not accept this PC. The pairing link may be used or expired; copy a new one.";
   if (code === "server_identity_changed") return "That PC has a new relay identity. Add it again with a new pairing link.";
-  if (code === "unsupported_version" || code === "unsupported_extension" || code === "unsupported_transport") return "That PC runs a version of Ovis this app cannot talk to. Update both PCs.";
+  if (code === "unsupported_version" || code === "unsupported_extension" || code === "unsupported_transport") return `That PC runs a version of ${BRAND.name} this app cannot talk to. Update both PCs.`;
   return error.message;
 }

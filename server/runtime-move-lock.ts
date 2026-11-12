@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import { randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, realpathSync, unlinkSync } from "node:fs";
 import { connect, createServer, type Server } from "node:net";
@@ -13,7 +14,7 @@ export const moveLockPath = (herdrSocket: string): string => join(dirname(herdrS
 
 /** The lock cannot be taken safely here: its folder is not this user's own, anybody may write in it, or something else sits at its name. */
 export class MoveLockUnsafe extends Error {}
-export const MOVE_LOCK_UNSAFE = "The folder of this herdr session's socket is not yours, anybody may write in it, or a file Ovis did not make sits at runtime-move.sock there, so Ovis cannot lock a move. Fix that on this PC, then try again.";
+export const MOVE_LOCK_UNSAFE = `The folder of this herdr session's socket is not yours, anybody may write in it, or a file ${BRAND.name} did not make sits at runtime-move.sock there, so ${BRAND.name} cannot lock a move. Fix that on this PC, then try again.`;
 
 /** where a take is, for a test that comes in between: its socket bound and listening, not yet read back */
 export type MoveLockStep = "bound";

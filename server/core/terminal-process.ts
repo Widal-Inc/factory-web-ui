@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 /**
  * Starting a pane's terminal: the `herdr terminal attach` pty (or, where herdr cannot attach here,
  * the mirrored screen) shared by every client of the pane, its retries while herdr refuses, the
@@ -629,7 +630,7 @@ export function createSpawnAttachment({ attachments, retiringAttachments, termin
       if (!Bun.which(command, { PATH: process.env["PATH"] ?? "", cwd: process.env["HOME"] ?? "/" })) {
         throw new HerdrError("attach_failed", onCore
           ? command === HC_MOVED
-            ? "herdr-core moved (an update?), and Ovis is looking for it again: try again in a moment"
+            ? `herdr-core moved (an update?), and ${BRAND.name} is looking for it again: try again in a moment`
             : `hc could not be started: ${command} is not an executable on the server's PATH (set OVIS_HC_BIN to hc's full path)`
           : `herdr could not be started: ${command} is not an executable on the server's PATH (set OVIS_HERDR_BIN to herdr's full path)`);
       }
