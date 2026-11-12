@@ -680,6 +680,15 @@ describe.skipIf(!Bun.which("setsid") || !Bun.which("curl"))("the installer's run
     await run.exited;
   }, 20_000);
 
+  it("tells a failed download in the app's name as one line, whatever characters the name holds", async () => {
+    const name = "Example & <Lab> \"Tools\" $HOME `id` 'x'";
+    const run = Bun.spawn(["sh", "-c", installerRun("v9.9.9", "file:///nonexistent/install.sh", name)], { stdout: "pipe", stderr: "ignore", stdin: "ignore" });
+    const out = await new Response(run.stdout).text();
+    await run.exited;
+    expect(out.split("\n")).toContain(`${name}: could not download the installer of v9.9.9 from github.com`);
+    expect(out).toContain("ovis-install-exit=1");
+  }, 20_000);
+
   it("starts no installer once nobody reads, even when the connection closed while it was still downloading", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ovis-installer-"));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));

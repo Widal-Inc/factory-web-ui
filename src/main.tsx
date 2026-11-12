@@ -5,6 +5,7 @@ import "./lib/legacyStorage.ts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+import { BRAND } from "../shared/brand.ts";
 
 // the faces the tokens name, then styles.css before any component: it holds the primitives
 // (.btn, .input, .menu…) that component stylesheets override, and Vite emits CSS in import order
@@ -33,9 +34,9 @@ const reader = readerFromSearch(window.location.search);
 // an error nothing else caught still reaches the console under one name, where a bug report can find it
 // (but not the browser's benign ResizeObserver loop notice: lib/uncaughtErrors.ts)
 window.addEventListener("error", (event) => {
-  if (isReportableWindowError(event.error, event.message)) console.error("Ovis: uncaught error", event.error ?? event.message);
+  if (isReportableWindowError(event.error, event.message)) console.error(`${BRAND.name}: uncaught error`, event.error ?? event.message);
 });
-window.addEventListener("unhandledrejection", (event) => console.error("Ovis: unhandled rejection", event.reason));
+window.addEventListener("unhandledrejection", (event) => console.error(`${BRAND.name}: unhandled rejection`, event.reason));
 
 // A render error the parts below do not catch would unmount the whole tree and leave the page
 // blank, and an installed web app has no reload button: AppCrash offers one. It sits outside

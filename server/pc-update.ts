@@ -1,4 +1,4 @@
-import { BRAND } from "../shared/brand.ts";
+import { BRAND, brandTemplate } from "../shared/brand.ts";
 import type { PcUpdateOffer } from "../shared/machines.ts";
 import { REVISION, type UpdateStatus, INSTALL_ID } from "../shared/update.ts";
 import { discard, readCappedJson, REMOTE_LIMITS } from "./remote-json.ts";
@@ -21,6 +21,8 @@ type Endpoint = { url: string; token: string };
 const releaseVersion = (value: unknown): string | null => typeof value === "string" && /^\d{1,6}\.\d{1,6}\.\d{1,6}(-beta\.\d{1,6})?$/.test(value) ? value : null;
 /** another PC's own words, kept to one short line */
 const words = (value: unknown): string | null => typeof value === "string" && value.trim() !== "" ? value.trim().replace(/\s+/g, " ").slice(0, 300) : null;
+/** its updater's reason for not updating: an older one says Ovis, which this app shows as its own name */
+const blockedWords = (value: unknown): string | null => { const said = words(value); return said === null ? null : brandTemplate(said); };
 const installing = (status: Partial<UpdateStatus> | null): boolean => status?.phase === "building" || status?.phase === "restarting";
 
 /**
@@ -32,8 +34,8 @@ export function offerFromStatus(status: unknown): PcUpdateOffer | null {
   const told = status as Partial<UpdateStatus>;
   if (told.available !== true || typeof told.latest_revision !== "string" || !REVISION.test(told.latest_revision)) return null;
   const offer = (reason: string | null): PcUpdateOffer => ({ how: "own", current_version: releaseVersion(told.current_version), latest_version: releaseVersion(told.latest_version), updatable: reason === null, reason });
-  if (told.managed !== true) return offer(`That PC's ${BRAND.name} does not update itself: ${words(told.blocked_reason) ?? "it was not started by its updater."}`);
-  const blocked = words(told.blocked_reason);
+  if (told.managed !== true) return offer(`That PC's ${BRAND.name} does not update itself: ${blockedWords(told.blocked_reason) ?? "it was not started by its updater."}`);
+  const blocked = blockedWords(told.blocked_reason);
   if (blocked) return offer(`That PC's ${BRAND.name} cannot update itself now: ${blocked}`);
   if (told.revision_bound_install !== true) return offer(`That PC's ${BRAND.name} is too old to take an update asked for from another PC.`);
   return offer(null);

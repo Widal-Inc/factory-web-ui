@@ -30,8 +30,9 @@ const INSTALL_TIMEOUT_MS = 20 * 60_000;
 const STOP_WAIT_MS = 15_000;
 
 /** what installerRun says when the installer could not even be downloaded: none of it ran */
-// Compatibility marker emitted by older installers; do not brand parsed output.
-const DOWNLOAD_FAILED = `${BRAND.name}: could not download the installer of`;
+// The command prints this line itself (installerRun), in the app's own name, and the run's output is matched against it.
+const downloadFailed = (name: string): string => `${name}: could not download the installer of`;
+const DOWNLOAD_FAILED = downloadFailed(BRAND.name);
 const CHANGED_WORDS = `That PC's ${BRAND.name} changed since it was looked at, so nothing was stopped. Reconnect it and try again.`;
 const NOT_REGISTERED_WORDS = (pid: number) => `The process ${pid} on that PC started after that ${BRAND.name} registered, so it may be another program that took its process id; nothing was stopped. Reconnect it and try again.`;
 /** a folder captureServer made: only such a path is ever put back into a command (quoted) */
@@ -127,11 +128,13 @@ export { samePc } from "./ssh-address.ts";
  * without starting anything more. Right before the installer starts, the command itself writes to the connection too,
  * so one closed since the watcher last wrote starts no installer. It is stopped itself when the installer ends. Empty lines are no
  * output to the reader.
+ *
+ * `name` is the app's name as the failed-download line says it; it reaches the remote shell quoted, whatever it holds.
  */
-export const installerRun = (release: string, from = installerAt(release)): string =>
+export const installerRun = (release: string, from = installerAt(release), name: string = BRAND.name): string =>
   `${REMOTE_PATH}script=$(mktemp) || exit 1; trap 'rm -f "$script"' EXIT; trap 'exit 143' HUP INT TERM; `
   + `( trap '' PIPE; while printf '\\n' 2>/dev/null; do sleep 2 >/dev/null 2>&1; done; kill -TERM 0 ) </dev/null 2>/dev/null & watch=$!; `
-  + `if ! curl -fsSL --max-time 120 ${from} -o "$script" || ! head -n 1 "$script" | grep -q '^#!/bin/sh'; then kill "$watch" 2>/dev/null; echo "${DOWNLOAD_FAILED} ${release} from github.com"; printf '\\novis-install-exit=1\\n'; exit 0; fi; `
+  + `if ! curl -fsSL --max-time 120 ${from} -o "$script" || ! head -n 1 "$script" | grep -q '^#!/bin/sh'; then kill "$watch" 2>/dev/null; echo ${shellQuote(`${downloadFailed(name)} ${release} from github.com`)}; printf '\\novis-install-exit=1\\n'; exit 0; fi; `
   // a connection closed since the watcher last wrote ends the command here (SIGPIPE, or the write's error), not the installer
   + `printf '\\n' || exit 141; `
   + `OVIS_REF=${release} OVIS_RUNTIME=herdr OVIS_NO_OPEN=1 sh "$script" </dev/null 2>&1; status=$?; `

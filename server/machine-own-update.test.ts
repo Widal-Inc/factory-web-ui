@@ -819,6 +819,7 @@ describe("a PC whose own Ovis is older than this app", () => {
     expect(waiting.state).toBe("error");
     expect(waiting.error).toContain("independently managed web server");
     expect(waiting.error).toMatch(reason);
+    expect(waiting.error).not.toContain("Ovis");
     expect(waiting.remote_ovis).toMatchObject({ updatable: false, address: `pc.invalid:${OWN_PORT}`, url: "https://home-server.example.ts.net" });
     expect(waiting.remote_ovis?.reason).toMatch(reason);
     const asked = await handleMachineRequest(new Request(`http://localhost:7317/api/machines/${MACHINE_ID}/update`, { method: "POST", headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager);

@@ -4,6 +4,7 @@ import { Check, RefreshCw, X } from "lucide-react";
 
 import "./AddConnectionDialog.css";
 
+import { BRAND } from "../../shared/brand.ts";
 import type { Machine } from "../../shared/machines.ts";
 import type { AddPcPreset } from "../lib/actions.ts";
 import { ApiError, findSshCandidates, type SshCandidate } from "../lib/api.ts";
@@ -131,7 +132,7 @@ export function SshTab({ machines, onAddPc, onConnectMachine }: { machines: read
     findSshCandidates().then(({ pcs }) => { if (live) setFound(pcs); }, (error: unknown) => {
       // a window the server will not tell (owner_only) gets the field alone; anything else says so, with Try again
       const refused = error instanceof ApiError && error.code === "owner_only";
-      if (!refused) console.warn("Ovis: the PCs to add over SSH could not be read", error instanceof Error ? error.name : error);
+      if (!refused) console.warn(`${BRAND.name}: the PCs to add over SSH could not be read`, error instanceof Error ? error.name : error);
       if (!live) return;
       setFound([]);
       setFailed(!refused);

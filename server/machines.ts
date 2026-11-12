@@ -1,4 +1,4 @@
-import { BRAND } from "../shared/brand.ts";
+import { BRAND, brandTemplate } from "../shared/brand.ts";
 import { authenticatedWebSocket } from "./remote-websocket.ts";
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -280,6 +280,8 @@ function sshHost(destination: string): string { return destination.slice(destina
 /** a release version as a PC's updater tells it (`0.4.18`, or a beta `0.5.0-beta.2`), or null */
 const releaseVersion = (value: unknown): string | null => typeof value === "string" && /^\d{1,6}\.\d{1,6}\.\d{1,6}(-beta\.\d{1,6})?$/.test(value) ? value : null;
 /** another PC's own words, kept to one short line */
+/** a remote server's own reason for not updating: an older one says Ovis, which this app shows as its own name */
+const remoteBlockedWords = (value: unknown): string | null => { const said = remoteWords(value); return said === null ? null : brandTemplate(said); };
 const remoteWords = (value: unknown): string | null => typeof value === "string" && value.trim() !== "" ? value.trim().replace(/\s+/g, " ").slice(0, 300) : null;
 /** An independently managed web server older than this app, which can install its own update: updating this PC asks it to. */
 const ownUpdateOffered = (offer: RemoteOvis): string => `${OWN_UPDATE_OFFER}${offer.version ? ` v${offer.version}` : ""}, older than this app. Update it${offer.latest_version ? ` to v${offer.latest_version}` : ""} to reconnect; it updates itself, and herdr sessions keep running.`;
@@ -1697,8 +1699,8 @@ export class MachineManager {
     if ("refused" in told) return answer(null, told.refused);
     const status = told.status;
     // started by hand: an install over SSH can put it under its updater; the desktop app's server updates with the app
-    if (status?.managed !== true) return { ...answer(status, `That PC's ${BRAND.name} does not update itself: ${remoteWords(status?.blocked_reason) ?? "it was not started by its updater."}`), ...(status && status.blocked_reason !== DESKTOP_APP_UPDATES ? { fix: "replace" as const } : {}) };
-    const blocked = remoteWords(status.blocked_reason);
+    if (status?.managed !== true) return { ...answer(status, `That PC's ${BRAND.name} does not update itself: ${remoteBlockedWords(status?.blocked_reason) ?? "it was not started by its updater."}`), ...(status && status.blocked_reason !== DESKTOP_APP_UPDATES ? { fix: "replace" as const } : {}) };
+    const blocked = remoteBlockedWords(status.blocked_reason);
     if (blocked) return answer(status, `That PC's ${BRAND.name} cannot update itself now: ${blocked}`);
     // its supervisor predates the bridge: a restart through its own launcher runs the one that installs by revision
     // restarted, it would install the release its updater offers: only worth it when there is one
