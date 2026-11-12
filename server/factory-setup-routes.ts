@@ -10,7 +10,7 @@ import { jsonResponse, readJsonObject } from "./http.ts";
 export const SETUP_PREFIX = "/api/factory/setup";
 
 /** Where a top-level visit to the factory host returns the person: fixed paths on the hub, never a caller's URL. */
-const RETURNS: Readonly<Record<string, string>> = { setup: "/setup", "my-factory": "/my-factory" };
+const RETURNS: ReadonlyMap<string, string> = new Map([["setup", "/setup"], ["my-factory", "/my-factory"]]);
 
 const NO_STORE = { "cache-control": "no-store" };
 const refusal = (status: number, code: string, message: string): Response => jsonResponse({ error: { code, message } }, status, NO_STORE);
@@ -25,7 +25,7 @@ export async function handleSetupRequest(request: Request, pathname: string, set
     if (route === "/prime" && method === "GET") {
       // The factory host's own sign-in cookie is set by the load balancer on a top-level visit; this lands
       // here signed in and sends the person straight back to the hub page they came from.
-      const target = RETURNS[new URL(request.url).searchParams.get("next") ?? "setup"];
+      const target = RETURNS.get(new URL(request.url).searchParams.get("next") ?? "setup");
       if (!target || !hubOrigin) return refusal(400, "invalid_return", "Unknown return page");
       return new Response(null, { status: 302, headers: { location: `${hubOrigin}${target}`, ...NO_STORE } });
     }

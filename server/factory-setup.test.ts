@@ -379,7 +379,7 @@ describe("Setup routes behind the factory gate", () => {
     const ok = await handleRequest(visit("?next=setup"), ctx);
     expect(ok?.status).toBe(302);
     expect(ok?.headers.get("location")).toBe(`${f.options.hubOrigin}/setup`);
-    for (const next of ["https://evil.example.test", "//evil.example.test", "/setup", "..%2f", ""]) {
+    for (const next of ["https://evil.example.test", "//evil.example.test", "/setup", "..%2f", "", "constructor", "__proto__", "toString"]) {
       const refused = await handleRequest(visit(`?next=${encodeURIComponent(next)}`), ctx);
       expect(refused?.status, next).toBe(400);
       expect(refused?.headers.get("location")).toBeNull();

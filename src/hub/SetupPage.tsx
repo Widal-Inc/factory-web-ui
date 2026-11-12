@@ -181,6 +181,10 @@ function ChoicesStep({ value, api, onChange }: { value: SetupStatus; api: OwnerS
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The selections belong to the accounts they were made with; another account starts from its own saved choices.
+  const account = `${value.github.login ?? ""}\n${value.linear.name ?? ""}`;
+  const selectedFor = useRef(account);
+  const settings = value.settings;
   useEffect(() => {
     if (!needed) { setChoices({ state: "idle" }); return undefined; }
     const controller = new AbortController();
@@ -188,12 +192,24 @@ function ChoicesStep({ value, api, onChange }: { value: SetupStatus; api: OwnerS
     api.choices(controller.signal).then((found) => {
       if (controller.signal.aborted) return;
       setChoices({ state: "ready", value: found });
+      // A repository the account can no longer reach has no checkbox, so it is never kept selected or sent.
+      const reachable = new Set(found.repositories.map((repo) => repo.fullName));
+      const onlyTeam = found.teams.length === 1 ? found.teams[0]!.key : "";
+      if (selectedFor.current !== account) {
+        selectedFor.current = account;
+        setRepositories((settings?.repositories ?? []).filter((name) => reachable.has(name)));
+        setGitName(settings?.gitName || found.proposed.gitName);
+        setGitEmail(settings?.gitEmail || found.proposed.gitEmail);
+        setTeam(settings?.linearTeam || onlyTeam);
+        return;
+      }
+      setRepositories((current) => current.filter((name) => reachable.has(name)));
       setGitName((current) => current || found.proposed.gitName);
       setGitEmail((current) => current || found.proposed.gitEmail);
-      setTeam((current) => current || (found.teams.length === 1 ? found.teams[0]!.key : ""));
+      setTeam((current) => current || onlyTeam);
     }, (cause) => { if (!controller.signal.aborted) setChoices({ state: "error", message: text(cause) }); });
     return () => controller.abort();
-  }, [api, needed, value.github.login, value.linear.name]);
+  }, [api, needed, account]); // eslint-disable-line react-hooks/exhaustive-deps -- settings is read only when the account changes
   async function save(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setError(null); setSaved(false);

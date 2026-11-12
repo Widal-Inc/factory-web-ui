@@ -169,6 +169,34 @@ describe("Setup page", () => {
     expect(text(view)).toContain("Saved: 1 repository, team ENG.");
   });
 
+  it("drops a saved repository the account can no longer reach, so the choices can still be saved", async () => {
+    const settings = { repositories: ["example-org/widgets", "example-org/retired"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com" };
+    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example" }, settings, next: "claude" as const } as SetupStatus | Error };
+    const saved: unknown[] = [];
+    const owner = fakeOwner(state, { saveSettings: async (next) => { saved.push(next); return next; } });
+    const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
+    expect(view.root.findAllByProps({ type: "checkbox" }).map((box) => box.props.checked)).toEqual([true, false]);
+    await act(async () => { view.root.findAllByType("form")[0]!.props.onSubmit({ preventDefault() {} }); }); await settle();
+    expect(saved).toEqual([{ ...settings, repositories: ["example-org/widgets"] }]);
+  });
+
+  it("starts another GitHub account from its own choices, not the previous account's", async () => {
+    const previous = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com" };
+    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example" }, settings: previous, next: "claude" as const } as SetupStatus | Error };
+    const saved: unknown[] = [];
+    const owner = fakeOwner(state, {
+      saveSettings: async (next) => { saved.push(next); return next; },
+      githubDisconnect: async () => { state.status = { ...(state.status as SetupStatus), github: { state: "connected", login: "ada-other", noreplyEmail: "77+ada-other@users.noreply.github.com" }, settings: null, next: "settings" }; },
+      choices: async () => ({ repositories: [{ fullName: "example-org/docs", private: false }], teams: choices.teams, proposed: { gitName: "Ada Other", gitEmail: "77+ada-other@users.noreply.github.com" } }),
+    });
+    const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
+    await click(view, "Disconnect");
+    expect(view.root.findAllByProps({ type: "checkbox" }).map((box) => box.props.checked)).toEqual([false]);
+    await act(async () => { view.root.findAllByProps({ type: "checkbox" })[0]!.props.onChange({ target: { checked: true } }); });
+    await act(async () => { view.root.findAllByType("form")[0]!.props.onSubmit({ preventDefault() {} }); }); await settle();
+    expect(saved).toEqual([{ repositories: ["example-org/docs"], linearTeam: "ENG", gitName: "Ada Other", gitEmail: "77+ada-other@users.noreply.github.com" }]);
+  });
+
   it("does not offer the Claude sign-in before the choices are saved", async () => {
     const owner = fakeOwner({ status: { ...base, github: connected, linear: { state: "connected", name: "Ada" }, next: "settings" } });
     const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
