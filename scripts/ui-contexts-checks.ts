@@ -37,7 +37,6 @@ import { checkTabOverflow } from "./tab-overflow-regression.ts";
 import { checkAlertSound } from "./alert-sound-regression.ts";
 import { checkBackgroundTabKeepsTerminalSize, checkChatKeepsTerminalSize, checkFocusedWindowReclaimsTerminalSize, checkPaneSwitchKeepsTerminalSize } from "./chat-size-regression.ts";
 import { checkUpdateNotice } from "./update-notice-regression.ts";
-import { checkTelemetrySettings } from "./telemetry-regression.ts";
 import { chromePath } from "./chrome-path.ts";
 // machine events stay on SSE here: these checks hold or watch /api/machines/events (the socket transport has its own checks)
 process.env["OVIS_MACHINE_EVENTS_WS"] = "0";
@@ -140,7 +139,6 @@ export async function runUiContextChecks(group: UiContextGroup): Promise<void> {
       await timed("checkPaneSwitchKeepsTerminalSize", () => checkPaneSwitchKeepsTerminalSize(browser!, origin));
       await timed("checkFocusedWindowReclaimsTerminalSize", () => checkFocusedWindowReclaimsTerminalSize(browser!, origin));
       await timed("checkUpdateNotice", () => checkUpdateNotice(browser!, origin));
-      await timed("checkTelemetrySettings", () => checkTelemetrySettings(browser!));
     }
     const unknown = selectedChecks?.filter((name) => !matchedChecks.has(name));
     if (unknown?.length) throw new Error(`Unknown checks for ${group}: ${unknown.join(",")}`);

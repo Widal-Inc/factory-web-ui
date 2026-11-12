@@ -5,7 +5,6 @@
  * `--term-*` tokens of each theme for PaneTerminal's theme object.
  */
 
-import type { TelemetrySettings } from "../../shared/telemetry.ts";
 import { MAX_PINS, mirrorPalette, SHARED_SETTING_KEYS, type SharedSettingKey } from "../../shared/preferences.ts";
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DEFAULT_THEME, terminalColors, themeColor as themeTableColor, type ThemeId, type ThemeEntry } from "./themes.ts";
@@ -291,83 +290,6 @@ export interface Settings {
 
 export const DIFF_STYLES = ["unified", "split"] as const;
 export type DiffStyle = (typeof DIFF_STYLES)[number];
-
-/** Raw custom text, key combinations and account keys are never copied. Requiring every other
- * Settings field in the projection makes a new field require an explicit collection decision.
- * keyBarExpanded, herdrPrefixKeys, agentLocks, lockedAgents, opencodeParentEnds, ompHeldFiles, restoreReplacedServer, the named agent groups, fileOpen, reopenFileOnReturn, webLinks, reuseExternalLinkTab, the launch modes, followHerdrFocus, sidebarPeek, sidebarBackgroundWorkspaces, codexDrag, autoTabNames, composerArtifacts, composerPasteSend, composerBtw, terminalMirrorWrap, terminalImages, terminalAttachButton, terminalKeyboardOnRequest, terminalFoldKeyBar, sidebarFilter, sidebarContext, sidebarAgentTree, foldHelpers, pcLoad, voiceEngine, the agent groups, the
- * interface font, the file text size and the folds its blocks start in are not collected: the telemetry schema
- * (shared/telemetry.ts) does not carry them. */
-type TelemetrySourceSettings = Omit<Settings,
-  "keyBarExtras" | "keyBarItems" | "keyBarExpanded" | "shortcutOverrides" | "herdrPrefixKeys" | "terminalFontFamily" | "chatFontFamily" | "uiFontFamily"
-  | "quickReplies" | "agentLocks" | "lockedAgents" | "opencodeParentEnds" | "ompHeldFiles" | "restoreReplacedServer" | "agentNamedGroups" | "agentGroupNames" | "agentGroupOf" | "usageOrder" | "usageHidden" | "fileOpen" | "filesPanel" | "webLinks" | "reuseExternalLinkTab" | "claudeLaunchMode" | "codexLaunchMode"
-  | "claudeLaunchModel" | "claudeLaunchEffort" | "codexLaunchModel" | "codexLaunchEffort"
-  | "followHerdrFocus" | "sidebarPeek" | "sidebarBackgroundWorkspaces" | "codexDrag" | "composerArtifacts" | "composerPasteSend" | "composerBtw" | "terminalMirrorWrap" | "sidebarFilter" | "sidebarContext" | "sidebarAgentTree" | "foldHelpers" | "pcLoad"
-  | "expandThinking" | "foldWork" | "autoTabNames" | "voiceEngine" | "agentGroups" | "agentGroupSort" | "terminalImages" | "terminalAttachButton"
-  | "terminalKeyboardOnRequest" | "terminalFoldKeyBar" | "fileFontSize" | "fileFontBase" | "editTextFiles" | "reopenFileOnReturn">;
-
-/** Compare structured custom settings by content against this app's built-in defaults. */
-function differsFromDefault(value: unknown, defaultValue: unknown): boolean {
-  return JSON.stringify(value) !== JSON.stringify(defaultValue);
-}
-
-/** Full allowlisted snapshot. Text and account-key values are only used for safe summaries. */
-export function telemetrySettingsSnapshot(settings: Settings): TelemetrySettings & TelemetrySourceSettings {
-  return {
-    terminalInputMode: settings.terminalInputMode,
-    theme: settings.theme,
-    density: settings.density,
-    sidebarRows: settings.sidebarRows,
-    agentOrder: settings.agentOrder,
-    agentMarks: settings.agentMarks,
-    statusIndicators: settings.statusIndicators,
-    palette: settings.palette,
-    paletteLight: settings.paletteLight,
-    paletteDark: settings.paletteDark,
-    terminalFontSize: settings.terminalFontSize,
-    terminalWheelSpeed: settings.terminalWheelSpeed,
-    paneClipboard: settings.paneClipboard,
-    releasePaneAway: settings.releasePaneAway,
-    chatFontSize: settings.chatFontSize,
-    uiFontSize: settings.uiFontSize,
-    chatWidth: settings.chatWidth,
-    enterSends: enterSendsOn(settings, coarsePointer()),
-    autoSendQueued: settings.autoSendQueued,
-    suggestionChip: settings.suggestionChip,
-    showThinking: settings.showThinking,
-    keepScreenOn: settings.keepScreenOn,
-    language: settings.language,
-    alertsOn: settings.alertsOn,
-    alertInput: settings.alertInput,
-    alertDone: settings.alertDone,
-    // Settings no longer has an In the app row: in-app alerts always drop in, and telemetry keeps the field
-    alertInApp: true,
-    alertSound: settings.alertSound,
-    showQuickReplies: settings.showQuickReplies,
-    showUsage: settings.showUsage,
-    usageCount: settings.usageCount,
-    usageGlance: settings.usageGlance,
-    defaultView: settings.defaultView,
-    voiceInput: settings.voiceInput,
-    voiceLanguage: settings.voiceLanguage,
-    voicePolishChat: settings.voicePolishChat,
-    voicePolishTerminal: settings.voicePolishTerminal,
-    wrapCode: settings.wrapCode,
-    // Settings no longer offers the width (the preview is the chat's readable lane); the schema keeps the field
-    markdownWidth: "readable",
-    diffStyle: settings.diffStyle,
-    terminalFontCustom: settings.terminalFontFamily !== DEFAULT_SETTINGS.terminalFontFamily,
-    chatFontCustom: settings.chatFontFamily !== DEFAULT_SETTINGS.chatFontFamily,
-    shortcutsCustom: differsFromDefault(settings.shortcutOverrides, DEFAULT_SETTINGS.shortcutOverrides),
-    keyBarCustom: differsFromDefault(settings.keyBarItems, DEFAULT_SETTINGS.keyBarItems)
-      || differsFromDefault(settings.keyBarExtras, DEFAULT_SETTINGS.keyBarExtras),
-    quickRepliesCustom: differsFromDefault(settings.quickReplies, DEFAULT_SETTINGS.quickReplies),
-    quickReplyCount: settings.quickReplies.length,
-    usageHiddenCount: settings.usageHidden.length,
-    usageOrderCustom: settings.usageOrder.length > 0,
-    darkTheme: settings.darkTheme,
-    lightTheme: settings.lightTheme,
-  };
-}
 
 /**
  * Which settings every browser of this server shares (shared/preferences.ts, lib/preferencesSync.ts)
@@ -979,11 +901,6 @@ function readEnterSends(record: boolean | null): boolean | null {
     /* unreadable: the record's choice, if any */
   }
   return record === false ? false : null;
-}
-
-/** Whether this device's primary pointer is a finger: a phone or a tablet, with or without a hardware keyboard. */
-function coarsePointer(): boolean {
-  return typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
 }
 
 /** Whether the sidebar shows each open PC's load: as chosen on this device, else while two or more PCs are connected. */

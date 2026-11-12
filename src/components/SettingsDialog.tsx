@@ -1512,9 +1512,9 @@ function AboutPage({ updates, herdrVersion, herdrRuntime, herdrCore, herdrRuntim
       <SettingsGroup title={t("About")} className="settings-about" section="about">
         <div className="settings-row">
           <div className="settings-row-text">
-            <span className="settings-label-line"><Globe className="settings-row-icon" aria-hidden="true" /><a className="settings-link" href="https://ovis.sh/" target="_blank" rel="noreferrer">ovis.sh</a></span>
+            <span className="settings-label-line"><Globe className="settings-row-icon" aria-hidden="true" /><a className="settings-link" href="https://github.com/Widal-Inc/factory-web-ui" target="_blank" rel="noreferrer">Widal Factory</a></span>
           </div>
-          <a className="btn" href="https://github.com/devswha/ovis" target="_blank" rel="noreferrer"><Star aria-hidden="true" />{t("Star on GitHub")}</a>
+          <a className="btn" href="https://github.com/Widal-Inc/factory-web-ui" target="_blank" rel="noreferrer"><Star aria-hidden="true" />{t("Star on GitHub")}</a>
         </div>
       </SettingsGroup>
     </SettingsBare.Provider>

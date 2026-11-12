@@ -79,8 +79,9 @@ The inherited backend can select herdr or herdr-core. `OVIS_RUNTIME=herdr-core` 
 | `PORT` | `7317`; Vite's proxy expects this port |
 | `HERDR_SOCKET` | `~/.config/herdr/herdr.sock`; select another session explicitly for QA |
 | `OVIS_STATE_DIR` | `~/.config/ovis`; override for isolated state |
-| `OVIS_TELEMETRY` | Set to `0` in the fork workflow; the inherited default is not Widal policy |
-| `DO_NOT_TRACK` | `1` also blocks inherited telemetry |
+| `WIDAL_TELEMETRY_URL` | Unset: nothing is sent. An `https` address (or `http` on this PC) receives the version and crash messages |
+| `OVIS_TELEMETRY` | `0` blocks telemetry whatever the switch says; the fork workflow sets it |
+| `DO_NOT_TRACK` | `1` also blocks telemetry |
 | `OVIS_RUNTIME` | `herdr` or `herdr-core`; unset uses the runtime resolver |
 | `OVIS_HERDR_BIN` | `herdr`; executable for terminal attachment |
 | `OVIS_HC_BIN` | Optional explicit installed herdr-core executable |
@@ -94,9 +95,19 @@ More legacy settings remain in source. Inspect the relevant implementation befor
 
 Select a reviewed fork revision, reinstall dependencies as needed, rebuild and restart your unmanaged server. Browser reload alone does not restart server code. Do not use upstream installers, automatic updates, beta channels or native feeds. See [update status](app-updates.md).
 
-## Anonymous usage counts
+## Version and crash reports
 
-Set `OVIS_TELEMETRY=0` before starting the server. The inherited implementation can otherwise contact an upstream collector after notice acknowledgement. Its removal/replacement and a restricted Widal schema are separate pending work, not shipped by these docs.
+The server has no built-in collector. It sends a message only when the operator sets `WIDAL_TELEMETRY_URL` to an `https` address (or an `http` one on the same PC), and only two kinds of message exist ([shared/telemetry.ts](../shared/telemetry.ts)):
+
+```json
+{ "event": "version", "version": "1.2.3" }
+{ "event": "error", "version": "1.2.3", "error": "uncaught_exception" }
+```
+
+- `version` goes once for each version the install runs. `error` goes at the next start after a run ended on an uncaught error, with that run's version and a fixed kind. A crash loop sends one report for each start, never one for each crash.
+- Nothing else is sent: no install or user identifier, no settings, no counts of use, no operating system, no error text or stack, no path, no terminal content or file. The server checks every body against the schema right before it goes, and a test fails if the server can send a field outside it. The receiving server sees the network address of the request, as any server does; the messages do not carry it. Adding a field means changing the schema, its test, the notice's wording and this section together, after the owners decide what may be collected.
+- Nothing is sent before the app has shown its notice once (and ten minutes after it, so Turn off on the notice stops the first message), while **Settings → Version and crash reports** is off, or where `OVIS_TELEMETRY=0`, `DO_NOT_TRACK` or a CI environment says not to. With no `WIDAL_TELEMETRY_URL` the notice and the switch do not appear, because there is nothing to turn off.
+- A state file an older build wrote loses its install id, settings snapshot and visit days at the first start of this one.
 
 Transcript reads, SSH, provider usage checks, voice services and agent tools are separate data paths. Disabling telemetry does not stop those operations or make the app offline.
 

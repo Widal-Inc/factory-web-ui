@@ -52,7 +52,7 @@ Examples use POSIX syntax. In PowerShell, set `$env:OVIS_TELEMETRY='0'`, `$env:O
 
 Keep development on loopback. Current inherited authentication does not supply Widal's future shared sign-in. A proxy header alone does not establish a Factory identity. Do not publish a development port as a production Factory service.
 
-`OVIS_TELEMETRY=0` disables inherited upstream telemetry regardless of the UI switch. Use it for every local run. The state directory is still `~/.config/ovis`; set `OVIS_STATE_DIR` to a dedicated directory when isolation is needed. Do not rename or delete existing state, cookies or keys as part of branding.
+This build sends nothing unless `WIDAL_TELEMETRY_URL` names an endpoint, and `OVIS_TELEMETRY=0` blocks it even then, regardless of the UI switch. Keep `OVIS_TELEMETRY=0` on every local run so a stray endpoint variable never sends anything ([what is sent](docs/guide.md#version-and-crash-reports)). The state directory is still `~/.config/ovis`; set `OVIS_STATE_DIR` to a dedicated directory when isolation is needed. Do not rename or delete existing state, cookies or keys as part of branding.
 
 Agent previews follow [AGENTS.md](AGENTS.md): bind a throwaway preview to the chosen Tailscale address; keep tests on loopback with `port: 0`. An app installed from another device requires HTTPS; a `tailscale serve` backend stays on loopback. Neither preview path completes Factory sign-in or deployment integration.
 

@@ -213,8 +213,6 @@ export interface PushServiceOptions {
   muted?: (machineId: string, paneId: string) => boolean;
   /** accept plain-http loopback endpoints: only for the tests' fake push service (push.fake.ts) */
   loopbackHttp?: boolean;
-  /** a pane's alert reached one device (the push service took it); not the test push */
-  onAlertDelivered?: () => void;
   /** Settings → Alerts → Also send to (server/alert-webhook.ts): told the alerts it chose, with the same waits and holds as a device */
   webhook?: Pick<AlertWebhook, "prefs" | "wants" | "generation" | "send">;
 }
@@ -684,12 +682,10 @@ export function createPushService(options: PushServiceOptions): PushService {
     return { ok: false, status, gone };
   }
 
-  async function broadcast(message: PushPayload, urgency: "normal" | "high", to: readonly PushSubscriptionRecord[] = [...store().values()], alert = false): Promise<void> {
+  async function broadcast(message: PushPayload, urgency: "normal" | "high", to: readonly PushSubscriptionRecord[] = [...store().values()]): Promise<void> {
     await Promise.all(
       to.map((subscription) =>
-        deliver(subscription, message, urgency).then((delivery) => {
-          if (alert && delivery.ok) options.onAlertDelivered?.();
-        }, (error: unknown) => {
+        deliver(subscription, message, urgency).then(() => undefined, (error: unknown) => {
           console.error(`web push failed: ${error instanceof Error ? error.message : String(error)}`);
         }),
       ),
@@ -982,7 +978,7 @@ export function createPushService(options: PushServiceOptions): PushService {
         const alert: PushPayload = { ...message, ...where(key, machineId), tag: paneNotificationTag(paneId, machineId) };
         const urgency = status === "blocked" ? "high" : "normal";
         // the buttons go with what they answer: a bare "Yes" under "waiting for your input" says nothing of what it allows
-        await broadcast({ ...alert, ...(answer === null ? {} : { body: answer.body, prompt_id: answer.promptId, actions: answer.actions }) }, urgency, live, true);
+        await broadcast({ ...alert, ...(answer === null ? {} : { body: answer.body, prompt_id: answer.promptId, actions: answer.actions }) }, urgency, live);
       });
     },
 
@@ -1012,7 +1008,7 @@ export function createPushService(options: PushServiceOptions): PushService {
         const message = failedMessage(paneId, title);
         if (hook) tellWebhook(key, machineId, paneId, message, hookAt);
         if (live.length === 0) return;
-        await broadcast({ ...message, ...where(key, machineId), tag: paneNotificationTag(paneId, machineId) }, "normal", live, true);
+        await broadcast({ ...message, ...where(key, machineId), tag: paneNotificationTag(paneId, machineId) }, "normal", live);
       });
     },
 

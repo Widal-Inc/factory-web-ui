@@ -27,7 +27,6 @@ import { createGjcStatus, gjcPanes, readOmoSnapshot, reconcileProviderStatus } f
 import { createLettaStatus, lettaPanes, lettaTitleStatus } from "../letta-status.ts";
 import type { HerdrMachineProfile } from "../herdr-profiles.ts";
 import { paneGet, paneProcessInfo, sessionSnapshot } from "../herdr/client.ts";
-import { resolveAgent } from "../pane-context.ts";
 import { launchedAgents } from "../launched-agents.ts";
 import { bridgeAgentNews, MachineManager } from "../machines.ts";
 import { omoPanes } from "../omo.ts";
@@ -40,21 +39,16 @@ import { type AlertTiming, createPushService, defaultStateDir } from "../push.ts
 import { SessionPlans } from "../session-plan.ts";
 import { readStatuslineContext } from "../statusline.ts";
 import { userHome } from "../user-home.ts";
-import type { Telemetry } from "../telemetry.ts";
 import type { UsageLoginService } from "../usage-login.ts";
 import type { UsageService } from "../usage.ts";
 import { type Client, send } from "./connections.ts";
-import type { TelemetryIngress, TelemetrySurface } from "../../shared/telemetry.ts";
 
 /** a focus or reconnect re-reads the panes for the daily active message at most this often */
-const VISIT_READ_MS = 10 * 60_000;
-
 export function createStatusHub<Owner, Lease>({ options, preferences, clients, present, pending, drainPending, holdPendingPane, paneMoved, usage, usageLogin }: {
   options: {
     factoryAuth?: FactoryAuth;
     stateDir?: string;
     codexHome?: string;
-    telemetry?: Telemetry;
     machines?: boolean;
     /** how often another PC's own update is looked at while it runs; tests shorten it */
     pcUpdateTimings?: { pollMs?: number; startMs?: number; checkMs?: number; offerMs?: number };
@@ -111,8 +105,6 @@ export function createStatusHub<Owner, Lease>({ options, preferences, clients, p
       const pane: Pick<HerdrPane, "agent_kind"> & Parameters<typeof pushPaneTitle>[0] = await paneGet(paneId);
       return { title: pushPaneTitle(pane), ...(pane.agent_kind ? { agent_kind: pane.agent_kind } : {}) };
     },
-    // each pane alert that reached a device, for the daily active message's usage
-    onAlertDelivered: () => options.telemetry?.tally("alerts_delivered"),
   });
   // a mute made while an alert waits calls it off, so an unmute cannot resurrect an old finish
   const stopMutes = preferences.subscribe(() => push.mutesChanged());
@@ -369,24 +361,6 @@ export function createStatusHub<Owner, Lease>({ options, preferences, clients, p
     }, completions);
     return order ? { ...settled, ...order } : settled;
   };
-  /**
-   * A browser visit for the daily active message: the call is made now so the visit's day is the
-   * trigger's, the panes are read after. Nothing is read while telemetry cannot send; a socket open
-   * passes the snapshot it fetches anyway, and other visits read the panes at most every
-   * VISIT_READ_MS (in between they still count the day, with the kinds already known).
-   */
-  let visitReadAt = -Infinity;
-  function countVisit(snapshot?: ReturnType<typeof clientSnapshot>, visit: { surface?: TelemetrySurface; ingress?: TelemetryIngress } = {}): void {
-    const telemetry = options.telemetry;
-    if (!telemetry?.counting()) return;
-    let agents: Promise<(string | null)[]> | (string | null)[] = [];
-    if (snapshot || Date.now() - visitReadAt >= VISIT_READ_MS) {
-      visitReadAt = Date.now();
-      agents = (snapshot ?? clientSnapshot()).then((read) => read.panes.map((pane) => resolveAgent(pane).agent));
-    }
-    void telemetry.active(agents, visit)
-      .catch((error) => console.error(`telemetry: the visit was not counted (${error instanceof Error ? error.message : String(error)})`));
-  }
   /** A pane's status frame: every one says whether the pane waits on its turn's background work. */
   const paneStatus = (paneId: string, status: AgentStatus, about: { background_tasks?: number; plan?: PlanSummary | null; context?: PaneContext | null } = {}): ServerMessage =>
     ({ type: "pane-status", pane_id: paneId, agent_status: status, ...finishes.status(paneId, status), ...about, ...(waits.waiting(paneId) ? { background_wait: true as const } : {}) });
@@ -711,5 +685,5 @@ export function createStatusHub<Owner, Lease>({ options, preferences, clients, p
     const identity = finishes.herdrIdentity();
     return identity === null || identity !== liveHerdr ? undefined : herdrLifetime(identity);
   };
-  return { push, alertWebhook, omo, gjc, letta, claudeAgents, opencodeAgents, plans, clientSnapshot, currentHerdrLifetime, queueHeld, countVisit, machines, broadcastAll, logPushError, collector: tracked, waitTimer };
+  return { push, alertWebhook, omo, gjc, letta, claudeAgents, opencodeAgents, plans, clientSnapshot, currentHerdrLifetime, queueHeld, machines, broadcastAll, logPushError, collector: tracked, waitTimer };
 }

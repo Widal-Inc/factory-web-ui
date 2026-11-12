@@ -39,7 +39,7 @@ Open `http://localhost:5173`; Vite proxies API and WebSocket requests to port 73
 
 The inherited UI, icons, installers and service code are still being adapted. No Widal install URL, public demo, native download or release channel is established here. Do not use upstream installers or update controls for this fork. See [distribution status](docs/app-updates.md).
 
-Local commands disable inherited upstream telemetry with `OVIS_TELEMETRY=0`. This documentation change does not remove that implementation or establish a Widal endpoint. Do not assume that the app is account-free, that nothing leaves the PC, or that shared Factory sign-in is enforced. See [access and telemetry](docs/guide.md#access-and-safety).
+Local commands set `OVIS_TELEMETRY=0`. The server sends nothing to anyone unless an operator sets `WIDAL_TELEMETRY_URL`, and then only its version and a crash's kind ([what is sent](docs/guide.md#version-and-crash-reports)). Do not assume that the app is account-free, that nothing else leaves the PC, or that shared Factory sign-in is enforced. See [access and telemetry](docs/guide.md#access-and-safety).
 
 ## Docs and contributions
 

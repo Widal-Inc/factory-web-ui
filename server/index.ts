@@ -43,7 +43,7 @@ import { sweepSshDirs } from "./ssh.ts";
 import { OpenCodePromptState } from "./prompt.ts";
 import { connectUpdater, type UpdateService } from "./update-api.ts";
 import { HerdrUpdater } from "./herdr-update.ts";
-import { Telemetry } from "./telemetry.ts";
+import { Telemetry, telemetryUrl } from "./telemetry.ts";
 import { UsageService } from "./usage.ts";
 import { createSystemSampler, type SystemSampler } from "./system-stats.ts";
 import { CLIProxyService } from "./cliproxy.ts";
@@ -164,7 +164,7 @@ export function createServer(
     herdrCoreInstaller?: HcInstaller;
     /** whether the launcher took this bridge as its own after its startup check (server/supervisor.ts); unset, nothing is told */
     launchAccepted?: () => boolean;
-    /** anonymous install and update counts (server/telemetry.ts); unset, the server sends none and answers 404. Only the real entrypoint passes one. */
+    /** the version and crash reports of server/telemetry.ts; unset, the server sends none and answers 404. Only the real entrypoint passes one, and only with an endpoint configured. */
     telemetry?: Telemetry;
     /** plan limits of the AI subscriptions signed in here; tests pass one without real sign-ins */
     usage?: UsageService;
@@ -521,13 +521,18 @@ if (import.meta.main) {
   }
   const updates = connectUpdater();
   const version = (JSON.parse(readFileSync(join(import.meta.dir, "..", "package.json"), "utf8")) as { version: string }).version;
-  const telemetry = new Telemetry({ stateDir, version, env: process.env, fetch, previousVersion: () => updates.installed().previous_version, runtime: herdrCore === null ? "herdr" : "herdr-core" });
+  // no address is built in: telemetry exists only where the operator names an endpoint
+  const telemetryEndpoint = telemetryUrl(process.env);
+  if (process.env["WIDAL_TELEMETRY_URL"]?.trim() && telemetryEndpoint === null) console.error("telemetry: WIDAL_TELEMETRY_URL must be an https address (or http on this PC); sending nothing.");
+  const telemetry = telemetryEndpoint === null ? undefined : new Telemetry({ stateDir, version, env: process.env, fetch, url: telemetryEndpoint });
+  // an error that ends this run is noted for the next start (the process exits at once); the handler observes it and changes nothing
+  if (telemetry) process.on("uncaughtExceptionMonitor", () => telemetry.recordError("uncaught_exception"));
   let instance: ReturnType<typeof createServer>;
   try {
     instance = createServer({ updates, herdrUpdate: new HerdrUpdater(), herdrCoreFacts, herdrCoreInstaller: herdrCoreInstaller(),
       launchAccepted: () => launchAccepted,
       runtimeService: runtimeService({ stateDir, port: Number(startEnv["PORT"] || DEFAULT_PORT), serving: choice.runtime, source: choice.source, ...(fallback ? { fallback } : {}), env: startEnv, core: herdrCoreFacts, accepted: () => launchAccepted, restart: (id) => process.send?.({ type: "runtime-restart", id }) }),
-      telemetry, registerBridge: true, herdrProfiles: readHerdrProfiles, shellAgents: new ShellAgentLocator(), agentDetector: new AgentDetector({ locate: catalogLocator({ probe: defaultLoginProbe() }) }), stateDir,
+      ...(telemetry ? { telemetry } : {}), registerBridge: true, herdrProfiles: readHerdrProfiles, shellAgents: new ShellAgentLocator(), agentDetector: new AgentDetector({ locate: catalogLocator({ probe: defaultLoginProbe() }) }), stateDir,
       desktopActivity: process.env["OVIS_DESKTOP_APP"] === "1" });
     instance.warmAgentCatalog();
   } catch (err) {
@@ -545,12 +550,12 @@ if (import.meta.main) {
     herdrCore?.stop();
     process.exit(1);
   }
-  telemetry.start();
+  telemetry?.start();
   let stopping = false;
   const shutdown = () => {
     if (stopping) return;
     stopping = true;
-    telemetry.stop();
+    telemetry?.stop();
     instance.stop();
     // Attach sidecars need ~1.2s to release herdr's exclusive client slot
     // herdr-core's adapter answers what the stopping server still asks meanwhile

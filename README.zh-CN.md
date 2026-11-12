@@ -36,7 +36,7 @@ bun run dev
 
 界面、图标、安装程序和服务代码仍在调整。这里没有已确立的 Widal 安装地址、公开演示、原生应用下载或发布渠道。不要使用上游安装程序、账号、中继、配对或更新功能来设置此分支。详见[分发状态](docs/app-updates.md)。
 
-运行示例通过 `OVIS_TELEMETRY=0` 禁用上游遥测。这份文档不会删除相关实现，也不会添加 Widal 遥测地址。不要据此假定应用无需账号、没有任何数据离开电脑，或统一登录已经生效。请阅读[访问和数据说明](docs/guide.md#access-and-safety)。
+运行示例会设置 `OVIS_TELEMETRY=0`。除非运维人员设置 `WIDAL_TELEMETRY_URL`，服务器不会发送任何内容；设置后也只发送版本和崩溃的类别（[发送内容](docs/guide.md#version-and-crash-reports)）。不要据此假定应用无需账号、其他数据也不会离开电脑，或统一登录已经生效。请阅读[访问和数据说明](docs/guide.md#access-and-safety)。
 
 ## 文档与贡献
 

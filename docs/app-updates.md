@@ -14,7 +14,7 @@ The desktop update status keeps its inherited literal wording because older peer
 
 - Fork-owned installers, publication, manifests, signing and update discovery need implementation and validation before releases are advertised.
 - Remote-PC setup can fall back to an upstream manifest in `server/remote-bundle.ts`. Building a local bundle does not establish a remote distribution service.
-- The inherited telemetry collector is not a Widal endpoint. Source commands set `OVIS_TELEMETRY=0`; configurable telemetry and its permitted schema remain separate work.
+- Telemetry has no built-in endpoint. The server sends its version and a crash's kind only to the address in `WIDAL_TELEMETRY_URL`, and nothing when that is unset ([what is sent](guide.md#version-and-crash-reports)). The inherited collector and its Worker are removed.
 - Shared sign-in, Setup and factory pages are pending. A package name or README does not implement them.
 
 ## Historical provenance
