@@ -24,8 +24,12 @@ installs at `/opt/widal`, plus the hub UI and a small record of what it was buil
 
 The factory host's service environment (`WIDAL_AUTH_MODE` and the rest) is not in the archive: it
 belongs to the host and is described in [factory ingress and ownership](factory-auth.md#runtime-configuration).
-Health is `GET /api/health`. The archive holds no secret and no build cache: `node_modules/.cache` is removed, and so is `node_modules/.bin`, whose links point at
-absolute paths in the builder's checkout and which nothing runs. No link in the archive leaves it.
+Health is `GET /api/health`. The archive holds no secret and no build cache: every dot-entry of `node_modules` is removed
+(`.cache`, `.vite`, `.vite-temp`, and `.bin`, whose links point at absolute paths in the builder's checkout), because
+nothing runs them. No link in the archive leaves it, and the archive's `./` entry and every folder are mode 755 whatever the
+builder's umask was. `node_modules` is the commit's full install, development dependencies included (about 390 MB),
+as in every remote bundle; pruning it to production dependencies is not done, because the release is not smoke-tested
+without them.
 
 ## The pin
 
@@ -39,9 +43,12 @@ absolute paths in the builder's checkout and which nothing runs. No link in the 
   "source": { "repository": "Widal-Inc/factory-web-ui", "commit": "<40 hex>", "builtAt": "<commit time>" },
   "archive": { "file": "widal-web-43-<commit12>-linux-x64.tgz", "bytes": 0, "sha256": "<64 hex>" },
   "hubUi": { "path": "hub-ui", "manifest": "hub-ui/widal-ui.json", "revision": "<the same commit>", "manifestSha256": "<64 hex>", "files": 0 },
-  "ownerServer": { "entry": "server/index.ts", "runtime": "bin/bun", "healthPath": "/api/health", "bun": "1.4.2", "rustPtyHost": false }
+  "ownerServer": { "entry": "server/index.ts", "runtime": "bin/bun", "healthPath": "/api/health", "bun": "1.4.2", "rustPtyHost": false, "ptyHostSha256": null }
 }
 ```
+
+`ownerServer.ptyHostSha256` is the sha256 of `bin/ovis-pty-sidecar`, the Rust PTY host, when the release has one
+(`rustPtyHost: true`), and `null` when it has none. `verify` compares the archive's host with it.
 
 The install passes `version` as `--factory-release-version` and `archive.sha256` as
 `--factory-release-sha256`, and reads the archive named by `archive.file`. `version` is the bundle protocol version the
@@ -55,23 +62,38 @@ bun run build:release          # in a clean checkout of the commit to release
 bun scripts/release-bundle.ts verify release-bundles/widal-web-<...>.tgz release-bundles/widal-web-release.json
 ```
 
-The build refuses to run unless the checkout is clean (the pin names a commit, and edits are not in it), the
-machine is Linux x64, and the Bun is the one `package.json` pins in `packageManager`, because the archive
-carries the builder's own Bun binary. It sets `SOURCE_DATE_EPOCH` to the commit time, builds `dist/` and
-`dist-hub/`, builds the remote bundle, adds `hub-ui/`, and packs the result with sorted names, one fixed time,
-no owner, plain modes and an unnamed, untimed gzip stream. The same commit built in the same runner image
-therefore makes the same bytes. The build ends by running the verification on what it made.
+The build refuses to run unless the checkout is clean (the pin names a commit, and edits are not in it: no change,
+no untracked file, and no ignored file where the build reads, which includes `hub-app/` and the root's `.env*`
+files), the machine is Linux x64, and the Bun is the one `package.json` pins in `packageManager`, because the
+archive carries the builder's own Bun binary. It sets `SOURCE_DATE_EPOCH` to the commit time, replaces
+`node_modules` with `bun install --frozen-lockfile` (what the commit's `bun.lock` and `patches/` make of it, never
+what the checkout already held), builds `dist/` and `dist-hub/`, builds the remote bundle, adds `hub-ui/`, and
+packs the result with sorted names, one fixed time, no owner, plain modes and an unnamed, untimed gzip stream.
+The same commit built in the same runner image therefore makes the same bytes. The build ends by running the
+verification on what it made.
 
-`HERDR_BUNDLE_PTY_SIDECAR` may name the Rust PTY host to include, as for any remote bundle; without it the
-archive relies on the bundled Node fallback and the pin says `rustPtyHost: false`. The remote bundle builder
-downloads the runtimes it bundles and checks each against the checksum it pins, so the build needs network
-access to those hosts. `WIDAL_RELEASE_OUTPUT` changes the output folder (`release-bundles/`, not committed).
+Every step runs with the Bun that runs the build (by its own path, and as `bun` first on the children's `PATH`), and
+with an allowlisted environment, not the builder's: `PATH`, `HOME`, `TMPDIR`, locale, proxy and certificate settings
+and the Bun package cache location pass; `NODE_ENV`, `VITE_*`, `HERDR_TEST_HOOKS`, `OVIS_BUILD_CACHE_DIR`,
+`WIDAL_*` and the rest do not, so nothing in the builder's shell changes what Vite writes or restores a `dist/`
+somebody else built. After building, the build checks that the Bun recorded in `bundle.json` and the `bin/bun` in
+the archive (`bin/bun --version`) are both the pinned one, and that the install and the builds left the checkout
+unchanged.
+
+`HERDR_BUNDLE_PTY_SIDECAR` may name the Rust PTY host to include, as for any remote bundle; it is the one
+variable the allowlist passes on, to the remote bundle step alone, and the pin records the sha256 of the host that
+went in. Without it the archive relies on the bundled Node fallback and the pin says `rustPtyHost: false`. The remote
+bundle builder downloads the runtimes it bundles and checks each against the checksum it pins, so the build needs
+network access to those hosts. `WIDAL_RELEASE_OUTPUT` changes the output folder (`release-bundles/`, not committed).
 
 ## Verifying it
 
 `verify` is what an installer should run before it trusts an archive: the archive is the pinned bytes; no
-entry or link leaves its folder; the files a factory host needs are there and the programs are executable;
-`bundle.json` has the pinned version and platform; there is no build cache; `hub-ui/` is exactly the release its own
+entry or link leaves its folder (each link is judged by its text, by whether a `..` follows a name in it, and by where it
+really resolves once unpacked, so a chain of links that ends outside is refused, and so is a link to nothing); the files a
+factory host needs are there and the programs are executable; `bundle.json` has the pinned version, platform and Bun;
+the Rust PTY host is there exactly when the pin says so, and is the pinned bytes; there is no `node_modules` dot-entry
+(build cache or tooling); `hub-ui/` is exactly the release its own
 `widal-ui.json` lists, the manifest is the pinned one, and `hub-ui/` and `widal-release.json` name the pinned commit.
 The manifest checks are the same ones the factory hub's own reader applies
 (`scripts/hub-artifact.ts`, [hub pages](hub-pages.md#the-hub-ui-artifact)).

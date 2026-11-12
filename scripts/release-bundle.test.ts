@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { BUILD_FILE, HUB_MANIFEST_FILE, buildManifest } from "./hub-artifact.ts";
-import { HUB_UI_DIR, OWNER_SERVER, RELEASE_INFO_FILE, RELEASE_INFO_SCHEMA, archiveName, buildPin, checkoutProblem, packDeterministic, pinProblem, verifyRelease, type ReleasePin } from "./release-bundle.ts";
+import { HUB_UI_DIR, OWNER_SERVER, RELEASE_INFO_FILE, RELEASE_INFO_SCHEMA, archiveName, buildPin, bunProblem, checkoutProblem, packDeterministic, pinProblem, releaseEnv, verifyRelease, type ReleasePin } from "./release-bundle.ts";
+import { NAME as PTY_HOST } from "./pty-sidecar.ts";
 
 const commit = "a".repeat(40);
 const other = "b".repeat(40);
@@ -44,7 +45,8 @@ function stageRelease(name: string, options: { revision?: string; extra?: (stage
   return stage;
 }
 
-function release(stage: string): { archive: string; pin: ReleasePin } {
+function release(stage: string, options: { ptyHostSha256?: string | null } = {}): { archive: string; pin: ReleasePin } {
+  const ptyHostSha256 = options.ptyHostSha256 ?? null;
   const archive = join(temp, `${stage.split("/").pop()}.tgz`);
   packDeterministic(stage, archive, epoch);
   // a case that removed the hub UI still gets a pin (of an empty manifest), so the verifier is what refuses it
@@ -53,7 +55,7 @@ function release(stage: string): { archive: string; pin: ReleasePin } {
   const pin = buildPin({
     version: "43", repository: "Example-Org/example-ui", commit, builtAt: new Date(epoch * 1000),
     archive: { file: archiveName("43", commit), bytes: new Uint8Array(readFileSync(archive)) },
-    hubUi: { manifest, files: 3 }, bun: "1.4.2", rustPtyHost: false,
+    hubUi: { manifest, files: 3 }, bun: "1.4.2", rustPtyHost: ptyHostSha256 !== null, ptyHostSha256,
   });
   return { archive, pin };
 }
@@ -80,17 +82,54 @@ describe("release pin", () => {
       [{ ...pin, archive: { ...pin.archive, file: "other.tgz" } }, "archive"],
       [{ ...pin, hubUi: { ...pin.hubUi, revision: other } }, "hubUi"],
       [{ ...pin, ownerServer: { ...pin.ownerServer, entry: "x.ts" } }, "ownerServer"],
+      [{ ...pin, ownerServer: { ...pin.ownerServer, ptyHostSha256: "zz" } }, "ptyHostSha256"],
+      [{ ...pin, ownerServer: { ...pin.ownerServer, ptyHostSha256: "c".repeat(64) } }, "ptyHostSha256"],
+      [{ ...pin, ownerServer: { ...pin.ownerServer, rustPtyHost: true } }, "ptyHostSha256"],
       [null, "object"],
     ] as const) expect(pinProblem(bad), text).toContain(text);
     expect(() => archiveName("43", "abc")).toThrow();
     expect(() => archiveName("v43", commit)).toThrow();
   });
+
+  test("a release with a Rust PTY host records its sha256, and only then", () => {
+    const digest = "c".repeat(64);
+    const withHost = release(stageRelease("a"), { ptyHostSha256: digest });
+    expect(withHost.pin.ownerServer).toMatchObject({ rustPtyHost: true, ptyHostSha256: digest });
+    expect(pinProblem(withHost.pin)).toBeUndefined();
+    expect(release(stageRelease("b")).pin.ownerServer).toMatchObject({ rustPtyHost: false, ptyHostSha256: null });
+    const input = { version: "43", repository: "Example-Org/example-ui", commit, builtAt: new Date(epoch * 1000), archive: { file: archiveName("43", commit), bytes: new Uint8Array([1]) }, hubUi: { manifest: new Uint8Array([1]), files: 1 }, bun: "1.4.2" };
+    expect(() => buildPin({ ...input, rustPtyHost: true, ptyHostSha256: null })).toThrow("Rust PTY host");
+    expect(() => buildPin({ ...input, rustPtyHost: false, ptyHostSha256: digest })).toThrow("Rust PTY host");
+    expect(() => buildPin({ ...input, rustPtyHost: true, ptyHostSha256: "zz" })).toThrow("Rust PTY host");
+  });
+});
+
+describe("what the build runs with", () => {
+  const parent = { PATH: "/usr/bin:/bin", HOME: "/home/example", TMPDIR: "/tmp/x", HTTPS_PROXY: "http://proxy.example.test:3128", NODE_ENV: "development", HERDR_TEST_HOOKS: "1", VITE_EXAMPLE: "1", OVIS_BUILD_CACHE_DIR: "/cache", HERDR_BUNDLE_PTY_SIDECAR: "/elsewhere/host", HERDR_BUNDLE_OUTPUT: "/elsewhere", WIDAL_AUTH_MODE: "example", GIT_DIR: "/elsewhere/.git", BUN_CONFIG_REGISTRY: "http://registry.example.test" };
+
+  test("an allowlisted environment: nothing of the builder's own steers the build", () => {
+    const env = releaseEnv(parent, epoch, { toolsDir: "/work/tools" });
+    expect(env).toEqual({ PATH: "/work/tools:/usr/bin:/bin", HOME: "/home/example", TMPDIR: "/tmp/x", HTTPS_PROXY: "http://proxy.example.test:3128", SOURCE_DATE_EPOCH: String(epoch), OVIS_TELEMETRY: "0" });
+  });
+
+  test("the PTY host is passed on only when the release names one", () => {
+    expect(releaseEnv(parent, epoch, { toolsDir: "/work/tools", ptyHost: "/builder/host" })["HERDR_BUNDLE_PTY_SIDECAR"]).toBe("/builder/host");
+    expect(releaseEnv(parent, epoch, { toolsDir: "/work/tools" })).not.toHaveProperty("HERDR_BUNDLE_PTY_SIDECAR");
+  });
+
+  test("a Bun that is not the pinned one is refused, whether bundle.json or the binary says so", () => {
+    expect(bunProblem("1.4.2", "1.4.2", "1.4.2")).toBeNull();
+    expect(bunProblem("1.4.2", "1.4.4", "1.4.2")).toContain("records Bun 1.4.4");
+    expect(bunProblem("1.4.2", "1.4.2", "1.4.4")).toContain("bin/bun in the bundle is Bun 1.4.4");
+    expect(bunProblem("1.4.2", undefined, "1.4.2")).toContain("records Bun undefined");
+  });
 });
 
 describe("deterministic archive", () => {
   test("the same files make the same bytes, whatever their times, modes order or owner", () => {
-    const first = stageRelease("one");
+    const first = stageRelease("one", { extra: (stage) => chmodSync(stage, 0o700) });
     const second = stageRelease("two", { extra: (stage) => {
+      chmodSync(stage, 0o775);
       for (const file of ["server/index.ts", "dist/index.html", "node_modules/pkg/index.js"]) utimesSync(join(stage, file), 1_000_000, 1_000_000);
       chmodSync(join(stage, "server/index.ts"), 0o664);
       chmodSync(join(stage, "bin/bun"), 0o775);
@@ -99,6 +138,14 @@ describe("deterministic archive", () => {
     const b = release(second);
     expect(sha256(readFileSync(a.archive))).toBe(sha256(readFileSync(b.archive)));
     expect(a.pin.archive.sha256).toBe(b.pin.archive.sha256);
+  });
+
+  test("the archive's own ./ entry is 755 whatever the builder's umask made the stage", () => {
+    const stage = stageRelease("one", { extra: (dir) => chmodSync(dir, 0o775) });
+    const archive = join(temp, "one.tgz");
+    packDeterministic(stage, archive, epoch);
+    const listing = Bun.spawnSync(["tar", "-tvzf", archive], { stderr: "pipe" }).stdout.toString().split("\n");
+    expect(listing[0]).toMatch(/^drwxr-xr-x .* \.\/$/);
   });
 
   test("another file or another time makes other bytes", () => {
@@ -115,7 +162,7 @@ describe("deterministic archive", () => {
 describe("checkoutProblem", () => {
   function checkout(): string {
     const root = join(temp, "checkout");
-    put(root, ".gitignore", "dist/\n.env\nnode_modules\n");
+    put(root, ".gitignore", "dist/\n.env*\nnode_modules\n");
     put(root, "server/index.ts", "export {};\n");
     const git = (...args: string[]) => {
       const result = Bun.spawnSync(["git", "-c", "user.name=Example", "-c", "user.email=example@example.test", "-c", "commit.gpgsign=false", ...args], { cwd: root, stderr: "pipe" });
@@ -127,11 +174,26 @@ describe("checkoutProblem", () => {
     return root;
   }
 
-  test("a clean checkout builds, and the declarations typecheck emits under shared/vendor do not count", () => {
+  test("a clean checkout builds: its node_modules and build output are not inputs", () => {
     const root = checkout();
     put(root, "node_modules/pkg/index.js", "");
-    put(root, "shared/vendor/example/dist/index.d.ts", "");
+    put(root, "dist/index.html", "");
     expect(checkoutProblem(root)).toBeNull();
+  });
+
+  test("no exception for generated declarations: an ignored file under shared is refused like any other", () => {
+    const root = checkout();
+    put(root, "shared/vendor/example/dist/index.d.ts", "");
+    expect(checkoutProblem(root)).toContain("shared/vendor/example/dist/index.d.ts");
+  });
+
+  test("the root's .env files and the hub app's ignored files reach the build, so they are refused", () => {
+    for (const path of [".env", ".env.local", ".env.production.local", "hub-app/dist/leftover.js"]) {
+      const root = checkout();
+      put(root, path, "VITE_EXAMPLE=1\n");
+      expect(checkoutProblem(root), path).toContain(path);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("nothing outside the commit reaches a release: no change, no untracked file, no ignored file where the build reads", () => {
@@ -177,9 +239,20 @@ describe("verifyRelease", () => {
       ["wrong bundle version", (stage) => put(stage, "bundle.json", JSON.stringify({ version: "42", platform: "linux-x64" })), "bundle.json is not version 43"],
       ["wrong platform", (stage) => put(stage, "bundle.json", JSON.stringify({ version: "43", platform: "darwin-arm64" })), "bundle.json is not version 43"],
       ["release info for another commit", (stage) => put(stage, RELEASE_INFO_FILE, JSON.stringify({ schema: RELEASE_INFO_SCHEMA, commit: other })), "does not name the pinned commit"],
-      ["build cache left in", (stage) => put(stage, "node_modules/.cache/vite/x.json", "{}"), "node_modules/.cache/vite/x.json is build cache"],
+      ["build cache left in", (stage) => put(stage, "node_modules/.cache/vite/x.json", "{}"), "node_modules/.cache is build cache or tooling"],
+      ["vite's other caches left in", (stage) => put(stage, "node_modules/.vite/deps/x.json", "{}"), "node_modules/.vite is build cache or tooling"],
+      ["an empty vite temp folder left in", (stage) => mkdirSync(join(stage, "node_modules/.vite-temp"), { recursive: true }), "node_modules/.vite-temp is build cache or tooling"],
+      ["the package manager's links left in", (stage) => put(stage, "node_modules/.bin/vite", "x"), "node_modules/.bin is build cache or tooling"],
       ["a link out of the release", (stage) => symlinkSync("../../../etc/passwd", join(stage, "node_modules/pkg/escape")), "node_modules/pkg/escape is a link that leaves the release"],
       ["an absolute link", (stage) => symlinkSync("/etc/passwd", join(stage, "node_modules/pkg/abs")), "node_modules/pkg/abs is a link that leaves the release"],
+      ["a chain of links that ends outside", (stage) => {
+        // each link alone stays inside by its text: q is dist, and q/../.. is above the release
+        symlinkSync("../dist", join(stage, "node_modules/q"));
+        symlinkSync("q/../../outside", join(stage, "node_modules/p"));
+      }, "node_modules/p is a link that leaves the release"],
+      ["a link to nothing", (stage) => symlinkSync("missing", join(stage, "node_modules/pkg/dangling")), "node_modules/pkg/dangling is a link that leaves the release"],
+      ["a Rust PTY host the pin does not name", (stage) => put(stage, `bin/${PTY_HOST}`, "host", 0o755), `bin/${PTY_HOST} is in the archive, but the pin says there is no Rust PTY host`],
+      ["bundle.json for another Bun", (stage) => put(stage, "bundle.json", JSON.stringify({ version: "43", platform: "linux-x64", bun: "1.4.4" })), "bundle.json names Bun 1.4.4, not the pinned 1.4.2"],
       ["a hub file changed after the manifest", (stage) => put(stage, "hub-ui/assets/app.js", "tampered"), "hub-ui: assets/app.js differs from the manifest"],
       ["a hub file the manifest does not list", (stage) => put(stage, "hub-ui/assets/extra.js", "x"), "hub-ui: assets/extra.js is not in the manifest"],
       ["a source map in the hub UI", (stage) => put(stage, "hub-ui/assets/app.js.map", "{}"), "hub-ui:"],
@@ -194,6 +267,17 @@ describe("verifyRelease", () => {
       expect(problems, name).toContain(expected);
     }
   }, 60_000);
+
+  test("a pinned Rust PTY host is the one the archive holds", () => {
+    const withHost = (name: string, content: string | null) => stageRelease(name, { extra: (stage) => { if (content !== null) put(stage, `bin/${PTY_HOST}`, content, 0o755); } });
+    const digest = sha256(new TextEncoder().encode("host"));
+    const good = release(withHost("host-good", "host"), { ptyHostSha256: digest });
+    expect(verifyRelease(good.archive, good.pin)).toEqual([]);
+    const swapped = release(withHost("host-swapped", "other"), { ptyHostSha256: digest });
+    expect(verifyRelease(swapped.archive, swapped.pin).join("\n")).toContain(`bin/${PTY_HOST} is not the pinned PTY host`);
+    const missing = release(withHost("host-missing", null), { ptyHostSha256: digest });
+    expect(verifyRelease(missing.archive, missing.pin).join("\n")).toContain(`bin/${PTY_HOST} is missing`);
+  });
 
   test("a hub UI built from another commit than the pin is refused", () => {
     const stage = stageRelease("stale", { revision: other });

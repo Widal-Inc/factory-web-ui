@@ -15,12 +15,13 @@
  * This script builds and checks. It publishes nothing and pushes no tag.
  */
 import { createHash } from "node:crypto";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { BRAND } from "../shared/brand.ts";
 import { REMOTE_BUNDLE_VERSION } from "../shared/machines.ts";
 import { BUILD_FILE, HUB_MANIFEST_FILE, brandAssetPaths, sourceRepository, verifyManifest, type ArtifactFile } from "./hub-artifact.ts";
+import { NAME as PTY_HOST } from "./pty-sidecar.ts";
 
 export const RELEASE_PIN_SCHEMA = "widal.web-release/1";
 export const RELEASE_PIN_FILE = "widal-web-release.json";
@@ -47,7 +48,8 @@ export interface ReleasePin {
   source: { repository: string; commit: string; builtAt: string };
   archive: { file: string; bytes: number; sha256: string };
   hubUi: { path: typeof HUB_UI_DIR; manifest: string; revision: string; manifestSha256: string; files: number };
-  ownerServer: typeof OWNER_SERVER & { bun: string; rustPtyHost: boolean };
+  /** `ptyHostSha256` is the digest of `bin/ovis-pty-sidecar`, the Rust PTY host, and is null exactly when `rustPtyHost` is false. */
+  ownerServer: typeof OWNER_SERVER & { bun: string; rustPtyHost: boolean; ptyHostSha256: string | null };
 }
 
 export function archiveName(version: string, commit: string): string {
@@ -55,8 +57,9 @@ export function archiveName(version: string, commit: string): string {
   return `widal-web-${version}-${commit.slice(0, 12)}-${RELEASE_PLATFORM}.tgz`;
 }
 
-export function buildPin(input: { version: string; repository: string; commit: string; builtAt: Date; archive: { file: string; bytes: Uint8Array }; hubUi: { manifest: Uint8Array; files: number }; bun: string; rustPtyHost: boolean }): ReleasePin {
+export function buildPin(input: { version: string; repository: string; commit: string; builtAt: Date; archive: { file: string; bytes: Uint8Array }; hubUi: { manifest: Uint8Array; files: number }; bun: string; rustPtyHost: boolean; ptyHostSha256: string | null }): ReleasePin {
   if (!COMMIT.test(input.commit)) throw new Error("The pin needs the full commit id.");
+  if (input.rustPtyHost !== (input.ptyHostSha256 !== null) || (input.ptyHostSha256 !== null && !DIGEST.test(input.ptyHostSha256))) throw new Error("The pin records the sha256 of the Rust PTY host when, and only when, the release has one.");
   if (Number.isNaN(input.builtAt.getTime())) throw new Error("The build time is not a date.");
   return {
     schema: RELEASE_PIN_SCHEMA,
@@ -65,7 +68,7 @@ export function buildPin(input: { version: string; repository: string; commit: s
     source: { repository: input.repository, commit: input.commit, builtAt: input.builtAt.toISOString() },
     archive: { file: input.archive.file, bytes: input.archive.bytes.byteLength, sha256: sha256(input.archive.bytes) },
     hubUi: { path: HUB_UI_DIR, manifest: `${HUB_UI_DIR}/${HUB_MANIFEST_FILE}`, revision: input.commit, manifestSha256: sha256(input.hubUi.manifest), files: input.hubUi.files },
-    ownerServer: { ...OWNER_SERVER, bun: input.bun, rustPtyHost: input.rustPtyHost },
+    ownerServer: { ...OWNER_SERVER, bun: input.bun, rustPtyHost: input.rustPtyHost, ptyHostSha256: input.ptyHostSha256 },
   };
 }
 
@@ -84,14 +87,17 @@ export function pinProblem(value: unknown): string | undefined {
   const hubUi = value.hubUi;
   if (!isObject(hubUi) || hubUi.path !== HUB_UI_DIR || hubUi.manifest !== `${HUB_UI_DIR}/${HUB_MANIFEST_FILE}` || hubUi.revision !== source.commit || typeof hubUi.manifestSha256 !== "string" || !DIGEST.test(hubUi.manifestSha256) || !Number.isInteger(hubUi.files) || (hubUi.files as number) <= 0) return "its hubUi is not {path, manifest, revision (the source commit), manifestSha256, files}";
   const owner = value.ownerServer;
-  if (!isObject(owner) || owner.entry !== OWNER_SERVER.entry || owner.runtime !== OWNER_SERVER.runtime || owner.healthPath !== OWNER_SERVER.healthPath || typeof owner.bun !== "string" || typeof owner.rustPtyHost !== "boolean") return "its ownerServer is not {entry, runtime, healthPath, bun, rustPtyHost}";
+  if (!isObject(owner) || owner.entry !== OWNER_SERVER.entry || owner.runtime !== OWNER_SERVER.runtime || owner.healthPath !== OWNER_SERVER.healthPath || typeof owner.bun !== "string" || typeof owner.rustPtyHost !== "boolean") return "its ownerServer is not {entry, runtime, healthPath, bun, rustPtyHost, ptyHostSha256}";
+  if (owner.ptyHostSha256 !== null && (typeof owner.ptyHostSha256 !== "string" || !DIGEST.test(owner.ptyHostSha256))) return "its ownerServer.ptyHostSha256 is neither null nor a sha256";
+  if (owner.rustPtyHost !== (owner.ptyHostSha256 !== null)) return "its ownerServer.ptyHostSha256 is set when there is no Rust PTY host, or missing when there is one";
   return undefined;
 }
 
 // ---- deterministic archive -------------------------------------------------------------------------------
 
-/** Plain modes, so the archive does not depend on the builder's umask: directories 755, programs 755, other files 644. */
+/** Plain modes, so the archive does not depend on the builder's umask: directories (the root, the archive's `./` entry, included) 755, programs 755, other files 644. */
 export function normalizeModes(root: string, dir = root): void {
+  if (dir === root) chmodSync(root, 0o755);
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     const info = lstatSync(path);
@@ -129,6 +135,25 @@ function listTree(root: string, dir = root): { path: string; link: string | null
   });
 }
 
+/**
+ * Whether the link at `path` (in the unpacked release at `stage`, whose resolved folder is `inside`) leaves the
+ * release. Judged three ways, because the text of a link is not where it points once links chain
+ * (`node_modules/q -> ../dist`, `node_modules/p -> q/../../outside`): the target is not absolute, no `..` follows a
+ * name (only leading `..` steps keep the text and the real place the same), and the place the link really resolves to
+ * exists and is inside. A link to nothing is refused too: it cannot be shown to stay inside.
+ */
+export function linkProblem(inside: string, stage: string, path: string, link: string): boolean {
+  if (link.startsWith("/") || !resolve(stage, dirname(path), link).startsWith(stage + sep)) return true;
+  const parts = link.split("/");
+  if (parts.some((part, index) => part === ".." && parts.slice(0, index).some((before) => before !== ".." && before !== "." && before !== ""))) return true;
+  try {
+    const real = realpathSync(join(stage, path));
+    return !real.startsWith(inside + sep);
+  } catch {
+    return true;
+  }
+}
+
 function readJson(path: string): unknown {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return undefined; }
 }
@@ -158,9 +183,15 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
     const unpacked = Bun.spawnSync(["tar", "-xzf", archive, "-C", stage, "--no-same-owner"], { stderr: "pipe" });
     if (unpacked.exitCode !== 0) return [`the archive cannot be unpacked: ${unpacked.stderr.toString().trim()}`];
     const tree = listTree(stage);
+    const inside = realpathSync(stage);
     for (const entry of tree) {
-      if (entry.link !== null && (entry.link.startsWith("/") || !resolve(stage, dirname(entry.path), entry.link).startsWith(stage + sep))) problems.push(`${entry.path} is a link that leaves the release`);
-      if (entry.path === "node_modules/.cache" || entry.path.startsWith("node_modules/.cache/")) problems.push(`${entry.path} is build cache, not part of a release`);
+      if (entry.link === null) continue;
+      if (linkProblem(inside, stage, entry.path, entry.link)) problems.push(`${entry.path} is a link that leaves the release`);
+    }
+    // the builder's package manager and tools leave dot-entries (.bin, .cache, .vite, .vite-temp): none is run at runtime
+    const modules = join(stage, "node_modules");
+    if (existsSync(modules)) {
+      for (const name of readdirSync(modules)) if (name.startsWith(".")) problems.push(`node_modules/${name} is build cache or tooling, not part of a release`);
     }
     for (const file of REQUIRED_FILES) if (!existsSync(join(stage, file))) problems.push(`${file} is missing`);
     for (const program of [...REQUIRED_PROGRAMS]) {
@@ -168,8 +199,14 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
       if (!existsSync(path)) problems.push(`${program} is missing`);
       else if ((statSync(path).mode & 0o111) === 0) problems.push(`${program} is not executable`);
     }
-    const bundle = readJson(join(stage, "bundle.json")) as { version?: unknown; platform?: unknown } | undefined;
+    const bundle = readJson(join(stage, "bundle.json")) as { version?: unknown; platform?: unknown; bun?: unknown; pty_sidecar?: unknown } | undefined;
     if (!bundle || bundle.version !== release.version || bundle.platform !== release.platform) problems.push(`bundle.json is not version ${release.version} for ${release.platform}`);
+    else if (bundle.bun !== release.ownerServer.bun) problems.push(`bundle.json names Bun ${String(bundle.bun)}, not the pinned ${release.ownerServer.bun}`);
+    const host = join(stage, "bin", PTY_HOST);
+    if (release.ownerServer.rustPtyHost) {
+      if (!existsSync(host)) problems.push(`bin/${PTY_HOST} is missing, and the pin says this release has the Rust PTY host`);
+      else if (sha256(readFileSync(host)) !== release.ownerServer.ptyHostSha256) problems.push(`bin/${PTY_HOST} is not the pinned PTY host (sha256 differs)`);
+    } else if (existsSync(host)) problems.push(`bin/${PTY_HOST} is in the archive, but the pin says there is no Rust PTY host`);
 
     const info = readJson(join(stage, RELEASE_INFO_FILE)) as { schema?: unknown; commit?: unknown } | undefined;
     if (!info || info.schema !== RELEASE_INFO_SCHEMA || info.commit !== release.source.commit) problems.push(`${RELEASE_INFO_FILE} does not name the pinned commit`);
@@ -202,12 +239,14 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
 // ---- build -----------------------------------------------------------------------------------------------
 
 /** What the build copies or bundles from the checkout: the remote bundle copies these folders whole, and Vite copies public/. */
-const BUILD_READS = ["server", "shared", "integrations", "public", "src", "scripts", "index.html", "vite.config.ts", "vite.hub.config.ts"] as const;
+const BUILD_READS = ["server", "shared", "integrations", "public", "src", "scripts", "hub-app", "index.html", "vite.config.ts", "vite.hub.config.ts"] as const;
+/** Vite reads `.env`, `.env.local`, `.env.<mode>` and `.env.<mode>.local` from the root, so the root's are inputs too. */
+const ROOT_ENV_FILES = ".env*";
 
 /**
  * Why `root` cannot be built into a release, or null. The pin names a commit, so nothing outside it may reach the
- * archive: no change, no untracked file, and no ignored file (an `.env`, say) where the build reads. The type
- * declarations typecheck emits under shared/vendor are never bundled.
+ * archive: no change, no untracked file, and no ignored file (an `.env`, say) where the build reads, the root's
+ * `.env*` files included.
  */
 export function checkoutProblem(root: string): string | null {
   const gitIn = (...args: string[]): string => {
@@ -217,9 +256,38 @@ export function checkoutProblem(root: string): string | null {
   };
   const changed = gitIn("status", "--porcelain=v1", "--untracked-files=all").split("\n").filter(Boolean);
   if (changed.length > 0) return `A release is built from a clean checkout: the pin names a commit, and these are not in it:\n  ${changed.join("\n  ")}`;
-  const ignored = gitIn("ls-files", "--others", "--ignored", "--exclude-standard", "--", ...BUILD_READS).split("\n")
-    .filter((path) => path !== "" && !/^shared\/vendor\/[^/]+\/dist\/.+(?:\.d\.ts(?:\.map)?|\.tsbuildinfo)$/.test(path));
+  const ignored = gitIn("ls-files", "--others", "--ignored", "--exclude-standard", "--", ...BUILD_READS, ROOT_ENV_FILES).split("\n").filter(Boolean);
   if (ignored.length > 0) return `A release takes nothing git ignores from where the build reads; remove these first:\n  ${ignored.join("\n  ")}`;
+  return null;
+}
+
+/** Variables a build child may inherit: where to find tools, the account's package cache and proxy and certificate settings. */
+const INHERITED_ENV = ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "BUN_INSTALL", "BUN_INSTALL_CACHE_DIR"] as const;
+
+/**
+ * The environment every build step runs with: an allowlist, not the builder's own. HERDR_TEST_HOOKS, NODE_ENV and VITE_*
+ * change what Vite writes, OVIS_BUILD_CACHE_DIR can restore a `dist/` somebody else built, and HERDR_BUNDLE_* and
+ * WIDAL_* steer the bundle: none of them may reach a release by accident. The PTY host is the one deliberate input
+ * (`ptyHost`), recorded in the pin by its sha256, and goes to the remote bundle step alone.
+ */
+export function releaseEnv(parent: Record<string, string | undefined>, epoch: number, options: { toolsDir: string; ptyHost?: string }): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const name of INHERITED_ENV) {
+    const value = parent[name];
+    if (value !== undefined && value !== "") env[name] = value;
+  }
+  // the Bun that runs the build comes first, so a `bun` named inside a package.json script is this one
+  env["PATH"] = [options.toolsDir, env["PATH"]].filter(Boolean).join(":");
+  env["SOURCE_DATE_EPOCH"] = String(epoch);
+  env["OVIS_TELEMETRY"] = "0";
+  if (options.ptyHost !== undefined) env["HERDR_BUNDLE_PTY_SIDECAR"] = options.ptyHost;
+  return env;
+}
+
+/** Why the Bun in the archive is not the pinned one, or null. `recorded` is what bundle.json says, `binary` what `bin/bun --version` prints. */
+export function bunProblem(pinned: string, recorded: unknown, binary: string): string | null {
+  if (recorded !== pinned) return `The bundle records Bun ${String(recorded)}, not the pinned ${pinned}.`;
+  if (binary !== pinned) return `The bin/bun in the bundle is Bun ${binary}, not the pinned ${pinned}.`;
   return null;
 }
 
@@ -247,34 +315,54 @@ async function build(): Promise<void> {
   const commit = git("rev-parse", "HEAD");
   const epoch = Number(git("show", "-s", "--format=%ct", "HEAD"));
   const builtAt = new Date(epoch * 1000);
-  const env = { ...process.env, SOURCE_DATE_EPOCH: String(epoch), OVIS_TELEMETRY: "0" };
+  // the Rust PTY host, when the builder names one: its bytes are recorded in the pin by sha256
+  const ptyHostPath = process.env["HERDR_BUNDLE_PTY_SIDECAR"] ? resolve(process.env["HERDR_BUNDLE_PTY_SIDECAR"]) : undefined;
+  const ptyHostSha256 = ptyHostPath === undefined ? null : sha256(new Uint8Array(readFileSync(ptyHostPath)));
 
   const output = resolve(process.env["WIDAL_RELEASE_OUTPUT"] ?? join(root, "release-bundles"));
   const work = join(output, `work-${commit.slice(0, 12)}`);
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
   try {
+    // every child runs THIS Bun (the one checked above), by its path and as `bun` on the children's PATH, and
+    // with an allowlisted environment, not the builder's
+    const bun = realpathSync(process.execPath);
+    const toolsDir = join(work, "tools");
+    mkdirSync(toolsDir);
+    symlinkSync(bun, join(toolsDir, "bun"));
+    const env = releaseEnv(process.env, epoch, { toolsDir });
     rmSync(join(root, "dist"), { recursive: true, force: true });
     rmSync(join(root, "dist-hub"), { recursive: true, force: true });
-    run(["bun", "run", "build"], env);
-    run(["bun", "run", "build:hub"], env);
-    run(["bun", "scripts/build-remote-bundle.ts", RELEASE_PLATFORM], { ...env, HERDR_BUNDLE_OUTPUT: work });
+    // node_modules is what the commit's bun.lock and patches/ make of it, never what the checkout happened to hold
+    rmSync(join(root, "node_modules"), { recursive: true, force: true });
+    run([bun, "install", "--frozen-lockfile"], env);
+    run([bun, "run", "build"], env);
+    run([bun, "run", "build:hub"], env);
+    // nothing the install or the builds did may have changed what the pin names
+    const changed = checkoutProblem(root);
+    if (changed !== null) throw new Error(`The install or a build changed the checkout:\n${changed}`);
+    run([bun, "scripts/build-remote-bundle.ts", RELEASE_PLATFORM], { ...releaseEnv(process.env, epoch, { toolsDir, ...(ptyHostPath === undefined ? {} : { ptyHost: ptyHostPath }) }), HERDR_BUNDLE_OUTPUT: work });
 
     const stage = join(work, "stage");
     mkdirSync(stage);
     const unpacked = Bun.spawnSync(["tar", "-xzf", join(work, `herdr-web-ui-${RELEASE_PLATFORM}.tgz`), "-C", stage, "--no-same-owner"], { stderr: "pipe" });
     if (unpacked.exitCode !== 0) throw new Error(`The remote bundle cannot be unpacked: ${unpacked.stderr.toString()}`);
-    // the builder copies the whole node_modules; its caches (vite, test reports) are not part of a release, and
-    // the package manager's .bin links point at absolute paths in the builder's checkout: they would dangle on a
-    // factory host and tie the archive's bytes to where it was built. Nothing at runtime runs them (the Windows
-    // bundle drops them for the same reason).
-    rmSync(join(stage, "node_modules", ".cache"), { recursive: true, force: true });
-    rmSync(join(stage, "node_modules", ".bin"), { recursive: true, force: true });
+    // the builder copies the whole node_modules; its dot-entries are not part of a release: caches (.cache, .vite,
+    // .vite-temp) and the package manager's .bin, whose links point at absolute paths in the builder's checkout: they
+    // would dangle on a factory host and tie the archive's bytes to where it was built. Nothing at runtime runs them
+    // (the Windows bundle drops .bin for the same reason).
+    for (const name of readdirSync(join(stage, "node_modules"))) if (name.startsWith(".")) rmSync(join(stage, "node_modules", name), { recursive: true, force: true });
     cpSync(join(root, "dist-hub"), join(stage, HUB_UI_DIR), { recursive: true });
     writeFileSync(join(stage, RELEASE_INFO_FILE), `${JSON.stringify({ schema: RELEASE_INFO_SCHEMA, commit, builtAt: builtAt.toISOString(), hubUi: HUB_UI_DIR, ownerServer: OWNER_SERVER }, null, 2)}\n`);
 
     const bundle = JSON.parse(readFileSync(join(stage, "bundle.json"), "utf8")) as { version: string; platform: string; bun: string; pty_sidecar?: boolean };
     if (bundle.version !== REMOTE_BUNDLE_VERSION || bundle.platform !== RELEASE_PLATFORM) throw new Error("The remote bundle is not the version and platform this release names.");
+    const bundledBun = Bun.spawnSync([join(stage, "bin", "bun"), "--version"], { env: {}, stderr: "pipe" });
+    const wrongBun = bunProblem(pinnedBun, bundle.bun, bundledBun.stdout.toString().trim());
+    if (wrongBun !== null) throw new Error(wrongBun);
+    const hostInArchive = join(stage, "bin", PTY_HOST);
+    const bundledHostSha256 = existsSync(hostInArchive) ? sha256(new Uint8Array(readFileSync(hostInArchive))) : null;
+    if (bundledHostSha256 !== ptyHostSha256 || (bundle.pty_sidecar === true) !== (ptyHostSha256 !== null)) throw new Error("The PTY host in the bundle is not the one HERDR_BUNDLE_PTY_SIDECAR names.");
 
     const file = archiveName(REMOTE_BUNDLE_VERSION, commit);
     mkdirSync(output, { recursive: true });
@@ -298,6 +386,7 @@ async function build(): Promise<void> {
       hubUi: { manifest: new Uint8Array(readFileSync(join(stage, HUB_UI_DIR, HUB_MANIFEST_FILE))), files: (JSON.parse(readFileSync(join(stage, HUB_UI_DIR, HUB_MANIFEST_FILE), "utf8")) as { files: unknown[] }).files.length },
       bun: bundle.bun,
       rustPtyHost: bundle.pty_sidecar === true,
+      ptyHostSha256,
     });
     const problems = verifyRelease(join(output, file), pin);
     if (problems.length > 0) {
