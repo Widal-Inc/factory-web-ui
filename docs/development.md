@@ -699,6 +699,8 @@ Widal packaging and release integration are pending. The inherited workflows, su
 
 City workers push their own reviewed-work branch and hand the bead to the refinery. The refinery owns pull-request review and merge; no worker pushes to `main`. Record actual checks and skipped coverage in the handoff. Release publication needs its own authorized workflow.
 
+The web release the factory install ships (the owner server and the hub UI in one archive, and its pin) is built and verified by `bun run build:release`; see [the Widal web release](release-bundle.md). Building it publishes nothing.
+
 ## Historical distribution notes
 
 The former media, website, release and growth-metrics instructions remain in [Git history](https://github.com/Widal-Inc/factory-web-ui/blob/bb0d0f9b234e1c59b98e3ad01060b8d3dc4bd0e9/docs/development.md). They describe upstream infrastructure, not Widal endpoints, repository secrets or deployed services. Do not collect upstream growth data or deploy inherited service projects for this fork.

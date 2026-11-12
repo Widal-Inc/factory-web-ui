@@ -13,6 +13,7 @@
     "dev": "bun --bun vite",
     "build": "bun scripts/build-cache.ts",
     "build:hub": "bun --bun vite build --config vite.hub.config.ts",
+    "build:release": "bun scripts/release-bundle.ts build",
     "server": "bun run server/index.ts",
     "start": "bun run build && bun run server/managed.ts",
     "typecheck": "bun scripts/typecheck.ts",

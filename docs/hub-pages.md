@@ -54,6 +54,9 @@ it the hub serves the directory as a plain development folder, with no integrity
 so a build for an install always has it. Install each release in a directory of its own and restart the
 hub; never change a served directory in place.
 
+The install does not build this artifact. It ships inside the factory release archive as `hub-ui/`, with the owner server,
+pinned to a commit: see [the Widal web release](release-bundle.md).
+
 `scripts/hub-artifact.ts` builds the manifest, and `manifestProblem` and `verifyManifest` apply the
 hub's own shape and bytes checks, so a change here that the hub would refuse fails a test here.
 `scripts/hub-artifact-consumer.test.ts` goes further: with `FACTORY_HUB_UI` set to `hub/src/ui.ts` in a
