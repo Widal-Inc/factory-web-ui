@@ -28,25 +28,43 @@ factory hub serves from its origin root with `--ui-dir`. It is separate from `bu
 | Entry | `src/hub/main.tsx`; output `dist-hub/index.html`, base `/`, absolute `/assets/` paths |
 | Theme | the classic blocking boot script, emitted as `assets/theme-bootstrap-<hash>.js` |
 | Brand images | the files `BRAND` names, copied by name from `public/` (the whole folder is never copied) |
-| Freshness | `build.json` holds the commit the build came from; it is absent in a build outside Git |
-| Integrity | `hub-manifest.json` |
+| Freshness | `build.json` holds the commit the build came from |
+| Legal | `THIRD_PARTY_NOTICES.html` and `LICENSE.html`: the full texts of `THIRD_PARTY_NOTICES.md` and `LICENSE` as plain pages |
+| Release manifest | `widal-ui.json`, the factory hub's own format (below) |
 
-The artifact holds public files only: the entry, its hashed bundle, the brand images,
-`THIRD_PARTY_NOTICES.md`, `build.json` and the manifest. The build fails if anything else is in it,
-and it writes no source maps, service worker, web manifest or offline cache. The hub must not serve
+The artifact holds public files only: the entry, its hashed bundle, the brand images, the two legal
+pages, `build.json` and the manifest. The build fails if anything else is in it, and it writes no
+source maps, service worker, web manifest or offline cache. Every file is of a type the hub serves
+(HTML, JavaScript, CSS, JSON, images, woff and woff2 fonts, Wasm). The hub does not serve Markdown or
+TrueType, so the notices are written as HTML, and the TrueType fallback that KaTeX lists last in each
+font face is dropped from the stylesheet and from the artifact: the woff2 face is read first anyway.
+The build needs a Git checkout, because the hub refuses a release that does not name the full commit
+it was built from. `SOURCE_DATE_EPOCH` fixes the one time-dependent field (`provenance.builtAt`). The hub must not serve
 `/api`, `/healthz`, `/join`, `/factories` or a missing asset from it, and it checks the signed
 identity for the page and its assets on every request.
 
-`hub-manifest.json` has `schema` (1), `kind` (`factory-hub-ui`), `hubApiVersion` (1, the
-`/api/app/*` version in the table below), `revision` (the commit, or null), `appVersion`, `entry`,
-`brand`, `files` (path, sha256 and size of each file, sorted) and `digest`, the sha256 of the sorted
-`path`, NUL, `sha256` lines. A consumer should call `verifyManifest` (`scripts/hub-artifact.ts`)
-or do the same: refuse a release whose manifest has another schema or API version, lists a file
-that is missing or changed, or leaves a file unlisted, and swap a release in as a whole directory.
+`widal-ui.json` is the release manifest the factory hub reads at start (`hub/src/ui.ts` and
+`docs/hub-app-contract.md` in the factory repository, checked against its merged revision
+`eab41c491dcb9d45d081b8822432f0f41e5b2dea`): `schema` (`"widal.ui/1"`), `revision` (the full commit id),
+`hubApi` (`{min: 1, max: 1}`, the `/api/app/*` version in the table below), `entry` (`index.html`),
+`files` (path, size and sha256 of every public file but the manifest, sorted by path) and `provenance`
+(`source`, `commit`, `builtAt`). With it the hub reads and checks every file once, keeps those bytes in
+memory, serves only them, and reports `revision` as `ui.revision` at `GET /api/app/bootstrap`. Without
+it the hub serves the directory as a plain development folder, with no integrity check and no revision,
+so a build for an install always has it. Install each release in a directory of its own and restart the
+hub; never change a served directory in place.
+
+`scripts/hub-artifact.ts` builds the manifest, and `manifestProblem` and `verifyManifest` apply the
+hub's own shape and bytes checks, so a change here that the hub would refuse fails a test here.
+`scripts/hub-artifact-consumer.test.ts` goes further: with `FACTORY_HUB_UI` set to `hub/src/ui.ts` in a
+factory checkout, it runs the hub's own reader on a release made here and on the real `dist-hub/`.
 
 The owner view (`OwnerFactory`) is the fork's own App, loaded on demand when the person opens their
 factory, behind `directTransport` for the registered owner origin. A page holds one such view,
-because the App reaches its server through one process-wide transport. The Setup and Admin
+because the App reaches its server through one process-wide transport. The view gives that
+transport back when it unmounts (a page refresh unmounts it), one microtask after the App's own
+teardown, and only if it is still the view's own, so the person can open their factory again without
+reloading the page. The Setup and Admin
 onboarding slots stay empty until the reviewed onboarding services are composed.
 
 ## Published producer contract
@@ -93,7 +111,7 @@ for every HTTP/WebSocket operation. No socket path is invented here. Missing ada
 It maps the existing App's supplied HTTP, WebSocket, EventSource and resource paths to the verified
 owner origin. HTTP uses credentialed, uncached requests without redirects; EventSource also includes
 cookies. It rejects third-party origins and hub page requests and never retries a write. `OwnerFactory`
-installs it, once per page, when the person opens their factory, and the protected server
+installs it, once at a time per page, when the person opens their factory, and the protected server
 (`docs/factory-auth.md`) enforces current ownership for every request. Real ALB and CORS behaviour
 is not yet accepted.
 
@@ -124,8 +142,8 @@ Team's request boundary, revocation and non-admin deep links. It is fixture QA, 
 or personal factory. Run it only within the applicable browser-capacity policy.
 
 These are component checks plus a successful `bun run build:hub` and the artifact manifest tests
-(`bun test scripts/hub-artifact.test.ts`). They do not establish serving of the artifact by the
-hub, the direct owner HTTP/WebSocket path against a real ALB, subscription limits, the real
+(`bun test scripts/hub-artifact.test.ts scripts/hub-artifact-consumer.test.ts`). They do not establish
+serving of the artifact by a running hub with its sign-in, the direct owner HTTP/WebSocket path against a real ALB, subscription limits, the real
 Admin/setup services or second-engineer onboarding. Real served contracts, sign-in/revocation for
 each role, and phone/laptop browser acceptance remain.
 Required Fast checks and browser gates need their separate shared-capacity admission before push.
