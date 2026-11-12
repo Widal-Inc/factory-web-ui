@@ -158,13 +158,16 @@ directly (`ownerSetupApi.ts`, over the same verified direct transport) and walks
    the person's own factory, which exchanges it. A team that does not use Linear gets no Linear step.
 3. **Choices**: the repositories the person's own GitHub connection reaches through the app, the Linear
    team, and the git name and email the agents commit with, proposed from the GitHub account. The factory
-   checks every choice against what the connections reach at the moment of saving.
+   checks every choice against what the connections reach at the moment of saving, and choices belong to the
+   accounts they were made with: connecting another GitHub or Linear account asks for them again.
 4. **Claude**, with the factory's existing followed sign-in (`/api/usage/login`): the page shows a link
-   on Claude's or Anthropic's own host and takes the one-time code, which it sends to the factory only.
+   on Claude's or Anthropic's own host and takes the one-time code, which it sends to the factory only. The code is typed into an uncontrolled input,
+   read once on submit and cleared at once; it is never in React state, a draft or a retry.
 
 Each step shows what the factory reports: connected, expired (with a reconnect), unavailable, or not
-connected, and the page says "ready" only when the factory's status says GitHub, Linear (unless not
-used), the saved choices and Claude are all in place. Nothing in Setup starts an agent: Claude's sign-in
+connected, and the page says "Setup is complete" only when the factory's status says GitHub, Linear (unless not
+used), the saved choices and Claude are all in place. That means the choices are saved on the factory; applying
+them to its runtime is the factory's own consumer (see [Owner Setup](factory-auth.md#owner-setup)). Nothing in Setup starts an agent: Claude's sign-in
 runs the CLI's login and nothing else. When the factory host does not answer with the person's sign-in
 (its own sign-in cookie is missing), the page offers a top-level visit to
 `<factory origin>/api/factory/setup/prime?next=setup`, which returns to a fixed hub path; no other

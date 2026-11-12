@@ -24,7 +24,7 @@ const CANARY_DEVICE = "device_canary_code_0000";
 /** A stand-in for the three upstream services, recording what each was sent. */
 function upstream() {
   const calls: { url: string; body: string; authorization: string | null }[] = [];
-  const state = { pollsBeforeGrant: 1, tokenLifetime: 28800 as number | null, linearLifetime: 86400, repositories: [{ full_name: "example-org/widgets", private: true }, { full_name: "example-org/docs", private: false }], teams: [{ key: "ENG", name: "Engineering" }], githubUser: { login: "ada-dev", id: 4242, name: "Ada Example", email: null as string | null }, deviceError: null as string | null, tokenError: null as string | null };
+  const state = { pollsBeforeGrant: 1, tokenLifetime: 28800 as number | null, linearLifetime: 86400, repositories: [{ full_name: "example-org/widgets", private: true }, { full_name: "example-org/docs", private: false }], teams: [{ key: "ENG", name: "Engineering" }], githubUser: { login: "ada-dev", id: 4242, name: "Ada Example", email: null as string | null }, linearUser: { id: "lin-user-1", name: "Ada Example" }, deviceError: null as string | null, tokenError: null as string | null };
   let polls = 0;
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -42,7 +42,7 @@ function upstream() {
     if (url.startsWith(`${GITHUB_API}/user/installations?`)) return Response.json({ installations: [{ id: 77 }] });
     if (url.startsWith(`${GITHUB_API}/user/installations/77/repositories`)) return Response.json({ repositories: state.repositories });
     if (url === LINEAR_TOKEN_URL) return Response.json({ access_token: CANARY_LINEAR, refresh_token: CANARY_LINEAR_REFRESH, expires_in: state.linearLifetime });
-    if (url === LINEAR_GRAPHQL_URL) return init?.body && String(init.body).includes("viewer") ? Response.json({ data: { viewer: { name: "Ada Example" } } }) : Response.json({ data: { teams: { nodes: state.teams } } });
+    if (url === LINEAR_GRAPHQL_URL) return init?.body && String(init.body).includes("viewer") ? Response.json({ data: { viewer: state.linearUser } }) : Response.json({ data: { teams: { nodes: state.teams } } });
     throw new Error(`unexpected upstream request ${url}`);
   }) as typeof fetch;
   return { fetcher, calls, state, resetPolls: () => { polls = 0; } };
@@ -132,7 +132,19 @@ describe("owner Setup", () => {
 
   it("ignores a client id the browser might send: only the hub's answer is used", async () => {
     f.setSetup({ version: 1, factories: [], invitation: null, github: { clientId: "not valid!" }, linear: null });
-    await expect(setup.startGithub(identity())).rejects.toMatchObject({ code: "github_not_registered" });
+    await expect(setup.startGithub(identity())).rejects.toMatchObject({ status: 503, code: "hub_unavailable" });
+  });
+
+  it("never turns a malformed or missing Linear registration into 'Linear is not used'", async () => {
+    for (const linear of [{ clientId: 42 }, { clientId: "not valid!" }, "linear", {}, []]) {
+      f.setSetup({ version: 1, factories: [], invitation: null, github: { clientId: "Iv1.fixture-github" }, linear });
+      expect(await setup.status(identity()), JSON.stringify(linear)).toMatchObject({ ready: false, linear: { state: "unavailable" }, github: { state: "unavailable" } });
+      await expect(setup.startLinear(identity())).rejects.toMatchObject({ code: "hub_unavailable" });
+    }
+    f.setSetup({ version: 1, factories: [], invitation: null, github: { clientId: "Iv1.fixture-github" } });
+    expect((await setup.status(identity())).linear.state).toBe("unavailable");
+    f.setSetup({ version: 1, factories: [], invitation: null, github: { clientId: "Iv1.fixture-github" }, linear: null });
+    expect((await setup.status(identity())).linear).toEqual({ state: "not_used" });
   });
 
   it("connects Linear with PKCE, returning to the hub, and uses the state once", async () => {
@@ -229,6 +241,66 @@ describe("owner Setup", () => {
     expect((await setup.status(identity())).next).toBe("settings");
     await setup.saveSettings(identity(), { repositories: ["example-org/docs"], gitName: "Ada Example", gitEmail: "ada@example.test" });
     expect(await setup.status(identity())).toMatchObject({ ready: true, linear: { state: "not_used" }, settings: { linearTeam: null } });
+  });
+
+  const good = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.test" };
+  async function completeAsAda() {
+    await connectGithub();
+    await (await connectLinear()).done();
+    await setup.saveSettings(identity(), good);
+    claude = true;
+    expect((await setup.status(identity())).ready).toBe(true);
+  }
+
+  it("does not carry saved choices over to another GitHub account, and keeps them for the same one", async () => {
+    await completeAsAda();
+    // the same account connecting again keeps its choices
+    up.resetPolls();
+    await connectGithub();
+    expect(await setup.status(identity())).toMatchObject({ ready: true, settings: good });
+    // another account has none: the repositories and identity were chosen for the first
+    up.resetPolls();
+    up.state.githubUser = { login: "grace-dev", id: 9999, name: "Grace Example", email: null };
+    up.state.repositories = [{ full_name: "other-org/tools", private: false }];
+    await connectGithub();
+    const after = await setup.status(identity());
+    expect(after).toMatchObject({ ready: false, settings: null, next: "settings", github: { login: "grace-dev" } });
+    expect(JSON.parse(readFileSync(join(dir, "factory-setup.json"), "utf8")).ready).toBe(false);
+    await expect(setup.saveSettings(identity(), good)).rejects.toMatchObject({ code: "repository_not_available" });
+    expect((await setup.choices(identity())).proposed.gitName).toBe("Grace Example");
+  });
+
+  it("does not carry saved choices over to another Linear account, nor across a disconnect of a different one", async () => {
+    await completeAsAda();
+    await setup.disconnectLinear(identity());
+    expect(await setup.status(identity())).toMatchObject({ ready: false, settings: null, next: "linear" });
+    // the same Linear account again: its choices are valid again
+    await (await connectLinear()).done();
+    expect(await setup.status(identity())).toMatchObject({ ready: true });
+    up.state.linearUser = { id: "lin-user-2", name: "Grace Example" };
+    await (await connectLinear()).done();
+    expect(await setup.status(identity())).toMatchObject({ ready: false, settings: null, next: "settings", linear: { name: "Grace Example" } });
+  });
+
+  it("reports and persists one answer when a status races a Linear renewal, and loses neither the renewal nor a settings write", async () => {
+    up.state.tokenLifetime = null; // a GitHub token that does not expire, so only Linear's renewal is in play
+    await completeAsAda();
+    clock += 86_400_000 - 60_000;
+    const [first, second] = await Promise.all([setup.status(identity()), setup.status(identity())]);
+    expect([first.ready, second.ready]).toEqual([true, true]);
+    const stored = JSON.parse(readFileSync(join(dir, "factory-setup.json"), "utf8"));
+    expect(stored.ready).toBe(true);
+    expect(stored.linear.expiresAt).toBe(clock + 86_400_000);
+    // a status and a settings write started together end consistent, whichever the lane runs first
+    const next = { ...good, repositories: ["example-org/docs"] };
+    const [, saved] = await Promise.all([setup.status(identity()), setup.saveSettings(identity(), next)]);
+    expect(saved.repositories).toEqual(["example-org/docs"]);
+    const final = await setup.status(identity());
+    const persisted = JSON.parse(readFileSync(join(dir, "factory-setup.json"), "utf8"));
+    expect(persisted.settings.repositories).toEqual(["example-org/docs"]);
+    expect(persisted.ready).toBe(final.ready);
+    expect(final.ready).toBe(true);
+    expect(persisted.linear.expiresAt).toBe(clock + 86_400_000);
   });
 
   it("disconnecting removes the credential from this host and makes Setup incomplete again", async () => {

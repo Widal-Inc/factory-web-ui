@@ -237,11 +237,15 @@ export class FactoryAuth {
       if (error instanceof FactoryAuthError) throw error;
       throw new FactoryAuthError(503);
     }
+    // Only an explicit null means "no such app" (for Linear: the organization does not use it). A missing key or a
+    // malformed registration is an answer that cannot be used, never a step that quietly disappears.
     const clientId = (value: unknown): string | null => {
+      if (value === null) return null;
       const app = object(value);
-      return app && typeof app["clientId"] === "string" && /^[A-Za-z0-9_.-]{1,200}$/.test(app["clientId"]) ? app["clientId"] : null;
+      if (!app || typeof app["clientId"] !== "string" || !/^[A-Za-z0-9_.-]{1,200}$/.test(app["clientId"])) throw new FactoryAuthError(503);
+      return app["clientId"];
     };
-    if (!body || body["version"] !== 1) throw new FactoryAuthError(503);
+    if (!body || body["version"] !== 1 || !("github" in body) || !("linear" in body)) throw new FactoryAuthError(503);
     return { githubClientId: clientId(body["github"]), linearClientId: clientId(body["linear"]) };
   }
 

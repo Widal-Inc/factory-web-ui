@@ -62,6 +62,8 @@ export interface StoredGithub {
 }
 
 export interface StoredLinear {
+  /** Linear's own id of the account: choices made with another one do not carry over */
+  readonly id: string;
   readonly name: string;
   readonly connectedAt: string;
   readonly expiresAt?: number;
@@ -75,6 +77,8 @@ export interface StoredSetup {
   readonly github?: StoredGithub;
   readonly linear?: StoredLinear;
   readonly settings?: SetupSettings;
+  /** the GitHub account id and Linear account id (null: Linear not used) the settings were made with */
+  readonly settingsAccounts?: { readonly github: number; readonly linear: string | null };
   readonly claude?: boolean;
   /** every required connection exists and the choices are saved */
   readonly ready: boolean;

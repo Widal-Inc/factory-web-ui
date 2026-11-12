@@ -117,6 +117,14 @@ expires after ten minutes. A GitHub user token cannot be refreshed here, because
 client secret, which stays on the hub: when its lifetime ends the status says expired and the person
 connects again. A Linear token is renewed with its refresh token and says expired when that fails.
 
+Saved choices belong to the accounts they were made with: the record keeps the GitHub account id and the
+Linear account id they were saved for, and a different account (or a Linear connection that is gone) has no
+choices until the person saves them again; reconnecting the same account keeps them. Every status read,
+renewal and write runs in one serial lane, so a status never records over a renewal or a settings write and
+the `ready` it reports is the `ready` it persists. The hub's Setup answer must name each app explicitly: a
+`null` means no such app (for Linear, that the organization does not use it), while a missing or malformed
+registration is reported as unavailable and never as "not used".
+
 Credentials are written to the factory's own secrets file (`$WIDAL_SECRETS`, else
 `$XDG_CONFIG_HOME/widal/secrets.env`, else `~/.config/widal/secrets.env`; mode 0600) as `GH_TOKEN`,
 `LINEAR_ACCESS_TOKEN` and `LINEAR_REFRESH_TOKEN`. What is not secret goes to `factory-setup.json` in the state
@@ -124,6 +132,12 @@ folder: who connected, the repositories, the Linear team, the git name and email
 `ready` is true only when GitHub, Linear (unless the organization does not use it), the saved choices and
 Claude's sign-in all exist; the factory starts no agent before it is true. Claude uses the existing
 followed sign-in, `/api/usage/login`.
+
+Applying these choices is not done by this server. The factory's runtime must read the secrets file and
+`factory-setup.json` (repositories, Linear team, git identity, `ready`), apply them to its own settings and
+hold agent start until `ready` is true. That consumer is separate factory work (the factory repository's
+runtime adapter); until it exists, a complete Setup means the choices are saved on the factory, not that its
+agents use them or can start.
 
 ## External notifications
 

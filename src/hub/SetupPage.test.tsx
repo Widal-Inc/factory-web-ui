@@ -45,9 +45,12 @@ function deps(owner: OwnerSetupApi, extra: Partial<SetupDeps> = {}) {
 }
 
 async function settle() { for (let i = 0; i < 12; i += 1) await act(async () => { await Promise.resolve(); }); }
+// uncontrolled inputs are read from their element: this stands in for the DOM nodes, so a test can type into one
+const inputs: { value: string }[] = [];
 async function mount(element: React.ReactElement) {
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(element); });
+  inputs.length = 0;
+  await act(async () => { renderer = create(element, { createNodeMock: (node) => { if (node.type !== "input") return null; const field = { value: "" }; inputs.push(field); return field; } }); });
   renderers.push(renderer);
   await settle();
   return renderer;
@@ -194,15 +197,45 @@ describe("Setup page", () => {
     await click(view, "Sign in to Claude");
     expect(owner.calls.find((call) => call.name === "claudeStart")!.args).toEqual([false]);
     expect(view.root.findAllByType("a").some((a) => a.props.href === "https://claude.ai/oauth/authorize?x=1")).toBe(true);
-    const input = view.root.findAllByType("input").find((i) => i.props.autoComplete === "off" && i.props.value === "")!;
-    await act(async () => { input.props.onChange({ target: { value: CANARY } }); });
+    // the code is typed into the input element only: no React prop, state or draft ever holds it
+    const field = inputs.at(-1)!;
+    field.value = CANARY;
+    expect(view.root.findAllByType("input").at(-1)!.props.value).toBeUndefined();
     await act(async () => { view.root.findAllByType("form").at(-1)!.props.onSubmit({ preventDefault() {} }); }); await settle();
     expect(owner.calls.find((call) => call.name === "claudeCode")!.args).toEqual(["L1", CANARY]);
+    expect(field.value).toBe("");
+    expect(JSON.stringify(view.toJSON())).not.toContain(CANARY);
     expect(text(view)).not.toContain(CANARY);
     expect(setup.navigations).toEqual([]);
     await act(async () => { release(); }); await settle();
-    expect(text(view)).toContain("Your factory is ready");
+    expect(text(view)).toContain("Setup is complete");
     expect(text(view)).toContain("Signed in.");
+  });
+
+  it("clears a Claude code the factory refused and never retries or keeps it", async () => {
+    const CANARY = "claude-code-canary#refused";
+    const settings = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada", gitEmail: "ada@example.com" };
+    let accepted = 0;
+    const owner = fakeOwner({ status: { ...base, github: connected, linear: { state: "connected", name: "Ada" }, settings, next: "claude" } }, {
+      claudePrompt: async () => ({ provider: "claude", url: "https://claude.ai/oauth/authorize?x=1", user_code: null, wants_code: true, ended: false }),
+      claudeCode: async () => { accepted += 1; throw new SetupApiError(409, "login_in_progress", "The sign-in is no longer running. Start it again."); },
+    });
+    const view = await mount(<SetupPage identity={identity} deps={deps(owner.api, { wait: async (_ms, signal) => { await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve())); } }).value} />);
+    await click(view, "Sign in to Claude");
+    const field = inputs.at(-1)!;
+    field.value = CANARY;
+    await act(async () => { view.root.findAllByType("form").at(-1)!.props.onSubmit({ preventDefault() {} }); }); await settle();
+    expect(accepted).toBe(1);
+    expect(field.value).toBe("");
+    expect(text(view)).toContain("no longer running");
+    expect(JSON.stringify(view.toJSON())).not.toContain(CANARY);
+    // an empty submit sends nothing
+    await act(async () => { view.root.findAllByType("form").at(-1)!.props.onSubmit({ preventDefault() {} }); }); await settle();
+    expect(accepted).toBe(1);
+    // cancelling clears whatever was typed
+    field.value = "half-typed-code";
+    await act(async () => { button(view, "Cancel").props.onClick(); }); await settle();
+    expect(field.value).toBe("");
   });
 
   it("refuses a sign-in link that is not Claude's own page, and shows a CLI that did not sign in", async () => {
@@ -219,7 +252,7 @@ describe("Setup page", () => {
 
   it("is not ready until every part is, however the status is worded", async () => {
     const view = await mount(<SetupPage identity={identity} deps={deps(fakeOwner({ status: { ...base, github: connected, linear: { state: "connected", name: "Ada" }, settings: null, ready: false } }).api).value} />);
-    expect(text(view)).not.toContain("Your factory is ready");
+    expect(text(view)).not.toContain("Setup is complete");
   });
 });
 

@@ -9,7 +9,7 @@
  * every upstream host is fixed here. A pending device code or PKCE verifier lives in memory only.
  */
 import { createHash, randomBytes } from "node:crypto";
-import type { FactoryIdentity } from "./factory-auth.ts";
+import { FactoryAuthError, type FactoryIdentity } from "./factory-auth.ts";
 import type { GithubDevicePoll, GithubDeviceStart, LinearStart, SetupChoices, SetupGithub, SetupLinear, SetupSettings, SetupStatus, SetupStep } from "../shared/factory-setup.ts";
 import { SECRET_GITHUB, SECRET_LINEAR, SECRET_LINEAR_REFRESH, SetupStore, type StoredGithub, type StoredLinear, type StoredSetup } from "./factory-setup-store.ts";
 
@@ -71,6 +71,14 @@ export class FactorySetup {
     this.random = options.random ?? randomBytes;
   }
 
+  /** The hub's client IDs; an answer that cannot be used is a plain, retryable failure, never a missing app. */
+  private async appsFor(who: FactoryIdentity): Promise<{ githubClientId: string | null; linearClientId: string | null }> {
+    try { return await this.options.apps(who); } catch (error) {
+      if (error instanceof FactoryAuthError && error.status === 503) throw new SetupError(503, "hub_unavailable", "The hub's Setup answer could not be used. Try again.");
+      throw error;
+    }
+  }
+
   /** One change at a time: two tabs cannot interleave a token write with a disconnect. */
   private serial<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.chain.then(operation, operation);
@@ -94,18 +102,31 @@ export class FactorySetup {
 
   // ----- status -----
 
-  async status(who: FactoryIdentity): Promise<SetupStatus> {
+  /**
+   * The whole read-compute-persist runs in the serial lane, beside every change: a status can neither
+   * snapshot before a refresh or a settings write and then record over it, nor report a `ready` that the
+   * persisted record disagrees with.
+   */
+  status(who: FactoryIdentity): Promise<SetupStatus> {
+    return this.serial(() => this.compute(who));
+  }
+
+  private async compute(who: FactoryIdentity): Promise<SetupStatus> {
     const person = who.person;
+    const apps = await this.options.apps(who).then((found) => found, () => null);
+    // an expiring Linear token is renewed before anything is read, so the rest sees the renewed record
+    if (apps?.linearClientId) await this.renewLinear(person, apps.linearClientId);
     const stored = this.store.read();
     const mine = stored && stored.owner.toLowerCase() === person.toLowerCase() ? stored : null;
     const secrets = this.store.secrets();
-    const apps = await this.options.apps(who).catch(() => null);
     const github = this.githubState(mine, secrets, apps !== null);
-    const linear = await this.linearState(mine, secrets, apps);
-    const claudeKnown = await this.options.claudeSignedIn().catch(() => null);
+    const linear = this.linearState(mine, secrets, apps);
+    const claudeKnown = await this.options.claudeSignedIn().then((signedIn) => signedIn, () => null);
     const claude: SetupStatus["claude"] = { state: claudeKnown === null ? "unavailable" : claudeKnown ? "signed_in" : "not_signed_in" };
-    const settings = mine?.settings ?? null;
     const needsLinear = linear.state !== "not_used";
+    // Choices belong to the accounts they were made with: another GitHub or Linear account has none.
+    const accounts = mine?.settingsAccounts;
+    const settings = mine?.settings && accounts && accounts.github === mine.github?.id && accounts.linear === (needsLinear ? mine.linear?.id ?? null : null) ? mine.settings : null;
     const ready = github.state === "connected" && (!needsLinear || linear.state === "connected") && settings !== null && claude.state === "signed_in";
     const next: SetupStep | null = github.state !== "connected" ? "github"
       : needsLinear && linear.state !== "connected" ? "linear"
@@ -125,16 +146,20 @@ export class FactorySetup {
     return { state: "connected", login: github.login, noreplyEmail };
   }
 
-  private async linearState(stored: StoredSetup | null, secrets: Record<string, string>, apps: { linearClientId: string | null } | null): Promise<SetupLinear> {
+  private linearState(stored: StoredSetup | null, secrets: Record<string, string>, apps: { linearClientId: string | null } | null): SetupLinear {
     if (apps === null) return { state: "unavailable", reason: "The hub did not answer Setup. Try again." };
     if (apps.linearClientId === null) return { state: "not_used" };
     const linear = stored?.linear;
     if (!linear || !secrets[SECRET_LINEAR]) return { state: "not_connected" };
-    if (linear.expiresAt !== undefined && linear.expiresAt - REFRESH_MARGIN_MS <= this.now()) {
-      const renewed = await this.serial(() => this.refreshLinear(apps.linearClientId!, stored!));
-      if (!renewed) return { state: "expired", name: linear.name, reason: "The Linear connection has expired. Connect again." };
-    }
+    if (linear.expiresAt !== undefined && linear.expiresAt <= this.now()) return { state: "expired", name: linear.name, reason: "The Linear connection has expired. Connect again." };
     return { state: "connected", name: linear.name };
+  }
+
+  /** Renews a Linear token that is about to expire, if the person has one. Runs inside the serial lane. */
+  private async renewLinear(person: string, clientId: string): Promise<void> {
+    const stored = this.store.read();
+    if (!stored || stored.owner.toLowerCase() !== person.toLowerCase() || !stored.linear?.expiresAt) return;
+    if (stored.linear.expiresAt - REFRESH_MARGIN_MS <= this.now()) await this.refreshLinear(clientId, stored);
   }
 
   /** Whether Setup is complete is recorded for the factory itself, which starts no agent before it is. */
@@ -156,7 +181,7 @@ export class FactorySetup {
   startGithub(who: FactoryIdentity): Promise<GithubDeviceStart> {
     const person = who.person;
     return this.serial(async () => {
-      const { githubClientId } = await this.options.apps(who);
+      const { githubClientId } = await this.appsFor(who);
       if (!githubClientId) throw new SetupError(409, "github_not_registered", "The organization has not connected its GitHub App yet. Ask an administrator.");
       const { status, body } = await this.form(GITHUB_DEVICE_CODE_URL, { client_id: githubClientId });
       const deviceCode = text(body["device_code"], 200);
@@ -222,7 +247,7 @@ export class FactorySetup {
   startLinear(who: FactoryIdentity): Promise<LinearStart> {
     const person = who.person;
     return this.serial(async () => {
-      const { linearClientId } = await this.options.apps(who);
+      const { linearClientId } = await this.appsFor(who);
       if (!linearClientId) throw new SetupError(409, "linear_not_registered", "The organization has not registered its Linear app, or does not use Linear.");
       this.sweep();
       for (const [key, pending] of this.verifiers) if (pending.person.toLowerCase() === person.toLowerCase()) this.verifiers.delete(key);
@@ -255,13 +280,13 @@ export class FactorySetup {
       const { status, body } = await this.form(LINEAR_TOKEN_URL, { grant_type: "authorization_code", code, redirect_uri: this.callback(), client_id: pending.clientId, code_verifier: pending.verifier });
       const token = text(body["access_token"], 600);
       if (status !== 200 || !token) throw new SetupError(502, "linear_refused", "Linear did not accept the sign-in. Connect Linear again.");
-      const name = await this.linearViewer(token);
+      const viewer = await this.linearViewer(token);
       const refresh = text(body["refresh_token"], 600);
       const lifetime = typeof body["expires_in"] === "number" && body["expires_in"] > 0 ? body["expires_in"] : null;
-      const connected: StoredLinear = { name, connectedAt: new Date(this.now()).toISOString(), ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : {}) };
+      const connected: StoredLinear = { id: viewer.id, name: viewer.name, connectedAt: new Date(this.now()).toISOString(), ...(lifetime !== null ? { expiresAt: this.now() + lifetime * 1000 } : {}) };
       this.store.saveSecrets({ [SECRET_LINEAR]: token, ...(refresh ? { [SECRET_LINEAR_REFRESH]: refresh } : {}) }, refresh ? [] : [SECRET_LINEAR_REFRESH]);
       this.save(person, (current) => ({ ...current, linear: connected }));
-      return { name };
+      return { name: viewer.name };
     });
   }
 
@@ -274,9 +299,11 @@ export class FactorySetup {
     return data;
   }
 
-  private async linearViewer(token: string): Promise<string> {
-    const viewer = record((await this.linearGraph(token, "{ viewer { name } }"))["viewer"]);
-    return text(viewer?.["name"], 200) ?? "Linear account";
+  private async linearViewer(token: string): Promise<{ id: string; name: string }> {
+    const viewer = record((await this.linearGraph(token, "{ viewer { id name } }"))["viewer"]);
+    const id = text(viewer?.["id"], 100);
+    if (!id) throw new SetupError(502, "linear_unavailable", "Linear did not say whose account this is. Connect Linear again.");
+    return { id, name: text(viewer?.["name"], 200) ?? "Linear account" };
   }
 
   /** True when the stored token is usable (renewed if it was about to expire). Runs inside `serial`. */
@@ -371,7 +398,7 @@ export class FactorySetup {
       const allowed = new Set((await this.repositories(secrets[SECRET_GITHUB]!)).map((repo) => repo.fullName));
       const repositories = [...new Set(wanted as string[])];
       if (!repositories.every((name) => allowed.has(name))) throw new SetupError(400, "repository_not_available", "A chosen repository is not one the organization's GitHub App can reach for you.");
-      const { linearClientId } = await this.options.apps(who);
+      const { linearClientId } = await this.appsFor(who);
       let linearTeam: string | null = null;
       if (linearClientId) {
         if (!stored.linear || !secrets[SECRET_LINEAR]) throw new SetupError(409, "linear_not_connected", "Connect Linear first.");
@@ -381,7 +408,9 @@ export class FactorySetup {
         linearTeam = key;
       }
       const settings: SetupSettings = { repositories, linearTeam, gitName, gitEmail };
-      this.save(person, (current) => ({ ...current, settings }));
+      // remembered with the accounts they were made with: a different account is not covered by them
+      const settingsAccounts = { github: stored.github.id, linear: linearClientId ? stored.linear!.id : null };
+      this.save(person, (current) => ({ ...current, settings, settingsAccounts }));
       return settings;
     });
   }

@@ -105,7 +105,7 @@ function OwnerSetup({ factory, api, deps }: { factory: string; api: OwnerSetupAp
   const value = status.value;
   const reload = () => refresh();
   return <div className="hub-setup"><p>Connect your own accounts on <strong>{factory}</strong>. Your GitHub, Linear and Claude credentials are kept on your factory: they never go to the hub or to your team's agents' settings, and the app never shows them.</p>
-    {value.ready && <section className="hub-notice" role="status"><h2>Your factory is ready</h2><p>GitHub{value.linear.state === "not_used" ? "" : ", Linear"}, your choices and Claude are all connected.</p><p><a className="btn" href="/my-factory">Go to My Factory</a></p></section>}
+    {value.ready && <section className="hub-notice" role="status"><h2>Setup is complete</h2><p>GitHub{value.linear.state === "not_used" ? "" : ", Linear"}, your choices and Claude are all connected on your factory. This page starts no agent.</p><p><a className="btn" href="/my-factory">Go to My Factory</a></p></section>}
     <GithubStep value={value} api={api} deps={deps} onChange={reload} />
     {value.linear.state !== "not_used" && <LinearStep value={value} api={api} deps={deps} onChange={reload} />}
     <ChoicesStep value={value} api={api} onChange={reload} />
@@ -208,14 +208,17 @@ function ChoicesStep({ value, api, onChange }: { value: SetupStatus; api: OwnerS
 function ClaudeStep({ value, api, deps, onChange }: { value: SetupStatus; api: OwnerSetupApi; deps: SetupDeps; onChange: () => Promise<void> }) {
   const [login, setLogin] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<UsageLoginPrompt | null>(null);
-  const [code, setCode] = useState("");
+  // The pasted code is a secret: it lives in the input element only (uncontrolled), is read once on submit and
+  // cleared at once, and is never in React state, a draft, a queue or a retry.
+  const codeInput = useRef<HTMLInputElement>(null);
+  const clearCode = () => { if (codeInput.current) codeInput.current.value = ""; };
   const [error, setError] = useState<string | null>(null);
   const run = useRef<AbortController | null>(null);
   const active = useRef<string | null>(null);
   useEffect(() => () => { run.current?.abort(); if (active.current) void api.claudeCancel(active.current).catch(() => {}); }, [api]);
   const prerequisites = value.settings !== null;
   async function start(replace: boolean) {
-    setError(null); setCode(""); setPrompt(null);
+    setError(null); clearCode(); setPrompt(null);
     run.current?.abort();
     const controller = new AbortController();
     run.current = controller;
@@ -228,19 +231,22 @@ function ClaudeStep({ value, api, deps, onChange }: { value: SetupStatus; api: O
         if (controller.signal.aborted) return;
         setPrompt(current);
         if (current.ended) {
-          active.current = null; setLogin(null);
+          active.current = null; clearCode(); setLogin(null);
           if (current.succeeded === false) setError("The Claude sign-in did not finish. Start it again.");
           await onChange();
           return;
         }
         await deps.wait(2000, controller.signal);
       }
-    } catch (cause) { if (!controller.signal.aborted) { active.current = null; setLogin(null); setError(text(cause)); } }
+    } catch (cause) { if (!controller.signal.aborted) { active.current = null; clearCode(); setLogin(null); setError(text(cause)); } }
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!login || !code.trim()) return;
-    try { await api.claudeCode(login, code.trim()); setCode(""); } catch (cause) { setError(text(cause)); }
+    const typed = codeInput.current?.value.trim() ?? "";
+    clearCode();
+    if (!login || !typed) return;
+    // sent once; a failure shows a message and the person pastes the code again: it is never kept to retry
+    try { await api.claudeCode(login, typed); } catch (cause) { setError(text(cause)); }
   }
   const signedIn = value.claude.state === "signed_in";
   const link = claudeSignInLink(prompt?.url ?? null);
@@ -248,8 +254,8 @@ function ClaudeStep({ value, api, deps, onChange }: { value: SetupStatus; api: O
   return <Step n={value.linear.state === "not_used" ? 3 : 4} title="Sign in to Claude" state={label}>
     {login ? <div role="status"><p>{link ? <>Open <a href={link} target="_blank" rel="noreferrer">Claude's sign-in page</a>, approve, then paste the code it shows here.</> : "Waiting for the sign-in page address…"}</p>
       {prompt?.user_code && <p className="hub-code" aria-label="Claude code">{prompt.user_code}</p>}
-      {prompt?.wants_code && <form onSubmit={(event) => void submit(event)}><label>Code from Claude <input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="off" spellCheck={false} /></label> <button className="btn" type="submit" disabled={!code.trim()}>Submit code</button></form>}
-      <button type="button" className="btn" onClick={() => { run.current?.abort(); const id = active.current; active.current = null; setLogin(null); if (id) void api.claudeCancel(id).catch((cause) => setError(text(cause))); }}>Cancel</button></div>
+      {prompt?.wants_code && <form onSubmit={(event) => void submit(event)}><label>Code from Claude <input ref={codeInput} defaultValue="" autoComplete="off" spellCheck={false} /></label> <button className="btn" type="submit">Submit code</button></form>}
+      <button type="button" className="btn" onClick={() => { clearCode(); run.current?.abort(); const id = active.current; active.current = null; setLogin(null); if (id) void api.claudeCancel(id).catch((cause) => setError(text(cause))); }}>Cancel</button></div>
       : <p><button type="button" className="btn" disabled={!prerequisites || value.claude.state === "unavailable"} onClick={() => void start(signedIn)}>{signedIn ? "Sign in again" : "Sign in to Claude"}</button></p>}
     {!prerequisites && <p className="hub-muted">Save your choices first. No agent starts until every step is done.</p>}
     {error && <Problem>{error}</Problem>}</Step>;

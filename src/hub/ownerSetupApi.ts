@@ -96,7 +96,9 @@ export function ownerSetupApi(ownerOrigin: string, hubOrigin: string, browserFet
     if (response.ok) return value;
     if (response.status === 401) throw new FactoryUnreachable();
     const failure = value !== null && typeof value === "object" ? (value as { error?: { code?: unknown; message?: unknown } }).error : undefined;
-    const message = typeof failure?.message === "string" && failure.message.length <= 400 ? failure.message : response.status === 403 ? "This factory is not registered to you." : "Your factory could not complete this step. Try again.";
+    // the gate's own refusal (identity or current ownership) says nothing useful; a Setup step's refusal is written for the page
+    const gate = response.status === 403 && (failure?.code === "forbidden" || failure?.code === undefined);
+    const message = gate ? "This factory is not registered to you." : typeof failure?.message === "string" && failure.message.length <= 400 ? failure.message : "Your factory could not complete this step. Try again.";
     throw new SetupApiError(response.status, typeof failure?.code === "string" ? failure.code : "failed", message);
   }
   const post = (path: string, body: unknown = {}) => call("POST", `/api/factory/setup${path}`, body);
