@@ -155,6 +155,7 @@ describe("owner Setup", () => {
     expect(link.searchParams.get("redirect_uri")).toBe(`${f.options.hubOrigin}/linear/callback`);
     expect(link.searchParams.get("code_challenge_method")).toBe("S256");
     expect(link.searchParams.get("response_type")).toBe("code");
+    expect(link.searchParams.get("actor")).toBe("user");
     expect(url).not.toContain(CANARY_LINEAR);
     expect(await done()).toEqual({ name: "Ada Example" });
     const exchange = new URLSearchParams(up.calls.find((call) => call.url === LINEAR_TOKEN_URL)!.body);

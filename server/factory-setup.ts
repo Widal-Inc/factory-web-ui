@@ -259,6 +259,8 @@ export class FactorySetup {
       url.search = new URLSearchParams({
         client_id: linearClientId, redirect_uri: this.callback(), response_type: "code", scope: LINEAR_SCOPE, state,
         code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
+        // The factory acts in Linear as this person, never as the app.
+        actor: "user",
       }).toString();
       return { url: url.href };
     });
