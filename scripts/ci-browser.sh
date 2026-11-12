@@ -54,6 +54,10 @@ HERDR_DEMO_BUILD="$(mktemp -d)"
 export HERDR_DEMO_BUILD
 run_script scripts/demo-build.ts "$HERDR_DEMO_BUILD"
 run_script scripts/ui-regression.ts
+run_script scripts/terminal-input-regression.ts
+run_script scripts/terminal-safari-ime-regression.ts
+run_script scripts/terminal-ipad-ime-regression.ts
+run_script scripts/terminal-linux-ime-regression.ts
 run_script scripts/ui-contexts-regression.ts
 run_script scripts/ui-contexts-layout-regression.ts
 run_script scripts/machine-events-browser-regression.ts
