@@ -69,7 +69,7 @@ export function bundleProblems({ version, published, changed, publishing }: Bund
   return [`The remote bundle's inputs changed since remote-v${version} (${shown}), so remote PCs would keep the old server. Raise REMOTE_BUNDLE_VERSION in ${MACHINES} from ${version} to ${next} in the release PR (or, when it already merged, in a follow-up PR); after it merges, push remote-v${next} on the merged commit and wait for the Remote PC bundles workflow before running Release (docs/development.md#releasing).`];
 }
 
-/** The manifest a remote PC downloads its bundle by (bundleManifestSource in server/remote-bundle.ts). */
+/** The manifest the Remote PC bundles workflow publishes for a bundle version. The server itself no longer downloads from it (server/remote-bundle.ts needs a configured manifest). */
 export const manifestUrl = (version: number): string => `https://github.com/devswha/ovis/releases/download/remote-v${version}/manifest.json`;
 /** Every platform server/remote-bundle.ts installs a bundle on; the Remote PC bundles workflow publishes all of them. */
 export const BUNDLE_PLATFORMS = ["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64", "win32-x64"];

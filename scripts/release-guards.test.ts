@@ -4,7 +4,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BUNDLE_PLATFORMS, BUNDLE_WORKFLOW, bundleInput, bundleProblems, check, type Get, manifestUrl, publishedProblems, releaseCheck } from "./release-guards.ts";
-import { bundleManifestSource } from "../server/remote-bundle.ts";
 import { REMOTE_BUNDLE_VERSION } from "../shared/machines.ts";
 
 const made: string[] = [];
@@ -57,10 +56,7 @@ describe("publishedProblems", () => {
   const manifest = (version: string, platforms = BUNDLE_PLATFORMS) => ({ version, assets: Object.fromEntries(platforms.map((platform) => [platform, { url: asset(platform), sha256: "a".repeat(64) }])) });
   const archives: Record<string, number> = Object.fromEntries(BUNDLE_PLATFORMS.map((platform) => [asset(platform), 214_845_782]));
 
-  it("reads the manifest URL remote PCs download, for every platform the bundle workflow publishes", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "hwc-bundles-"));
-    made.push(directory);
-    for (const platform of BUNDLE_PLATFORMS) expect(await bundleManifestSource(platform, { directory, manifest: "" })).toBe(manifestUrl(Number(REMOTE_BUNDLE_VERSION)));
+  it("checks every platform the bundle workflow publishes", () => {
     const published = /assert len\(result\['assets'\]\) == (\d+)/.exec(readFileSync(join(import.meta.dir, "..", BUNDLE_WORKFLOW), "utf8"))?.[1];
     expect(BUNDLE_PLATFORMS).toHaveLength(Number(published));
   });
