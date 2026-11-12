@@ -228,10 +228,8 @@ export function fileInfo(path: string): FileInfo | null {
  * The one exception is a video or sound too large to put into it, which plays from
  * `mediaSource` (`PAGE_MEDIA_PATH`): that path answers only the addresses this render gave out,
  * and only to the client that rendered it.
- * The hosted shell's render host (`/s/<id>/~render`, scripts/shell-build.ts) carries this same
- * policy with no media source, as its Pages `_headers`; no hash or nonce is ever added to it,
- * since a hash in `script-src` would make browsers ignore `'unsafe-inline'` and block the page's
- * own inline scripts.
+ * No hash or nonce is ever added to the policy, since a hash in `script-src` would make browsers
+ * ignore `'unsafe-inline'` and block the page's own inline scripts.
  */
 export const pagePolicy = (mediaSource: string | null): string => [
   "sandbox allow-scripts",
@@ -262,7 +260,7 @@ const EMBED_REFS = 1_000;
  * never holds the file (its script cannot read media served to another origin), but its script
  * can read the address from its own `<video src>` and pass it on. So an address plays only for
  * the client address (`authClient`) that rendered the page, only for `PAGE_MEDIA_LIFETIME_MS`
- * from the render, and no longer once that device is revoked or signs out (`forgetPageMedia`).
+ * from the render, and no longer once that client signs out (`forgetPageMedia`).
  * The page's request carries no cookie (it has no origin, and the cookies are SameSite=Strict),
  * so the client address is the one identity the render and the playing share: another device
  * behind the same address (one NAT, one proxy that hides its visitors) shares it too, and a phone
@@ -282,8 +280,8 @@ export const PAGE_MEDIA_LIFETIME_MS = 30 * 60 * 1000;
 const PAGE_MEDIA_ADDRESSES = 4_096;
 /** Files one render may play from here; past this many a page's media is left as it is, so one page cannot push out every other page's addresses. */
 export const PAGE_MEDIA_PER_RENDER = 50;
-/** Who rendered a page: the client address its media must come from, and the paired device (if any) whose revocation ends it. */
-export interface PageMediaOwner { client: string | null; device: string | null }
+/** Who rendered a page: the client address its media must come from. */
+export interface PageMediaOwner { client: string | null }
 /** What a page may play from here: the policy's media source and who rendered it. */
 export interface PageMedia extends PageMediaOwner { source: string }
 /** What an address serves: the path its render asked for, under the folders it was allowed then, which file that led to and in what state, and for whom. */
@@ -296,11 +294,11 @@ export type PageMediaGrant = [token: string, entry: PageMediaEntry];
 
 /** A new address for a file opened and authorized for this render (`openAuthorized`), for this render only. */
 function grantPageMedia(file: Authorized, owner: PageMediaOwner, now = Date.now()): PageMediaGrant {
-  return [randomBytes(24).toString("base64url"), { requested: file.requested, roots: file.roots, mime: file.mime, expires: now + PAGE_MEDIA_LIFETIME_MS, dev: file.dev, ino: file.ino, size: file.size, mtimeNs: file.mtimeNs, client: owner.client, device: owner.device }];
+  return [randomBytes(24).toString("base64url"), { requested: file.requested, roots: file.roots, mime: file.mime, expires: now + PAGE_MEDIA_LIFETIME_MS, dev: file.dev, ino: file.ino, size: file.size, mtimeNs: file.mtimeNs, client: owner.client }];
 }
 
-type MediaOwnerKey = { device: string } | { client: string | null };
-const ownedBy = (entry: PageMediaOwner, owner: MediaOwnerKey): boolean => "device" in owner ? entry.device === owner.device : entry.client === owner.client;
+type MediaOwnerKey = { client: string | null };
+const ownedBy = (entry: PageMediaOwner, owner: MediaOwnerKey): boolean => entry.client === owner.client;
 
 /**
  * Every `forgetPageMedia` so far, numbered, kept for as long as a request that began before it may
@@ -339,8 +337,8 @@ export function watchPageMedia(): { since: number; done: () => void } {
 
 /**
  * The addresses a render gave out, kept where `pageMediaResponse` answers them: on the server's
- * thread, whichever thread rendered the page. One for a device or client address forgotten since
- * its request began (`since`, from `watchPageMedia`: it was revoked or signed out while the file
+ * thread, whichever thread rendered the page. One for a client address forgotten since
+ * its request began (`since`, from `watchPageMedia`: it signed out while the file
  * was found or the page drawn on a file thread) is not kept.
  */
 export function keepPageMedia(grants: readonly PageMediaGrant[], now = Date.now(), since = forgets): void {
@@ -354,7 +352,7 @@ export function keepPageMedia(grants: readonly PageMediaGrant[], now = Date.now(
   }
 }
 
-/** Drop the addresses a device was given (it was revoked or signed out), or those a client address was given. */
+/** Drop the addresses a client address was given (it signed out). */
 export function forgetPageMedia(owner: MediaOwnerKey): void {
   forgets += 1;
   forgotten.push({ at: forgets, owner });
@@ -762,8 +760,8 @@ interface PageAsset { target: string; mime: string; size: number; data: string |
  * The page at `path` (any file this server's user can read, as every file the viewer opens), read
  * from one descriptor, with the pictures, media, stylesheets and scripts it takes from its own
  * folder put into it as data: URLs, so the element keeps its attributes (`defer`, `type="module"`,
- * a stylesheet's `media`): the sandbox may ask this server for nothing, and on a paired phone it
- * could not anyway (the device cookie is SameSite=Strict, and a sandboxed page has no origin).
+ * a stylesheet's `media`): the sandbox may ask this server for nothing, and it
+ * could not anyway (the token cookie is SameSite=Strict, and a sandboxed page has no origin).
  * Nothing outside the page's folder is read, and each file only from a descriptor
  * `openAuthorized` let through; a URL is resolved once however often it is named. With `media`,
  * a video or sound that does not fit is given an address to play from instead
@@ -988,7 +986,7 @@ const askCollection = () => {
   Bun.gc(false);
 };
 
-export async function fileResponse(info: FileInfo, download: boolean, render = false, media: PageMedia | null = null, request: Request | null = null, watched?: ReturnType<typeof watchPageMedia>, within: string | null = null, stream = false): Promise<Response> {
+export async function fileResponse(info: FileInfo, download: boolean, render = false, media: PageMedia | null = null, request: Request | null = null, watched?: ReturnType<typeof watchPageMedia>, within: string | null = null): Promise<Response> {
   const name = encodeURIComponent(info.name);
   const headers = new Headers({
     "content-disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${name}`,
@@ -1023,10 +1021,7 @@ export async function fileResponse(info: FileInfo, download: boolean, render = f
   const head = request?.method === "HEAD";
   // RFC 9110 defines a range for GET alone: a HEAD describes the whole file
   const get = head ? null : { range: request?.method === "GET" ? request.headers.get("range") : null, ifRange: request?.headers.has("if-range") ?? false };
-  // A Bun file body is sized/chunked by Bun.serve, which relay dispatch never enters. Its JS
-  // reader may return the entire file at once, overflowing the mux's per-session buffer.
-  // Keep the descriptor and use bounded reads for relay files, including their Content-Length.
-  const opened = await fileTask<OpenedFile | null>({ op: "open", path: info.path, get, within, fastDiskMs: stream ? 0 : pageFileHooks.fastDiskMs }, request?.signal);
+  const opened = await fileTask<OpenedFile | null>({ op: "open", path: info.path, get, within, fastDiskMs: pageFileHooks.fastDiskMs }, request?.signal);
   if (opened === null) return gone();
   headers.set("content-type", type);
   headers.set("accept-ranges", "bytes");

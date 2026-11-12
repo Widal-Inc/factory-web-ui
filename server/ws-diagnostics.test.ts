@@ -72,7 +72,7 @@ it("records abnormal browser closes without their reason, coalesces repeats and 
   try {
     await new Promise<void>((resolve, reject) => { daemon.once("error", reject); daemon.listen(socketAddress(path), resolve); });
     process.env.HERDR_SOCKET = path;
-    app = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), machines: false, herdrProfiles: async () => [], registerBridge: false, tailscaleOwner: null });
+    app = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), machines: false, herdrProfiles: async () => [], registerBridge: false });
     await close(1000);
     expect(records()).toHaveLength(0);
     await close(4001);

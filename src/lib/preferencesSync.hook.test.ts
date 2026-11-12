@@ -626,10 +626,7 @@ describe("preferences sync real send path", () => {
     expect(currentPaneMutes()).toEqual([]);
   });
 
-  it.each([
-    [403, "forbidden"],
-    [404, "not_found"],
-  ] as const)("clears a save error when the server stops accepting saves with %s", async (status, code) => {
+  it("clears a save error when the server stops accepting saves with 404", async () => {
     // Given a client with an unconfirmed save error.
     const client = await open();
     refuse = Response.json({ error: { code: "preferences_unwritable" } }, { status: 500 });
@@ -638,7 +635,7 @@ describe("preferences sync real send path", () => {
     expect(client.saveError).not.toBeNull();
 
     // When its next save receives this terminal refusal.
-    refuse = Response.json({ error: { code } }, { status });
+    refuse = Response.json({ error: { code: "not_found" } }, { status: 404 });
     await act(async () => { jest.advanceTimersByTime(5_000); });
     await send();
     // Then the refusal was sent and the previous error clears.
@@ -787,24 +784,14 @@ describe("preferences sync real send path", () => {
     expect(store.get().settings.darkTheme).toBe("tokyo-night");
   });
 
-  it("Retry never bypasses a watching device or an older server", async () => {
-    const watching = await open();
-    refuse = Response.json({ error: { code: "forbidden" } }, { status: 403 });
-    await act(async () => { watching.update({ darkTheme: "tokyo-night" }); });
-    await send();
-    await act(async () => { watching.retry(); watching.resubscribed(); });
-    await longWait();
-    expect([bodies.length, watching.saveError, watching.retrying]).toEqual([1, null, false]);
-
-    await act(async () => { for (const renderer of renderers.splice(0)) renderer.unmount(); });
-    clients.length = 0;
+  it("Retry never bypasses an older server", async () => {
     const older = await open();
     refuse = Response.json({ error: { code: "not_found" } }, { status: 404 });
     await act(async () => { older.update({ darkTheme: "gruvbox" }); });
     await send();
     await act(async () => { older.retry(); older.resubscribed(); });
     await longWait();
-    expect([bodies.length, older.saveError, older.retrying]).toEqual([2, null, false]);
+    expect([bodies.length, older.saveError, older.retrying]).toEqual([1, null, false]);
   });
 
   /** a refusal the server gives only once `gate` is resolved: the request is on its way until then */

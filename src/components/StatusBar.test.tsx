@@ -36,7 +36,7 @@ afterEach(async () => {
 
 const base: StatusBarProps = {
   machineId: "pc", workspaceId: "w1", machine: "Laptop", place: "api", path: "/home/me/api", session: null,
-  watching: false, waiting: 0, onNextWaiting: null, connection: "live", connectionWord: "Connected",
+  waiting: 0, onNextWaiting: null, connection: "live", connectionWord: "Connected",
 };
 const draw = async (props: Partial<StatusBarProps>) => {
   await act(async () => { renderer = create(createElement(SettingsProvider, null, createElement(StatusBar, { ...base, ...props }))); });
@@ -67,9 +67,8 @@ it("offers the next waiting session as a button, inert when there is none to ope
   await act(async () => inert.props.onClick());
 });
 
-it("says View only on a watching device and a lost connection in its own word", async () => {
-  const root = await draw({ watching: true, connection: "reconnecting", connectionWord: "Reconnecting…" });
-  expect(text(root.findByProps({ className: "status-bar-item status-bar-watch" }))).toBe("View only");
+it("says a lost connection in its own word", async () => {
+  const root = await draw({ connection: "reconnecting", connectionWord: "Reconnecting…" });
   const conn = root.findByProps({ "data-state": "reconnecting" });
   expect(conn.props.className).toContain("is-lost");
   expect(text(conn)).toBe("Reconnecting…");

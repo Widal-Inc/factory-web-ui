@@ -113,7 +113,7 @@ describe("pane layout routes: validation", () => {
 
   it("refuses a cross-origin change on every route", async () => {
     const state = mkdtempSync(join(tmpdir(), "ovis-layout-origin-"));
-    const instance = createServer({ port: 0, stateDir: state, token: "", tailscaleOwner: null, machines: false });
+    const instance = createServer({ port: 0, stateDir: state, token: "", machines: false });
     try {
       for (const route of ROUTES) {
         const response = await fetch(`http://127.0.0.1:${instance.port}/api/pane/${route}`, {

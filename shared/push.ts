@@ -20,8 +20,8 @@ export interface PushPayload {
   body: string;
   tag: string;
   /**
-   * What the alert is about (shared/notify-policy.ts AlertKind). Absent from the test push, a
-   * pairing notice and an older server. The server already left out every device that does not
+   * What the alert is about (shared/notify-policy.ts AlertKind). Absent from the test push and an
+   * older server. The server already left out every device that does not
    * want this kind or this PC: a device shows what it gets.
    */
   kind?: AlertKind;

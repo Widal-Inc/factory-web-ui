@@ -131,7 +131,7 @@ describe("workspace order evidence across a real bridge", () => {
     const managedBoot = process.env["OVIS_BOOT_ID"];
     delete process.env["OVIS_BOOT_ID"];
     const token = "test-order-bridge-token";
-    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token, machines: false, stateDir: join(root, "bridge"), tailscaleOwner: null });
+    const bridge = createServer({ port: 0, hostname: "127.0.0.1", token, machines: false, stateDir: join(root, "bridge") });
     let clock = 0;
     const manager = new MachineManager(join(root, "manager"), createPushService({ stateDir: root }), new CompletionTracker(null), sessionSnapshot, { bootId: "manager-boot", now: () => clock });
     try {

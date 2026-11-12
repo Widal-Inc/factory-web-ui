@@ -3,14 +3,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import webpush from "web-push";
 
 import { paneAlertsMuted, type AlertPrefs } from "../shared/notify-policy.ts";
 import { paneStorageId } from "../shared/machines.ts";
 import type { AgentStatus, HerdrPane, InteractivePrompt, SessionSnapshot } from "../shared/protocol.ts";
 import { CompletionTracker } from "./completion.ts";
 import { handlePreferencesRequest, PreferenceStore } from "./preferences.ts";
-import { DeviceStore } from "./devices.ts";
 import { createPushService, handlePushRequest, parseSubscription, type PushService } from "./push.ts";
 import { startFakePushService, type FakePushService } from "./push.fake.ts";
 import { privateStateFs } from "./private-state.ts";
@@ -99,6 +97,55 @@ describe("parseSubscription", () => {
   });
 });
 
+describe("stored subscription ownership compatibility", () => {
+  it("keeps saved server-ID mutes for local and retained SSH PCs, including after a restart", async () => {
+    const localId = "a".repeat(32), remoteId = "b".repeat(32);
+    mkdirSync(join(stateDir, "relay"));
+    writeFileSync(join(stateDir, "relay", "identity.json"), JSON.stringify({ v: 1, server_id: localId }));
+    const prefs = { input: true, done: "always" as const, error: true, pcs_off: [localId, remoteId] };
+    const first = createPushService({ loopbackHttp: true, stateDir });
+    first.subscribe(fake.subscription, prefs);
+    const push = createPushService({ loopbackHttp: true, stateDir, timing: { short: 0, long: 0, longTurn: 0 } });
+    push.seed([pane("w1:p1", "working", "local agent")]);
+    push.seed([pane("w1:p1", "working", "remote agent")], "pc-b", "Renamed remote", remoteId);
+    for (const machineId of ["local", "pc-b"]) {
+      await push.onStatus("w1:p1", "blocked", machineId);
+      await push.onStatus("w1:p1", "done", machineId);
+      await push.onFailed("w1:p1", machineId);
+      await push.onEnded("w1:p1", machineId);
+    }
+    await push.settled();
+    expect(fake.received).toHaveLength(0);
+    push.subscribe(fake.subscription, { ...prefs, pcs_off: [] });
+    await push.onStatus("w1:p1", "working", "pc-b");
+    await push.onStatus("w1:p1", "blocked", "pc-b");
+    await push.settled();
+    expect(fake.received).toHaveLength(1);
+  });
+
+  it.each(["revoked-device", undefined])("suppresses legacy subscriptions left behind by failed revocation cleanup (%s)", async (deviceId) => {
+    const path = join(stateDir, "push-subscriptions.json");
+    const old = JSON.stringify([{ ...fake.subscription, ...(deviceId === undefined ? {} : { device_id: deviceId }) }]);
+    writeFileSync(path, old);
+    const push = createPushService({ loopbackHttp: true, stateDir, timing: { short: 0, long: 0, longTurn: 0 } });
+    expect(await push.sendTest(fake.subscription.endpoint)).toBeNull();
+    push.seed([pane("w1:p1", "working", "agent")]);
+    await push.onStatus("w1:p1", "blocked");
+    await push.settled();
+    expect(fake.received).toHaveLength(0);
+    expect(readFileSync(path, "utf8")).toBe(old);
+    push.subscribe(fake.subscription);
+    expect(JSON.parse(readFileSync(path, "utf8"))[0].device_id).toBeNull();
+    expect(await createPushService({ loopbackHttp: true, stateDir }).sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
+    expect(fake.received).toHaveLength(1);
+  });
+
+  it("keeps subscriptions saved by the previous release's authenticated owner", async () => {
+    writeFileSync(join(stateDir, "push-subscriptions.json"), JSON.stringify([{ ...fake.subscription, device_id: null }]));
+    expect(await createPushService({ loopbackHttp: true, stateDir }).sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
+  });
+});
+
 describe("push state", () => {
   it("keeps one owner-only VAPID key pair across restarts", () => {
     const key = createPushService({ loopbackHttp: true, stateDir }).publicKey();
@@ -138,16 +185,15 @@ describe("push state", () => {
     const push = createPushService({ loopbackHttp: true, stateDir });
     const rename = spyOn(privateStateFs, "renameSync").mockImplementation(() => { throw new Error("EXDEV: rename refused"); });
     try {
-      expect(() => push.subscribe(fake.subscription, undefined, "0123456789abcdef")).toThrow("EXDEV");
+      expect(() => push.subscribe(fake.subscription)).toThrow("EXDEV");
     } finally { rename.mockRestore(); }
     expect(await push.sendTest(fake.subscription.endpoint)).toBeNull();
     expect(existsSync(join(stateDir, "push-subscriptions.json"))).toBe(false);
     expect(readdirSync(stateDir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
 
-    push.subscribe(fake.subscription, undefined, "0123456789abcdef");
+    push.subscribe(fake.subscription);
     const fsync = spyOn(privateStateFs, "fsyncSync").mockImplementation(() => { throw Object.assign(new Error("EIO: i/o error, fsync"), { code: "EIO" }); });
     try {
-      expect(() => push.revokeDevice("0123456789abcdef")).toThrow("EIO");
       expect(() => push.unsubscribe(fake.subscription.endpoint)).toThrow("EIO");
     } finally { fsync.mockRestore(); }
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
@@ -332,7 +378,7 @@ describe("push delivery", () => {
     const response = await handlePushRequest(new Request("http://localhost/api/push/test", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ endpoint: fake.subscription.endpoint }),
-    }), "/api/push/test", push, null);
+    }), "/api/push/test", push);
 
     expect(response?.status).toBe(410);
     expect((await response?.json()).error.code).toBe("subscription_gone");
@@ -345,7 +391,7 @@ describe("push delivery", () => {
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
     const post = (path: string, body: unknown) => handlePushRequest(new Request(`http://localhost${path}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    }), path, push, null);
+    }), path, push);
     const again = (await post("/api/push/subscribe", { subscription: fake.subscription }))!;
     expect(again.status).toBe(410);
     expect(((await again.json()) as { error: { code: string } }).error.code).toBe("subscription_gone");
@@ -371,7 +417,7 @@ describe("push delivery", () => {
     const restarted = createPushService({ loopbackHttp: true, stateDir });
     const post = (path: string, body: unknown) => handlePushRequest(new Request(`http://localhost${path}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    }), path, restarted, null);
+    }), path, restarted);
     const again = (await post("/api/push/subscribe", { subscription: fake.subscription }))!;
     expect(again.status).toBe(410);
     expect(((await again.json()) as { error: { code: string } }).error.code).toBe("subscription_gone");
@@ -380,26 +426,26 @@ describe("push delivery", () => {
     expect((await post("/api/push/subscribe", { subscription: other }))?.status).toBe(204);
   });
 
-  // regression (fails on main): 30 days after the retirement the mark expired, and a watch device registered the owner's endpoint (#2012)
-  it("never hands a retired endpoint to another device, however long ago it was retired, and ignores a malformed file", async () => {
+  // regression (fails on main): 30 days after the retirement the mark expired, and another holder registered the endpoint (#2012)
+  it("never hands a retired endpoint to another holder, however long ago it was retired, and ignores a malformed file", async () => {
     let clock = 1_000_000;
     const push = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
-    push.subscribe(fake.subscription, undefined, "owner");
+    push.subscribe(fake.subscription);
     fake.answerWith(410);
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
     clock += 31 * 24 * 60 * 60 * 1000;
-    // the watch device holds the endpoint and keys of its own
+    // another holder has the endpoint and keys of its own
     const theirs = { endpoint: fake.subscription.endpoint, keys: { p256dh: Buffer.alloc(65, 4).toString("base64url"), auth: Buffer.alloc(16, 7).toString("base64url") } };
     const subscribeAs = (service: PushService) => handlePushRequest(new Request("http://localhost/api/push/subscribe", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: theirs }),
-    }), "/api/push/subscribe", service, "watch");
+    }), "/api/push/subscribe", service);
     for (const service of [push, createPushService({ loopbackHttp: true, stateDir, now: () => clock })]) {
       const response = (await subscribeAs(service))!;
       expect(response.status).toBe(410);
       expect(((await response.json()) as { error: { code: string } }).error.code).toBe("subscription_gone");
     }
     expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))).toEqual([]);
-    expect(readFileSync(join(stateDir, "push-retired.json"), "utf8")).toContain("owner");
+    expect(JSON.parse(readFileSync(join(stateDir, "push-retired.json"), "utf8"))).toHaveLength(1);
     // a malformed file is ignored, never fatal
     writeFileSync(join(stateDir, "push-retired.json"), "not json");
     expect(createPushService({ loopbackHttp: true, stateDir }).retired(fake.subscription.endpoint)).toBe(false);
@@ -409,12 +455,12 @@ describe("push delivery", () => {
   it("keeps refusing, and forgets on goodbye, an endpoint retired under the spelling it was handed over", async () => {
     const legacy = `${fake.subscription.endpoint}#legacy`;
     const raw = createHash("sha256").update(legacy).digest("base64url");
-    writeFileSync(join(stateDir, "push-retired.json"), JSON.stringify([{ hash: raw, at: 1, owner: "owner" }]));
-    writeFileSync(join(stateDir, "push-delivery.json"), JSON.stringify([{ hash: raw, owner: "owner", keys: "k", success_at: null, failure_at: Date.now(), failure: "gone", at: Date.now() }]));
+    writeFileSync(join(stateDir, "push-retired.json"), JSON.stringify([{ hash: raw, at: 1 }]));
+    writeFileSync(join(stateDir, "push-delivery.json"), JSON.stringify([{ hash: raw, keys: "k", success_at: null, failure_at: Date.now(), failure: "gone", at: Date.now() }]));
     const push = createPushService({ loopbackHttp: true, stateDir });
     const request = (method: string, path: string, body: unknown) => handlePushRequest(new Request(`http://localhost${path}`, {
       method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    }), path, push, "watch");
+    }), path, push);
     expect((await request("POST", "/api/push/subscribe", { subscription: { ...fake.subscription, endpoint: legacy } }))?.status).toBe(410);
     expect((await request("POST", "/api/push/test", { endpoint: legacy }))?.status).toBe(410);
     expect(existsSync(join(stateDir, "push-subscriptions.json"))).toBe(false);
@@ -425,7 +471,7 @@ describe("push delivery", () => {
   // regression: a subscription file that cannot be written kept the retired subscription, and the next push went to it again
   it("stops pushing to a retired subscription when the subscription file cannot be written", async () => {
     const push = createPushService({ loopbackHttp: true, stateDir });
-    push.subscribe(fake.subscription, undefined, null);
+    push.subscribe(fake.subscription);
     push.publicKey(); // the key pair is on disk before the disk fills
     fake.answerWith(410);
     const rename = spyOn(privateStateFs, "renameSync").mockImplementation(() => { throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" }); });
@@ -444,17 +490,14 @@ describe("push delivery", () => {
     expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))).toEqual([]);
     expect(await createPushService({ loopbackHttp: true, stateDir }).sendTest(fake.subscription.endpoint)).toBeNull();
     // the next write that succeeds leaves it off disk too
-    push.subscribe({ ...fake.subscription, endpoint: `${fake.subscription.endpoint}-other` }, undefined, null);
+    push.subscribe({ ...fake.subscription, endpoint: `${fake.subscription.endpoint}-other` });
     expect((JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8")) as { endpoint: string }[]).map((entry) => entry.endpoint)).toEqual([`${fake.subscription.endpoint}-other`]);
   });
 
-  // regression: storing endpoints normalized let a key pair push-keys.json kept for another spelling sign for this one
-  it("keeps a subscription and the key pair it was made for under the spelling it was handed over", async () => {
+  // regression: storing endpoints normalized, so a spelling of an endpoint was not the one handed over
+  it("keeps a subscription under the spelling it was handed over, signed with the server's key", async () => {
     const { endpoint, keys } = fake.subscription;
     expect(parseSubscription({ endpoint: `${endpoint}#x`, keys }, { loopbackHttp: true })?.endpoint).toBe(`${endpoint}#x`);
-    // a foreign key pair left for an old spelling of this endpoint, no longer subscribed
-    const stale = webpush.generateVAPIDKeys();
-    writeFileSync(join(stateDir, "push-keys.json"), JSON.stringify({ keys: [{ ...stale, endpoints: [`${endpoint}#old-import`] }] }));
     const push = subscribed();
     expect(await push.sendTest(endpoint)).toEqual({ ok: true });
     expect(fake.received[0]).toMatchObject({ vapidKey: push.publicKey(), vapidValid: true });
@@ -467,7 +510,7 @@ describe("push delivery", () => {
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
     const post = (path: string, body: unknown) => handlePushRequest(new Request(`http://localhost${path}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    }), path, push, "watch");
+    }), path, push);
     const url = new URL(fake.subscription.endpoint);
     const variants = [`${fake.subscription.endpoint}#attacker`, `HTTP://${url.host}/push/x/..${url.pathname.slice("/push".length)}`];
     for (const endpoint of variants) {
@@ -486,7 +529,7 @@ describe("push delivery", () => {
     const response = await handlePushRequest(new Request("http://localhost/api/push/test", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ endpoint: fake.subscription.endpoint }),
-    }), "/api/push/test", push, null);
+    }), "/api/push/test", push);
     expect(response?.status).toBe(502);
     expect((await response?.json()).error.code).toBe("push_failed");
     fake.answerWith(201);
@@ -700,21 +743,6 @@ describe("alert timing and each device's choice", () => {
     expect(fake.received.map((r) => r.payload.machine_id ?? "local")).toEqual(["pc-b"]);
   });
 
-  it("tells nothing of a PC the device turned off by its relay ID, whatever the roster it was turned off in calls it (#2876)", async () => {
-    const own = "ab".repeat(16), other = "cd".repeat(16);
-    // created as server/core/status.ts creates it: this PC knows itself by its hostname and its relay ID
-    const push = createPushService({ loopbackHttp: true, stateDir, serverId: () => own, timing: { short: 0, long: 0, longTurn: 0 } });
-    push.subscribe(fake.subscription, { input: true, done: "always", pcs_off: [own, other] });
-    push.seed([pane("w1:p1", "working", "alpha")]);
-    push.seed([pane("w1:p1", "working", "beta")], "pc-b", "Home PC", other);
-    push.seed([pane("w1:p1", "working", "gamma")], "pc-c", "Laptop");
-    await push.onStatus("w1:p1", "blocked");
-    await push.onStatus("w1:p1", "blocked", "pc-b");
-    await push.onStatus("w1:p1", "blocked", "pc-c");
-    await push.settled();
-    expect(fake.received.map((r) => r.payload.machine_id ?? "local")).toEqual(["pc-c"]);
-  });
-
   it("keeps a device's choice through a re-registration without one, and a restart", async () => {
     const push = createPushService({ loopbackHttp: true, stateDir });
     push.subscribe(fake.subscription, { input: false, done: "off" });
@@ -770,180 +798,32 @@ it("settles only after a delivery already under way, when a later group is calle
 });
 
 
-it("persists device ownership and refuses revoked and legacy subscriptions after restart", async () => {
-  const active = new Set(["device-a"]);
-  const canDeliver = (id: string | null | undefined) => id === null || typeof id === "string" && active.has(id);
-  const push = createPushService({ loopbackHttp: true, stateDir, canDeliver });
-  push.subscribe(fake.subscription, undefined, "device-a");
-  expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))[0].device_id).toBe("device-a");
-  active.clear();
-  const restarted = createPushService({ loopbackHttp: true, stateDir, canDeliver });
-  await restarted.onEnded("w1:p1");
-  expect(fake.received).toHaveLength(0);
-  restarted.revokeDevice("device-a");
-  expect(await restarted.sendTest(fake.subscription.endpoint)).toBeNull();
-  // Legacy records cannot identify a revoked device; re-registration supplies an owner.
+it("keeps a pending alert across re-registration", async () => {
+  const push = createPushService({ loopbackHttp: true, stateDir, timing: { short: 20 } });
   push.subscribe(fake.subscription);
-  const migrated = createPushService({ loopbackHttp: true, stateDir, canDeliver });
-  await migrated.onEnded("w1:p1");
-  expect(fake.received).toHaveLength(0);
-  migrated.subscribe(fake.subscription, undefined, null);
-  await migrated.onEnded("w1:p1");
-  expect(fake.received).toHaveLength(1);
-});
-
-it("keeps a pending alert across re-registration but drops it after device revocation", async () => {
-  const active = new Set(["device-a"]);
-  const push = createPushService({ loopbackHttp: true, stateDir, timing: { short: 20 }, canDeliver: (id) => typeof id === "string" && active.has(id) });
-  push.subscribe(fake.subscription, undefined, "device-a");
   push.seed([pane("w1:p1", "working", "claude")]);
   await push.onStatus("w1:p1", "blocked");
-  push.subscribe(fake.subscription, undefined, "device-a");
+  push.subscribe(fake.subscription);
   await push.settled();
-  expect(fake.received).toHaveLength(1);
-  await push.onStatus("w1:p1", "working");
-  await push.onStatus("w1:p1", "blocked");
-  active.clear();
-  // The registry still blocks delivery if push-file cleanup cannot run.
-  await push.settled();
-  expect(fake.received).toHaveLength(1);
-});
-
-it("revoked owner cannot receive queued push", async () => {
-  const devices = new DeviceStore(stateDir);
-  const owner = devices.pair(devices.startPairing().code, "Owner", "drive")!;
-  devices.match(owner.token);
-  // the server's rule (server/core/status.ts): a device's subscription delivers only while that device is paired
-  const push = createPushService({ loopbackHttp: true, stateDir, timing: { short: 20 }, canDeliver: (id) => id === null || (id === undefined ? !devices.gated : devices.has(id)) });
-  push.subscribe(fake.subscription, undefined, owner.device.id);
-  push.seed([pane("w1:p1", "working", "claude")]);
-  await push.onStatus("w1:p1", "blocked");
-  // every device is revoked while the alert waits: the registry alone keeps it from going out,
-  // before any push-file cleanup has run
-  expect(devices.revokeAll()).toEqual([owner.device.id]);
-  await push.settled();
-  expect(fake.received).toHaveLength(0);
-  await push.onStatus("w1:p1", "working");
-  await push.onStatus("w1:p1", "blocked");
-  await push.settled();
-  expect(fake.received).toHaveLength(0);
-  // the cleanup that follows works from the revoked ids and forgets the subscription for good
-  push.revokeDevice(owner.device.id);
-  expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))).toEqual([]);
-});
-
-it("tells every other subscriber of a durable enrollment at once, and never the new device", async () => {
-  const other = await startFakePushService();
-  try {
-    const devices = new DeviceStore(stateDir);
-    // a window in use holds alerts back (#751); an enrollment is told regardless, since that window may be the new device's
-    const push = createPushService({ loopbackHttp: true, stateDir, inUse: () => true, canDeliver: (id) => id === null || (id === undefined ? !devices.gated : devices.has(id)) });
-    const deliveries: Promise<void>[] = [];
-    devices.onPaired((event) => deliveries.push(push.devicePaired(event)));
-    // the first device: its credential is issued unconfirmed, so its id is known before it is enrolled
-    const tablet = devices.pair(devices.startPairing().code, "Tablet", "drive")!;
-    push.subscribe(fake.subscription, undefined, null);
-    push.subscribe(other.subscription, undefined, tablet.device.id);
-    expect(deliveries).toHaveLength(0);
-    // its first request back is the durable enrollment
-    devices.match(tablet.token);
-    expect(deliveries).toHaveLength(1);
-    await Promise.all(deliveries);
-    expect(fake.received.map((push) => push.payload)).toEqual([{ pane_id: null, title: "Ovis", body: "New device paired: Tablet", tag: expect.stringMatching(/^herdr-device-paired-[0-9a-f]{16}$/) }]);
-    expect(fake.received[0]!.urgency).toBe("high");
-    expect(other.received).toHaveLength(0);
-    // a gated pairing is durable at once: both the PC's browser and the tablet hear of the phone
-    const phone = devices.pair(devices.startPairing().code, "Phone", "drive")!;
-    expect(deliveries).toHaveLength(2);
-    await Promise.all(deliveries);
-    expect(fake.received.map((push) => push.payload.body)).toEqual(["New device paired: Tablet", "New device paired: Phone"]);
-    expect(other.received.map((push) => push.payload.body)).toEqual(["New device paired: Phone"]);
-    expect(fake.received[1]!.payload.tag).not.toBe(fake.received[0]!.payload.tag);
-    // the phone's later requests, a rename and a last-seen write, announce nothing more
-    devices.match(phone.token, Date.now() + 120_000);
-    devices.update(phone.device.id, { label: "Pixel" });
-    expect(deliveries).toHaveLength(2);
-  } finally { other.stop(); }
-});
-
-it("never pushes a browser's own pairing to it, before or after it paired, while others sharing its sign-in hear it", async () => {
-  const sibling = await startFakePushService();
-  const keyless = await startFakePushService();
-  try {
-    const devices = new DeviceStore(stateDir);
-    devices.match(devices.pair(devices.startPairing().code, "First", "drive")!.token);
-    let push = createPushService({ loopbackHttp: true, stateDir, inUse: () => true, canDeliver: (id) => id === null || (id === undefined ? !devices.gated : devices.has(id)) });
-    const deliveries: Promise<void>[] = [];
-    devices.onPaired((event, origin) => deliveries.push(push.devicePaired(event, origin)));
-    const self = "a".repeat(32);
-    const raced = "c".repeat(32);
-    const subscribe = (subscription: unknown, owner: string | null, keys: string[]) => handlePushRequest(new Request("http://localhost/api/push/subscribe", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription }),
-    }), "/api/push/subscribe", push, owner, keys);
-    // three browsers on the same access token (owner null): this one, another with a key of its own, one with none
-    expect((await subscribe(fake.subscription, null, [self]))?.status).toBe(204);
-    expect((await subscribe(sibling.subscription, null, ["b".repeat(32)]))?.status).toBe(204);
-    expect((await subscribe(keyless.subscription, null, []))?.status).toBe(204);
-    expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))[0]).toMatchObject({ device_id: null, browser_keys: [self] });
-    // a restart reads the keys back
-    push = createPushService({ loopbackHttp: true, stateDir, inUse: () => true, canDeliver: (id) => id === null || (id === undefined ? !devices.gated : devices.has(id)) });
-    // this browser pairs itself, carrying the key it subscribed with and one a racing tab added
-    const own = devices.pair(devices.startPairing().code, "Self", "drive", Date.now(), [raced, self])!;
-    await Promise.all(deliveries);
-    expect(fake.received).toHaveLength(0);
-    expect(sibling.received.map((push) => push.payload.body)).toEqual(["New device paired: Self"]);
-    expect(keyless.received.map((push) => push.payload.body)).toEqual(["New device paired: Self"]);
-    // re-registered on load, now owned by the device it paired, with no key this time: it keeps its browser
-    expect((await subscribe(fake.subscription, own.device.id, []))?.status).toBe(204);
-    // a key this browser was issued later (it had lost its cookie) is added to the ones it had, not swapped for them
-    const reissued = "e".repeat(32);
-    expect((await subscribe(fake.subscription, own.device.id, [reissued]))?.status).toBe(204);
-    expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))[0]).toMatchObject({ device_id: own.device.id, browser_keys: [self, reissued] });
-    // it pairs again: still its own pairing
-    devices.pair(devices.startPairing().code, "Again", "drive", Date.now(), [self]);
-    await Promise.all(deliveries);
-    expect(fake.received).toHaveLength(0);
-    expect(sibling.received.map((push) => push.payload.body)).toEqual(["New device paired: Self", "New device paired: Again"]);
-    // and another browser's pairing reaches it
-    devices.pair(devices.startPairing().code, "Elsewhere", "drive", Date.now(), ["d".repeat(32)]);
-    await Promise.all(deliveries);
-    expect(fake.received.map((push) => push.payload.body)).toEqual(["New device paired: Elsewhere"]);
-  } finally { sibling.stop(); keyless.stop(); }
-});
-
-it("keeps a subscription made through the open LAN only while the LAN stays open", async () => {
-  let gated = false;
-  // the server's rule (index.ts): owners null always, undefined only while ungated
-  const push = createPushService({ loopbackHttp: true, stateDir, canDeliver: (id) => id === null || (id === undefined ? !gated : false) });
-  const request = new Request("http://192.168.1.20:8787/api/push/subscribe", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: fake.subscription }),
-  });
-  expect((await handlePushRequest(request, "/api/push/subscribe", push, undefined))?.status).toBe(204);
-  expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))[0]).not.toHaveProperty("device_id");
-  await push.onEnded("w1:p1");
-  expect(fake.received).toHaveLength(1);
-  // pairing a device closes the open LAN: its earlier subscriber hears nothing more
-  gated = true;
-  await push.onEnded("w1:p2");
   expect(fake.received).toHaveLength(1);
 });
 
 describe("push delivery health (#1039)", () => {
-  const statusRequest = (push: PushService, subscription: unknown, owner: string | null | undefined) => handlePushRequest(new Request("http://localhost/api/push/status", {
+  const statusRequest = (push: PushService, subscription: unknown) => handlePushRequest(new Request("http://localhost/api/push/status", {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription }),
-  }), "/api/push/status", push, owner);
+  }), "/api/push/status", push);
 
   it("gone history survives restart", async () => {
     let clock = 1_700_000_000_000;
     const push = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
-    push.subscribe(fake.subscription, undefined, null);
-    expect(push.status(fake.subscription, null)).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
+    push.subscribe(fake.subscription);
+    expect(push.status(fake.subscription)).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
     clock += 1000;
     fake.answerWith(410);
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
     const expected = { registered: false, last_success_at: new Date(1_700_000_000_000).toISOString(), last_failure_at: new Date(1_700_000_001_000).toISOString(), last_failure: "gone" as const };
-    expect(push.status(fake.subscription, null)).toEqual(expected);
+    expect(push.status(fake.subscription)).toEqual(expected);
     // the record is owner-only and names neither the endpoint nor the keys
     const path = join(stateDir, "push-delivery.json");
     expect(statSync(path).mode & 0o777).toBe(0o600);
@@ -954,197 +834,65 @@ describe("push delivery health (#1039)", () => {
     // a restart keeps it, and the key pair every device is bound to
     const vapid = readFileSync(join(stateDir, "vapid.json"), "utf8");
     const restarted = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
-    expect(restarted.status(fake.subscription, null)).toEqual(expected);
+    expect(restarted.status(fake.subscription)).toEqual(expected);
     expect(restarted.publicKey()).toBe(push.publicKey());
     expect(readFileSync(join(stateDir, "vapid.json"), "utf8")).toBe(vapid);
-    const response = (await statusRequest(restarted, fake.subscription, null))!;
+    const response = (await statusRequest(restarted, fake.subscription))!;
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(expected);
     // forgotten after its time to live (the retired mark is not: #2012)
-    expect(createPushService({ loopbackHttp: true, stateDir, now: () => clock + 31 * 24 * 60 * 60 * 1000 }).status(fake.subscription, null)).toBeNull();
+    expect(createPushService({ loopbackHttp: true, stateDir, now: () => clock + 31 * 24 * 60 * 60 * 1000 }).status(fake.subscription)).toBeNull();
     // an explicit unsubscribe removes it
     restarted.unsubscribe(fake.subscription.endpoint);
-    expect(restarted.status(fake.subscription, null)).toBeNull();
+    expect(restarted.status(fake.subscription)).toBeNull();
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual([]);
   });
 
-  it("expires the history on the running service, never the retired mark; a goodbye takes the history, and only a revocation also the mark", async () => {
+  it("expires the history on the running service, never the retired mark; a goodbye takes the history and keeps the mark", async () => {
     let clock = 1_700_000_000_000;
     const push = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
     const endpoint = fake.subscription.endpoint;
-    const retire = async (owner: string | null): Promise<void> => {
-      push.subscribe(fake.subscription, undefined, owner);
+    const retire = async (): Promise<void> => {
+      push.subscribe(fake.subscription);
       fake.answerWith(410);
       expect(await push.sendTest(endpoint)).toEqual({ ok: false, status: 410, gone: true });
-      expect(push.status(fake.subscription, owner)?.last_failure).toBe("gone");
+      expect(push.status(fake.subscription)?.last_failure).toBe("gone");
       expect(push.retired(endpoint)).toBe(true);
     };
     // 31 days on, without a restart: the history is gone, on disk too, and the retired mark stays (#2012)
-    await retire(null);
+    await retire();
     clock += 31 * 24 * 60 * 60 * 1000;
-    expect(push.status(fake.subscription, null)).toBeNull();
+    expect(push.status(fake.subscription)).toBeNull();
     expect(push.retired(endpoint)).toBe(true);
     expect(JSON.parse(readFileSync(join(stateDir, "push-delivery.json"), "utf8"))).toEqual([]);
     expect(JSON.parse(readFileSync(join(stateDir, "push-retired.json"), "utf8"))).toHaveLength(1);
-    // an explicit unsubscribe forgets the history, and keeps the mark: it proves neither owner nor keys
-    await retire(null);
+    // an explicit unsubscribe forgets the history, and keeps the mark: it proves nothing about the keys
+    await retire();
     push.unsubscribe(endpoint);
-    expect(push.status(fake.subscription, null)).toBeNull();
+    expect(push.status(fake.subscription)).toBeNull();
     expect(push.retired(endpoint)).toBe(true);
-    // the owner's revocation
-    await retire("device-a");
-    push.revokeDevice("device-a");
-    expect(push.status(fake.subscription, "device-a")).toBeNull();
-    expect(push.retired(endpoint)).toBe(false);
-    expect(createPushService({ loopbackHttp: true, stateDir, now: () => clock }).retired(endpoint)).toBe(false);
   });
 
-  it("revocation removes owned health", async () => {
-    const other = await startFakePushService();
-    try {
-      const push = createPushService({ loopbackHttp: true, stateDir });
-      push.subscribe(fake.subscription, undefined, "device-a");
-      push.subscribe(other.subscription, undefined, "device-b");
-      expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
-      expect(await push.sendTest(other.subscription.endpoint)).toEqual({ ok: true });
-      expect(push.status(fake.subscription, "device-a")?.last_success_at).not.toBeNull();
-      push.revokeDevice("device-a");
-      expect(push.status(fake.subscription, "device-a")).toBeNull();
-      expect(JSON.parse(readFileSync(join(stateDir, "push-delivery.json"), "utf8"))).toHaveLength(1);
-      expect(push.status(other.subscription, "device-b")?.last_success_at).not.toBeNull();
-      // the revoked device's record is not recreated by a restart either
-      expect(createPushService({ loopbackHttp: true, stateDir }).status(fake.subscription, "device-a")).toBeNull();
-    } finally { other.stop(); }
-  });
-
-  it("revocation removes a retired mark whose history was evicted", async () => {
-    let clock = 1_700_000_000_000;
-    const push = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
-    const endpoint = fake.subscription.endpoint;
-    push.subscribe(fake.subscription, undefined, "device-a");
-    fake.answerWith(410);
-    expect(await push.sendTest(endpoint)).toEqual({ ok: false, status: 410, gone: true });
-    expect(push.retired(endpoint)).toBe(true);
-    // 999 later deliveries for device B stand on disk behind A's record; one more, delivered for real, evicts A's
-    const path = join(stateDir, "push-delivery.json");
-    const [owned] = JSON.parse(readFileSync(path, "utf8")) as { keys: string }[];
-    const later = Array.from({ length: 999 }, (_, index) => ({ hash: `later-${index}`, owner: "device-b", keys: owned!.keys, success_at: clock + index + 1, failure_at: null, failure: null, at: clock + index + 1 }));
-    writeFileSync(path, JSON.stringify([owned, ...later]));
-    clock += 2000;
-    const restarted = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
-    const newest = { ...fake.subscription, endpoint: `${endpoint}-b` };
-    restarted.subscribe(newest, undefined, "device-b");
-    fake.answerWith(201);
-    expect(await restarted.sendTest(newest.endpoint)).toEqual({ ok: true });
-    expect(restarted.status(fake.subscription, "device-a")).toBeNull();
-    expect(JSON.parse(readFileSync(path, "utf8"))).toHaveLength(1000);
-    expect(restarted.retired(endpoint)).toBe(true);
-    // the retired mark knows its owner by itself: the revocation takes it, and a restart does not bring it back
-    restarted.revokeDevice("device-a");
-    expect(restarted.retired(endpoint)).toBe(false);
-    expect(createPushService({ loopbackHttp: true, stateDir, now: () => clock }).retired(endpoint)).toBe(false);
-    // another device's revocation leaves a mark it does not own
-    fake.answerWith(410);
-    const third = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
-    third.subscribe(fake.subscription, undefined, "device-c");
-    expect(await third.sendTest(endpoint)).toEqual({ ok: false, status: 410, gone: true });
-    third.revokeDevice("device-b");
-    expect(third.retired(endpoint)).toBe(true);
-    expect(createPushService({ loopbackHttp: true, stateDir, now: () => clock }).retired(endpoint)).toBe(true);
-  });
-
-  // regression: two owners' spellings of one endpoint share its mark, and the last retirement took it for its owner alone
-  it("keeps a mark two owners' spellings were retired under through either owner's revocation", async () => {
+  it("unknown health and health asked for with other keys are indistinguishable", async () => {
     const push = createPushService({ loopbackHttp: true, stateDir });
-    const endpoint = fake.subscription.endpoint;
-    push.subscribe(fake.subscription, undefined, "device-a");
-    push.subscribe({ ...fake.subscription, endpoint: `${endpoint}#b` }, undefined, "device-b");
-    fake.answerWith(410);
-    expect(await push.sendTest(endpoint)).toEqual({ ok: false, status: 410, gone: true });
-    expect(await push.sendTest(`${endpoint}#b`)).toEqual({ ok: false, status: 410, gone: true });
-    push.revokeDevice("device-b");
-    expect(push.retired(endpoint)).toBe(true);
-    push.revokeDevice("device-a");
-    expect(push.retired(endpoint)).toBe(true);
-    expect(createPushService({ loopbackHttp: true, stateDir }).retired(endpoint)).toBe(true);
-  });
-
-  // regression: a mark a revocation removed in memory only came back at a restart and dropped the endpoint subscribed again
-  it("writes the marks a revocation removed before the endpoint is subscribed again", async () => {
-    const push = createPushService({ loopbackHttp: true, stateDir });
-    push.subscribe(fake.subscription, undefined, "device-a");
-    fake.answerWith(410);
-    expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
-    // the list cannot be replaced for a while: a directory stands at its temporary path
-    const blocker = join(stateDir, `push-retired.json.${process.pid}.tmp`);
-    mkdirSync(blocker);
-    const quiet = spyOn(console, "error").mockImplementation(() => undefined);
-    try { push.revokeDevice("device-a"); } finally { quiet.mockRestore(); }
-    rmSync(blocker, { recursive: true });
-    const response = await handlePushRequest(new Request("http://localhost/api/push/subscribe", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: fake.subscription }),
-    }), "/api/push/subscribe", push, "device-b");
-    expect(response?.status).toBe(204);
-    fake.answerWith(201);
-    expect(await createPushService({ loopbackHttp: true, stateDir }).sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
-  });
-
-  it("revocation takes the device's history and marks when the retired list cannot be written", async () => {
-    const push = createPushService({ loopbackHttp: true, stateDir });
-    push.subscribe(fake.subscription, undefined, "device-a");
-    fake.answerWith(410);
-    expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
-    // the list cannot be replaced any more: a directory stands at its path
-    rmSync(join(stateDir, "push-retired.json"));
-    mkdirSync(join(stateDir, "push-retired.json"));
-    const quiet = spyOn(console, "error").mockImplementation(() => undefined);
-    try {
-      push.revokeDevice("device-a");
-      expect(push.retired(fake.subscription.endpoint)).toBe(false);
-      expect(push.status(fake.subscription, "device-a")).toBeNull();
-      expect(JSON.parse(readFileSync(join(stateDir, "push-delivery.json"), "utf8"))).toEqual([]);
-    } finally { quiet.mockRestore(); }
-  });
-
-  it("foreign and unknown health are indistinguishable", async () => {
-    const push = createPushService({ loopbackHttp: true, stateDir });
-    push.subscribe(fake.subscription, undefined, "device-a");
+    push.subscribe(fake.subscription);
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
-    const own = (await statusRequest(push, fake.subscription, "device-a"))!;
+    const own = (await statusRequest(push, fake.subscription))!;
     expect(own.status).toBe(200);
     expect(((await own.json()) as { registered: boolean }).registered).toBe(true);
-    const unknown = (await statusRequest(push, { ...fake.subscription, endpoint: `${fake.subscription.endpoint}-never-known` }, "device-a"))!;
+    const unknown = (await statusRequest(push, { ...fake.subscription, endpoint: `${fake.subscription.endpoint}-never-known` }))!;
     const unknownBody = await unknown.json();
     expect(unknown.status).toBe(404);
     expect(unknownBody).toEqual({ error: { code: "subscription_not_found", message: "this device is not subscribed" } });
     const wrongKeys = { ...fake.subscription, keys: { ...fake.subscription.keys, auth: Buffer.alloc(16, 9).toString("base64url") } };
-    for (const [label, subscription, owner] of [
-      ["another device", fake.subscription, "device-b"],
-      ["a local sign-in", fake.subscription, null],
-      ["the owner with the wrong keys", wrongKeys, "device-a"],
-    ] as const) {
-      const response = (await statusRequest(push, subscription, owner))!;
-      expect([label, response.status]).toEqual([label, 404]);
-      expect([label, await response.json()]).toEqual([label, unknownBody]);
-    }
-    // the open LAN signs in as no device: told so alike for a known and an unknown subscription, before either is looked at
-    for (const subscription of [fake.subscription, { ...fake.subscription, endpoint: `${fake.subscription.endpoint}-never-known` }]) {
-      const response = (await statusRequest(push, subscription, undefined))!;
-      expect([response.status, await response.json()]).toEqual([403, { error: { code: "status_unavailable", message: "this sign-in has no device to answer for" } }]);
-    }
-    // a retired subscription keeps the same rule: the tombstone answers its owner alone
+    const other = (await statusRequest(push, wrongKeys))!;
+    expect(other.status).toBe(404);
+    expect(await other.json()).toEqual(unknownBody);
+    // a retired subscription keeps the same rule: the tombstone answers the holder of its keys alone
     fake.answerWith(410);
     await push.sendTest(fake.subscription.endpoint);
-    expect((await statusRequest(push, fake.subscription, "device-a"))!.status).toBe(200);
-    expect((await statusRequest(push, fake.subscription, "device-b"))!.status).toBe(404);
-    expect((await statusRequest(push, wrongKeys, "device-a"))!.status).toBe(404);
-    // a legacy owner's own deliveries are recorded for nobody
-    const legacy = createPushService({ loopbackHttp: true, stateDir: join(stateDir, "legacy") });
-    fake.answerWith(201);
-    legacy.subscribe(fake.subscription);
-    expect(await legacy.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
-    expect(legacy.status(fake.subscription, undefined)).toBeNull();
-    expect(legacy.status(fake.subscription, null)).toBeNull();
+    expect((await statusRequest(push, fake.subscription))!.status).toBe(200);
+    expect((await statusRequest(push, wrongKeys))!.status).toBe(404);
   });
 
   it("late delivery cannot retire replacement", async () => {
@@ -1158,19 +906,19 @@ describe("push delivery health (#1039)", () => {
       const push = createPushService({ loopbackHttp: true, stateDir });
       const endpoint = `http://127.0.0.1:${slow.port}/push/1`;
       const first = { ...fake.subscription, endpoint };
-      push.subscribe(first, undefined, null);
+      push.subscribe(first);
       const delivery = push.sendTest(endpoint);
       await requested;
-      // the same endpoint, registered again by a paired device with keys of its own
+      // the same endpoint, registered again with keys of its own
       const replacement = { endpoint, keys: { ...fake.subscription.keys, auth: Buffer.alloc(16, 7).toString("base64url") } };
-      push.subscribe(replacement, undefined, "device-b");
+      push.subscribe(replacement);
       release();
       expect(await delivery).toEqual({ ok: false, status: 410, gone: true });
       // the replacement stays registered, is not retired, and carries no failure of the subscription before it
       expect(push.retired(endpoint)).toBe(false);
-      expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))).toMatchObject([{ endpoint, device_id: "device-b" }]);
-      expect(push.status(replacement, "device-b")).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
-      expect(push.status(first, null)).toBeNull();
+      expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))).toMatchObject([{ endpoint }]);
+      expect(push.status(replacement)).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
+      expect(push.status(first)).toBeNull();
     } finally { release(); slow.stop(true); }
   });
 
@@ -1180,68 +928,48 @@ describe("push delivery health (#1039)", () => {
     const keysOf = (keys: { p256dh: string; auth: string }) => createHash("sha256").update(`${keys.p256dh}.${keys.auth}`).digest("base64url");
     const endpointAt = (index: number) => `${fake.subscription.endpoint}-${index}`;
     // 1,200 records on disk, oldest first: only the newest 1,000 are read back
-    const records = Array.from({ length: 1200 }, (_, index) => ({ hash: hashOf(endpointAt(index)), owner: null, keys: keysOf(fake.subscription.keys), success_at: now + index, failure_at: null, failure: null, at: now + index }));
+    const records = Array.from({ length: 1200 }, (_, index) => ({ hash: hashOf(endpointAt(index)), keys: keysOf(fake.subscription.keys), success_at: now + index, failure_at: null, failure: null, at: now + index }));
     writeFileSync(join(stateDir, "push-delivery.json"), JSON.stringify(records));
     const push = createPushService({ loopbackHttp: true, stateDir, now: () => now + 2000 });
-    for (const index of [0, 199]) expect(push.status({ ...fake.subscription, endpoint: endpointAt(index) }, null)).toBeNull();
-    for (const index of [200, 1199]) expect(push.status({ ...fake.subscription, endpoint: endpointAt(index) }, null)?.registered).toBe(false);
+    for (const index of [0, 199]) expect(push.status({ ...fake.subscription, endpoint: endpointAt(index) })).toBeNull();
+    for (const index of [200, 1199]) expect(push.status({ ...fake.subscription, endpoint: endpointAt(index) })?.registered).toBe(false);
     // one more written in memory pushes the oldest kept one out
-    push.subscribe(fake.subscription, undefined, null);
+    push.subscribe(fake.subscription);
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
-    expect(push.status({ ...fake.subscription, endpoint: endpointAt(200) }, null)).toBeNull();
-    expect(push.status({ ...fake.subscription, endpoint: endpointAt(201) }, null)?.registered).toBe(false);
+    expect(push.status({ ...fake.subscription, endpoint: endpointAt(200) })).toBeNull();
+    expect(push.status({ ...fake.subscription, endpoint: endpointAt(201) })?.registered).toBe(false);
     expect(JSON.parse(readFileSync(join(stateDir, "push-delivery.json"), "utf8"))).toHaveLength(1000);
   });
 
   it("records a test push and every kind of answer, and a failure after a success stays history", async () => {
     let clock = 1_700_000_000_000;
     const push = createPushService({ loopbackHttp: true, stateDir, now: () => clock });
-    push.subscribe(fake.subscription, undefined, null);
+    push.subscribe(fake.subscription);
     expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
     for (const [status, failure] of [[503, "server"], [429, "throttled"], [403, "key-mismatch"], [401, "key-mismatch"], [400, "rejected"], [413, "rejected"]] as const) {
       clock += 1000;
       fake.answerWith(status);
       expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status, gone: false });
-      expect(push.status(fake.subscription, null)).toEqual({ registered: true, last_success_at: new Date(1_700_000_000_000).toISOString(), last_failure_at: new Date(clock).toISOString(), last_failure: failure });
+      expect(push.status(fake.subscription)).toEqual({ registered: true, last_success_at: new Date(1_700_000_000_000).toISOString(), last_failure_at: new Date(clock).toISOString(), last_failure: failure });
     }
     // no answer at all
     const closed = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response(null) });
     const unreachable = `http://127.0.0.1:${closed.port}/push/none`;
     closed.stop(true);
-    push.subscribe({ ...fake.subscription, endpoint: unreachable }, undefined, null);
+    push.subscribe({ ...fake.subscription, endpoint: unreachable });
     clock += 1000;
     expect(await push.sendTest(unreachable)).toEqual({ ok: false, status: null, gone: false });
-    expect(push.status({ ...fake.subscription, endpoint: unreachable }, null)?.last_failure).toBe("network");
-    // delivery denied by the registry never went out: nothing is recorded for it
-    const gated = createPushService({ loopbackHttp: true, stateDir, now: () => clock, canDeliver: () => false });
-    clock += 1000;
-    expect(await gated.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: null, gone: false });
-    expect(gated.status(fake.subscription, null)?.last_failure_at).toBe(new Date(clock - 2000).toISOString());
+    expect(push.status({ ...fake.subscription, endpoint: unreachable })?.last_failure).toBe("network");
     // a malformed record file is ignored, never fatal
     writeFileSync(join(stateDir, "push-delivery.json"), "not json");
-    expect(createPushService({ loopbackHttp: true, stateDir }).status(fake.subscription, null)).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
+    expect(createPushService({ loopbackHttp: true, stateDir }).status(fake.subscription)).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
     // so is a record whose times no date can hold: it is dropped, and the status is still told
     const hash = createHash("sha256").update(fake.subscription.endpoint).digest("base64url");
     const keys = createHash("sha256").update(`${fake.subscription.keys.p256dh}.${fake.subscription.keys.auth}`).digest("base64url");
     for (const times of [{ success_at: 1e100 }, { failure_at: -1e100, failure: "gone" }, { at: 1e100 }]) {
-      writeFileSync(join(stateDir, "push-delivery.json"), JSON.stringify([{ hash, owner: null, keys, success_at: clock, failure_at: null, failure: null, at: clock, ...times }]));
-      expect(createPushService({ loopbackHttp: true, stateDir, now: () => clock }).status(fake.subscription, null)).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
+      writeFileSync(join(stateDir, "push-delivery.json"), JSON.stringify([{ hash, keys, success_at: clock, failure_at: null, failure: null, at: clock, ...times }]));
+      expect(createPushService({ loopbackHttp: true, stateDir, now: () => clock }).status(fake.subscription)).toEqual({ registered: true, last_success_at: null, last_failure_at: null, last_failure: null });
     }
-  });
-
-  it("rewrites its files without what expired, so a revocation leaves nothing of the device on disk", () => {
-    const now = 1_700_000_000_000;
-    const old = now - 31 * 24 * 60 * 60 * 1000;
-    writeFileSync(join(stateDir, "push-delivery.json"), JSON.stringify([
-      { hash: "h-old", owner: "device-x", keys: "k", success_at: old, failure_at: null, failure: null, at: old },
-      { hash: "h-new", owner: "device-y", keys: "k", success_at: now, failure_at: null, failure: null, at: now },
-    ]));
-    writeFileSync(join(stateDir, "push-retired.json"), JSON.stringify([{ hash: "h-old", at: old, owner: "device-x" }, { hash: "h-new", at: now, owner: "device-y" }]));
-    // the expired history of device-x is already gone from memory: revoking it must still clear it from disk
-    createPushService({ loopbackHttp: true, stateDir, now: () => now }).revokeDevice("device-x");
-    const hashes = (file: string) => (JSON.parse(readFileSync(join(stateDir, file), "utf8")) as { hash: string }[]).map((entry) => entry.hash);
-    expect(hashes("push-delivery.json")).toEqual(["h-new"]);
-    expect(hashes("push-retired.json")).toEqual(["h-new"]);
   });
 
   // regression (fails on main): the failed write threw before the subscription was removed, and the next push went to it again (#2013)
@@ -1251,7 +979,7 @@ describe("push delivery health (#1039)", () => {
     const quiet = spyOn(console, "error").mockImplementation(() => undefined);
     try {
       const push = createPushService({ loopbackHttp: true, stateDir });
-      push.subscribe(fake.subscription, undefined, null);
+      push.subscribe(fake.subscription);
       fake.answerWith(410);
       expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
       expect(JSON.parse(readFileSync(join(stateDir, "push-subscriptions.json"), "utf8"))).toEqual([]);
@@ -1260,7 +988,7 @@ describe("push delivery health (#1039)", () => {
       // the browser handing it over again is still told to subscribe anew
       const response = await handlePushRequest(new Request("http://localhost/api/push/subscribe", {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subscription: fake.subscription }),
-      }), "/api/push/subscribe", push, null);
+      }), "/api/push/subscribe", push);
       expect(response?.status).toBe(410);
       expect(quiet.mock.calls.some(([line]) => String(line).includes("push-retired.json"))).toBe(true);
     } finally { quiet.mockRestore(); }
@@ -1272,13 +1000,13 @@ describe("push delivery health (#1039)", () => {
     const quiet = spyOn(console, "error").mockImplementation(() => undefined);
     try {
       const push = createPushService({ loopbackHttp: true, stateDir });
-      push.subscribe(fake.subscription, undefined, null);
+      push.subscribe(fake.subscription);
       expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
-      expect(push.status(fake.subscription, null)?.last_success_at).not.toBeNull();
+      expect(push.status(fake.subscription)?.last_success_at).not.toBeNull();
       fake.answerWith(410);
       expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: false, status: 410, gone: true });
       expect(push.retired(fake.subscription.endpoint)).toBe(true);
-      expect(push.status(fake.subscription, null)).toMatchObject({ registered: false, last_failure: "gone" });
+      expect(push.status(fake.subscription)).toMatchObject({ registered: false, last_failure: "gone" });
       expect(quiet.mock.calls.some(([line]) => String(line).includes("push-delivery.json"))).toBe(true);
     } finally { quiet.mockRestore(); }
   });
@@ -1450,24 +1178,6 @@ describe("the shared pane mute (shared/preferences.ts muted_panes)", () => {
       stop();
       release?.();
     }
-  });
-
-  it("holds back the phone app's native push as the browser's", async () => {
-    // the app subscribes through its OvisPush plugin and posts the relay endpoint it got (push-relay
-    // POST /v1/push/<id>) to the same route, so it is one more subscription on the same list
-    const { push, list } = mutable();
-    const app = { ...fake.subscription, endpoint: fake.subscription.endpoint.replace(/\/push\/[^/]+$/, `/v1/push/${crypto.randomUUID()}`) };
-    push.subscribe(app, { input: true, done: "always" });
-    list.push(paneStorageId("local", "w1:p1"));
-    push.seed([pane("w1:p1", "working", "mine"), pane("w1:p2", "working", "other")]);
-    await push.onStatus("w1:p1", "blocked");
-    await push.onEnded("w1:p1");
-    await push.settled();
-    expect(fake.received).toHaveLength(0);
-    // the pane next to it still reaches the browser and the app
-    await push.onStatus("w1:p2", "blocked");
-    await push.settled();
-    expect(fake.received.map((r) => r.payload.title)).toEqual(["other", "other"]);
   });
 
   it("asks the list again right before a waiting alert goes out", async () => {
@@ -1652,9 +1362,8 @@ describe("answer buttons on a question's alert (#2916)", () => {
     ]) expect(await alertFor(shown)).toEqual(none);
   });
 
-  it("gives no buttons to a device that may only watch, nor when the prompt cannot be read", async () => {
+  it("gives no buttons when the prompt cannot be read", async () => {
     const none = { prompt_id: undefined, actions: undefined };
-    expect(await alertFor(prompt(), { canAnswer: () => false })).toEqual(none);
     expect(await alertFor(prompt(), { lookupPrompt: async () => { throw new Error("herdr busy"); } })).toEqual(none);
   });
 

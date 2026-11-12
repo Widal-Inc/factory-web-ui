@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
-import { inMacApp, inNativeApp } from "./nativeApp.ts";
+import { inMacApp } from "./macApp.ts";
 import { t } from "./i18n.ts";
 
 interface InstallChoice {
@@ -62,8 +62,8 @@ function isStandalone(): boolean {
   const iosNavigator = navigator as Navigator & { standalone?: boolean };
   lastInstalled = installedState({
     matches: (query) => window.matchMedia?.(query).matches === true,
-    // the iOS app (app/) and Ovis for Mac (app/mac) are this client installed, as a home-screen app is
-    iosStandalone: iosNavigator.standalone === true || inNativeApp() || inMacApp(),
+    // Ovis for Mac (app/mac) is this client installed, as a home-screen app is
+    iosStandalone: iosNavigator.standalone === true || inMacApp(),
     installedByEvent,
     relatedInstalled,
     previous: lastInstalled,

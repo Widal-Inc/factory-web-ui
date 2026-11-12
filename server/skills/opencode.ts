@@ -12,7 +12,7 @@
  * (the v1 and v2 additions) come from discover with their own provenance.
  */
 import { readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { CommandForm, SlashCommand } from "../../shared/protocol.ts";
 import type { AgentCommandSource } from "./index.ts";
 import { ancestorsToRepoRoot, description, environRecord, MAX_WALK_FOLDERS, parseJsonc, readConfigText, readSkillText, walkSkills } from "./walk.ts";
@@ -113,7 +113,7 @@ function commandFiles(root: string): { name: string; path: string }[] {
   const files: { name: string; path: string }[] = [];
   const ancestors = new Set<string>();
   let folders = 0;
-  const visit = (directory: string): void => {
+  const visit = (directory: string, prefix = ""): void => {
     // the link guard covers the current branch only: sibling links to shared folders make an acyclic
     // tree exponential, and this runs on the server's thread, so it shares the skill walk's bound
     if (++folders > MAX_WALK_FOLDERS) return;
@@ -121,13 +121,16 @@ function commandFiles(root: string): { name: string; path: string }[] {
     if (ancestors.has(real)) return;
     ancestors.add(real);
     try {
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const path = join(directory, entry.name);
+      // Keep the command's alias separately from filesystem work. Resolving every stat through
+      // all its parent aliases makes even the bounded walk expensive on a symlink lattice.
+      for (const entry of readdirSync(real, { withFileTypes: true })) {
+        const path = join(real, entry.name);
+        const name = prefix + entry.name;
         try {
           const target = statSync(path);
           if (files.length >= MAX_COMMAND_FILES) return;
-          if (target.isDirectory()) visit(path);
-          else if (target.isFile() && entry.name.endsWith(".md")) files.push({ name: relative(root, path).slice(0, -3).split(sep).join("/"), path });
+          if (target.isDirectory()) visit(path, `${name}/`);
+          else if (target.isFile() && entry.name.endsWith(".md")) files.push({ name: name.slice(0, -3), path });
         } catch { continue; /* broken link */ }
       }
     } catch { /* optional command directory */ } finally { ancestors.delete(real); }

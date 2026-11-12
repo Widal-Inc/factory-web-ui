@@ -13,10 +13,8 @@ namespace Ovis
     {
         public bool Running;
         public string Origin;
-        /// <summary>The HTTPS address Tailscale serves the app at, which the phone opens.</summary>
-        public string PhoneUrl;
-        /// <summary>"missing", "stopped" or "running", as /api/access reports Tailscale.</summary>
-        public string Tailscale;
+        /// <summary>The HTTPS address Tailscale serves the app at (GET /api/access), which Remove turns off again.</summary>
+        public string ServingUrl;
         /// <summary>The `version:` line of the status, from a release that prints it.</summary>
         public string Version;
         /// <summary>The version the answering server reports itself (GET /api/updates); null when it does not answer.</summary>
@@ -27,8 +25,6 @@ namespace Ovis
         public bool AliveWithoutHerdr;
         /// <summary>The answering server says it runs without the update supervisor: not one the plugin's start runs, or one whose supervisor has not reported yet.</summary>
         public bool Unmanaged;
-        /// <summary>GET /api/access answered 401: the server asks for a token the app does not have, so Tailscale's state is unknown.</summary>
-        public bool AccessLocked;
     }
 
     /// <summary>
@@ -317,17 +313,6 @@ namespace Ovis
             await Refresh();
         }
 
-        /// <summary>The installer's phone step: `tailscale serve` for this app, when Tailscale runs here.</summary>
-        public async Task MakePhoneAddress()
-        {
-            if (plugin == null) return;
-            Retry = MakePhoneAddress;
-            ClearLog();
-            Set(Phase.Working, Lang.L("Making the phone address…", "휴대폰 주소를 만드는 중…"));
-            await PluginCommand(plugin, "phone", Append, true, 5 * 60);
-            await Refresh();
-        }
-
         /// <summary>
         /// Takes the Ovis server off this PC, as the guide's Uninstall does. herdr and Bun stay, and herdr keeps
         /// running: stopping it would end every agent in it.
@@ -337,7 +322,7 @@ namespace Ovis
             Retry = Remove;
             ClearLog();
             Set(Phase.Working, Lang.L("Removing…", "제거하는 중…"));
-            var phoneUrl = Status == null ? null : Status.PhoneUrl;
+            var servingUrl = Status == null ? null : Status.ServingUrl;
             if (plugin != null)
             {
                 // removed with its server up, the checkout would go on serving from a deleted folder; the server
@@ -355,7 +340,7 @@ namespace Ovis
             }
             var tailscale = Paths.Tailscale;
             Uri url;
-            if (phoneUrl != null && tailscale != null && Uri.TryCreate(phoneUrl, UriKind.Absolute, out url))
+            if (servingUrl != null && tailscale != null && Uri.TryCreate(servingUrl, UriKind.Absolute, out url))
             {
                 await Run.Program(tailscale, new[] { "serve", "--https=" + url.Port, "off" }, Append);
             }
@@ -523,7 +508,7 @@ namespace Ovis
         }
 
         /// <summary>
-        /// The phone address and Tailscale's state, from GET /api/access, with the server's token when it asks for one (the
+        /// The address Tailscale serves the app at, from GET /api/access, with the server's token when it asks for one (the
         /// PC's own token, from the plugin's settings): without it, a server behind a token answers 401, and that is all
         /// that is known.
         /// </summary>
@@ -538,11 +523,6 @@ namespace Ovis
                     string body;
                     using (var answer = await client.SendAsync(request))
                     {
-                        if (answer.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                        {
-                            status.AccessLocked = true;
-                            return status;
-                        }
                         if (!answer.IsSuccessStatusCode) return status;
                         body = await answer.Content.ReadAsStringAsync();
                     }
@@ -551,14 +531,13 @@ namespace Ovis
                     var tailscale = access != null && access.TryGetValue("tailscale", out value) ? value as Dictionary<string, object> : null;
                     if (tailscale != null)
                     {
-                        status.Tailscale = tailscale.ContainsKey("state") ? tailscale["state"] as string : null;
-                        status.PhoneUrl = tailscale.ContainsKey("serving_url") ? tailscale["serving_url"] as string : null;
+                        status.ServingUrl = tailscale.ContainsKey("serving_url") ? tailscale["serving_url"] as string : null;
                     }
                 }
             }
             catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException || exception is ArgumentException || exception is KeyNotFoundException || exception is InvalidOperationException)
             {
-                // the app answers its status but not this: show it running, without a phone address
+                // the app answers its status but not this: show it running, without the serving address
             }
             return status;
         }

@@ -7,6 +7,7 @@ import { createServer } from "../server/index.ts";
 import { herdrRpc, workspaceCreate, workspaceClose } from "../server/herdr/client.ts";
 import { systemUsageContext, UsageService } from "../server/usage.ts";
 import { checkPushSettings } from "./push-settings-regression.ts";
+import { checkAlertIdentitySettings } from "./alert-identity-regression.ts";
 import { checkWakeLock } from "./wake-lock-regression.ts";
 import { checkSecretInput } from "./secret-input-regression.ts";
 import { checkTerminalCopy } from "./terminal-copy-regression.ts";
@@ -40,8 +41,13 @@ import { checkTelemetrySettings } from "./telemetry-regression.ts";
 import { chromePath } from "./chrome-path.ts";
 // machine events stay on SSE here: these checks hold or watch /api/machines/events (the socket transport has its own checks)
 process.env["OVIS_MACHINE_EVENTS_WS"] = "0";
+const selectedChecks = process.env["UI_CONTEXT_CHECKS"]?.split(",");
+const matchedChecks = new Set<string>();
 
 async function timed(name: string, check: () => Promise<void>): Promise<void> {
+  // Focused acceptance can resume after a completed prefix without weakening any selected check.
+  if (selectedChecks && !selectedChecks.includes(name)) { console.log(`FOCUSED SKIP ${name}`); return; }
+  matchedChecks.add(name);
   const started = performance.now();
   let checkFailed = false;
   try {
@@ -101,6 +107,7 @@ export async function runUiContextChecks(group: UiContextGroup): Promise<void> {
       await timed("checkSplitView", () => checkSplitView(browser!, origin));
       await timed("checkBackgroundTabKeepsTerminalSize", () => checkBackgroundTabKeepsTerminalSize(browser!, origin));
     } else {
+      await timed("checkAlertIdentitySettings", () => checkAlertIdentitySettings(browser!));
       await timed("checkPushSettings", () => checkPushSettings(browser!, origin));
       await timed("checkWakeLock", () => checkWakeLock(browser!, origin, paneA));
       await timed("checkSecretInput", () => checkSecretInput(browser!, origin));
@@ -135,6 +142,8 @@ export async function runUiContextChecks(group: UiContextGroup): Promise<void> {
       await timed("checkUpdateNotice", () => checkUpdateNotice(browser!, origin));
       await timed("checkTelemetrySettings", () => checkTelemetrySettings(browser!));
     }
+    const unknown = selectedChecks?.filter((name) => !matchedChecks.has(name));
+    if (unknown?.length) throw new Error(`Unknown checks for ${group}: ${unknown.join(",")}`);
   } catch (error) {
     failed = true;
     failure = error;

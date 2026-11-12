@@ -55,7 +55,7 @@ it.each([
 
   const pane = { pane_id: "p", terminal_id: "p", workspace_id: "w", tab_id: "t", agent: "gjc", agent_status: "working", cwd: "/tmp", focused: false, revision: 0 } as HerdrPane;
   const owner = {
-    data: connectionData({ deviceId: undefined, readOnly: false }),
+    data: connectionData({}),
     getBufferedAmount: () => 0,
     send: (value: string) => {
       const frame = JSON.parse(value) as ServerMessage;
@@ -156,7 +156,7 @@ it.each([
 
   const pane = { pane_id: "p", terminal_id: "p", workspace_id: "w", tab_id: "t", agent: "claude", agent_status: "working", cwd: "/tmp", focused: false, revision: 0 } as HerdrPane;
   const owner = {
-    data: connectionData({ deviceId: undefined, readOnly: false }),
+    data: connectionData({}),
     getBufferedAmount: () => 0,
     send: (value: string) => {
       const frame = JSON.parse(value) as ServerMessage;
@@ -204,7 +204,7 @@ it.each(["blocked", "working", "queue held", "foreground changed", "foreground d
       const frames: ServerMessage[] = [], writes: string[] = [];
       const settled = Promise.withResolvers<void>();
       const owner = {
-        data: connectionData({ deviceId: undefined, readOnly: false }),
+        data: connectionData({}),
         getBufferedAmount: () => 0,
         send: (value: string) => {
           const frame = JSON.parse(value) as ServerMessage;

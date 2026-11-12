@@ -95,4 +95,5 @@ export const USAGE_ZH: Record<string, string> = {
   "Limit resets": "限额重置",
   "Expires in {time}": "{time}后过期",
   "{n} left": "剩余 {n} 次",
+  "Sign in again": "重新登录",
 };

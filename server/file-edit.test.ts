@@ -251,35 +251,23 @@ describe.skipIf(process.platform !== "linux")("editing a text file (#771)", () =
     expect(readFileSync(note, "utf8")).toBe("win\n");
   });
 
-  it("is for a driving device only, over the relay and on the LAN too", async () => {
-    const note = file("relay.md", "relay\n");
-    const request = (method: string) => new Request(`https://relay.ovis.invalid/api/fs/text?pane_id=w1:p1&path=${q(note)}`, { method, headers: { origin: "https://relay.ovis.invalid", "content-type": "application/json" }, ...(method === "PUT" ? { body: JSON.stringify({ pane_id: "w1:p1", path: note, revision: sha("relay\n"), text: "x\n" }) } : {}) });
-    const through = (role: "watch" | "drive"): ServerContext => ({
-      ...server.context, peer: { kind: "relay", device: { id: "0123456789abcdef", label: "Phone", role }, sessionId: "s", serverId: "0123456789abcdef0123456789abcdef", key: "" },
-      requestIP: () => null, timeout: () => {}, upgrade: () => false,
-    });
-    for (const method of ["GET", "PUT"]) expect(await error((await handleRequest(request(method), through("watch")))!)).toEqual([403, "read_only"]);
-    expect((await handleRequest(request("GET"), through("drive")))?.status).toBe(200);
-    // an open LAN install's window signed in as nobody
+  it("is not for a request from the LAN that is not signed in", async () => {
+    const note = file("lan.md", "lan\n");
+    // a request that is neither this PC's own browser nor presents the token
     const lan: ServerContext = { ...server.context, requestIP: () => ({ address: "192.168.1.20" }), timeout: () => {}, upgrade: () => false };
     const fromLan = new Request(`http://192.168.1.10:${server.port}/api/fs/text?pane_id=w1:p1&path=${q(note)}`, { headers: { host: `192.168.1.10:${server.port}` } });
-    expect(await error((await handleRequest(fromLan, lan))!)).toEqual([403, "drive_only"]);
-    expect(readFileSync(note, "utf8")).toBe("relay\n");
+    expect(await error((await handleRequest(fromLan, lan))!)).toEqual([401, "unauthorized"]);
+    expect(readFileSync(note, "utf8")).toBe("lan\n");
   });
 });
 
 describe("who may edit a file", () => {
-  const full = (via: string, role: "drive" | "watch") => ({ level: "full", via, role }) as Access;
+  const full = (via: "token" | "local") => ({ level: "full", via }) as Access;
   const none = { level: "none", reason: "token_required" } as Access;
   it.each([
-    ["a paired driving device", full("device", "drive"), false, false, true],
-    ["the access token", full("token", "drive"), false, false, true],
-    ["this PC's own browser", full("local", "drive"), false, false, true],
-    ["a driving phone over the relay", full("relay", "drive"), false, false, true],
-    ["a driving device, for another PC", full("device", "drive"), false, true, true],
-    ["a watching device", full("device", "watch"), false, false, false],
-    ["a Portal visitor given drive", full("portal", "drive"), false, false, false],
-    ["an open LAN window", full("open", "drive"), false, false, false],
+    ["the access token", full("token"), false, false, true],
+    ["this PC's own browser", full("local"), false, false, true],
+    ["the access token, for another PC", full("token"), false, true, true],
     ["the connection server's bridge token", none, true, false, true],
     ["the bridge token, for a PC behind this one", none, true, true, false],
     ["nobody", none, false, false, false],

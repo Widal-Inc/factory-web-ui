@@ -79,7 +79,7 @@ export function createTerminalRegistry({ options, clients, stopped, terminalAtta
   transcriptChanged?: (paneId: string) => void;
   /** the pane's terminal takes input again: a pending message waiting for a typist may go now */
   inputReady: (paneId: string) => void;
-  end: (client: Client, reason: "stalled" | "revoked" | "closed") => void;
+  end: (client: Client, reason: "stalled" | "closed") => void;
 }) {
   const attachments = new Map<string, PaneAttachment>();
 

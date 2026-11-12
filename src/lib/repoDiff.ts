@@ -99,7 +99,6 @@ export function diffErrorMessage(t: Translate, error: unknown): string {
     case "git_unavailable": return t("git is not installed on that PC.");
     case "git_timeout": return t("git took too long to answer.");
     case "git_failed": return t("git could not compare these.");
-    case "read_only": return t("This device can only watch.");
     case "invalid_cwd": case "pane_not_found": return t("The pane's folder could not be read.");
     case "machine_offline": case "machine_unavailable": case "machine_timeout": return t("That PC is not reachable right now.");
     default: return t("Changes could not be loaded.");

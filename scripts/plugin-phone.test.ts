@@ -29,7 +29,7 @@ beforeEach(() => {
   mkdirSync(join(fake, "bin"), { recursive: true });
   writeFileSync(join(fake, "bin", "tailscale"), FAKE);
   chmodSync(join(fake, "bin", "tailscale"), 0o755);
-  writeFileSync(join(fake, "status.json"), JSON.stringify({ BackendState: "Running", Self: { DNSName: `${DNS}.`, UserID: 1 }, User: { "1": { LoginName: "me@example.com" } } }));
+  writeFileSync(join(fake, "status.json"), JSON.stringify({ BackendState: "Running", Self: { DNSName: `${DNS}.` } }));
   // a port nothing listens on: the app is "not running yet", which the phone step allows
   const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
   port = probe.port!;

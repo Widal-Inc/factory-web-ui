@@ -19,7 +19,7 @@ export function probeFavicon(machineId: string, root: string): Promise<string | 
   const known = probes.get(key);
   if (known) return known;
   const probe = fetchProjectFavicon(root, machineId).then((icon) => icon?.path ?? null, (error: unknown) => {
-    // the PC answered that it will not tell (a watching device, a bridge from before the route): a
+    // the PC answered that it will not tell (a bridge from before the route): a
     // miss to remember. Offline, a bridge error or a 429 from a proxy in front is no answer
     if (error instanceof ApiError && error.status < 500 && error.status !== 429) return null;
     if (probes.get(key) === probe) probes.delete(key);

@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
-import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +11,6 @@ import { createServer } from "./index.ts";
 import { handleMachineRequest } from "./machine-api.ts";
 import type { MachineManager } from "./machines.ts";
 
-const WATCH_TOKEN = "w".repeat(64);
 const BRIDGE_TOKEN = "b".repeat(64);
 const claude = AGENT_CATALOG.find((entry) => entry.id === "claude")!;
 const code = async (response: Response | null) => [response!.status, ((await response!.json()) as { error: { code: string } }).error.code];
@@ -265,14 +263,13 @@ describe("POST /api/agent-catalog/install and /sign-in", () => {
       root = mkdtempSync(join(tmpdir(), "ovis-install-route-"));
       const state = join(root, "state");
       mkdirSync(state);
-      writeFileSync(join(state, "devices.json"), JSON.stringify({ gate_closed_at: new Date().toISOString(), devices: [{ id: "0123456789abcdef", label: "Watch fixture", role: "watch", token_hash: createHash("sha256").update(WATCH_TOKEN).digest("hex"), created_at: new Date().toISOString(), last_seen_at: null }] }), { mode: 0o600 });
-      server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "install-token", bridgeToken: BRIDGE_TOKEN, machines: false, sidecar: false, tailscaleOwner: null, agentDetector: nowhere });
+      server = createServer({ port: 0, hostname: "127.0.0.1", stateDir: state, token: "install-token", bridgeToken: BRIDGE_TOKEN, machines: false, sidecar: false, agentDetector: nowhere });
     });
     afterAll(() => { server.stop(); rmSync(root, { recursive: true, force: true }); });
 
-    it("refuses a watching device, and starts an install for another PC through the PC proxy", async () => {
-      const watched = await fetch(url("/api/agent-catalog/install"), { method: "POST", body: JSON.stringify({ agent: "claude" }), headers: { cookie: `ovis_device=${WATCH_TOKEN}`, "x-forwarded-for": "100.64.0.9", origin: url("") } });
-      expect([watched.status, ((await watched.json()) as { error: { code: string } }).error.code]).toEqual([403, "read_only"]);
+    it("refuses a request without the token, and starts an install for another PC through the PC proxy", async () => {
+      const anonymous = await fetch(url("/api/agent-catalog/install"), { method: "POST", body: JSON.stringify({ agent: "claude" }), headers: { "x-forwarded-for": "100.64.0.9", origin: url("") } });
+      expect([anonymous.status, ((await anonymous.json()) as { error: { code: string } }).error.code]).toEqual([401, "unauthorized"]);
       expect(tab).not.toHaveBeenCalled();
       const manager = { endpoint: (id: string) => id === "remote" ? { url: url(""), token: BRIDGE_TOKEN } : null, trackTerminal: () => () => {} } as unknown as MachineManager;
       const proxied = await handleMachineRequest(new Request("http://127.0.0.1/api/machines/remote/agent-catalog/install", { method: "POST", body: JSON.stringify({ agent: "codex" }), headers: { "content-type": "application/json", "x-herdr-machine": "1" } }), manager);

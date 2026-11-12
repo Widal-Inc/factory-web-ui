@@ -223,14 +223,12 @@ export class UsageLoginService {
    * The browser's view of a sign-in it follows, by its login id: GET /api/usage/login/prompt?login= reads
    * the CLI's screen for the page to open and the code to enter; POST /api/usage/login/code types a code the
    * page showed into the CLI, then Enter; POST /api/usage/login/cancel stops the CLI. The CLI signs in and
-   * writes its own credentials; nothing here keeps or logs a code. A watching device reads no prompt (it
-   * could approve a device code with its own account) and, as for every change, sends nothing.
+   * writes its own credentials; nothing here keeps or logs a code.
    */
-  async handlePrompt(request: Request, readOnly: boolean, owner: string | null): Promise<Response> {
+  async handlePrompt(request: Request, owner: string | null): Promise<Response> {
     const { pathname, searchParams } = new URL(request.url);
     const gone = () => jsonResponse({ error: { code: "login_not_found", message: "This sign-in has ended. Start it again." } }, 404);
     try {
-      if (readOnly) return jsonResponse({ error: { code: "forbidden", message: "A device that only watches cannot follow a sign-in" } }, 403);
       if (pathname.endsWith("/prompt")) {
         if (request.method !== "GET") return badRequest("method_not_allowed", "Use GET");
         const login = this.owned(searchParams.get("login") ?? "", request, owner);
@@ -453,7 +451,7 @@ export class UsageLoginService {
     // followed in the browser: the CLI runs in this server's own PTY, not a herdr tab (Claude Code and Codex)
     const follow = body["follow"] !== undefined;
     if (follow && (body["follow"] !== true || !separate)) return badRequest("invalid_provider", "Only Claude Code and Codex sign in from the browser");
-    if (follow && owner === null) return jsonResponse({ error: { code: "forbidden", message: "Sign in from an authenticated device" } }, 403);
+    if (follow && owner === null) return jsonResponse({ error: { code: "forbidden", message: "Sign in with the access token or from this PC" } }, 403);
     if (follow && this.stopped) return conflictResponse("request_cancelled", "The sign-in request was cancelled");
     if (asDefault) {
       if (!separate || again || body["default"] !== true || body["name"] !== undefined || (body["replace"] !== undefined && body["replace"] !== true)) {

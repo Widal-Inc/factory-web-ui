@@ -27,7 +27,7 @@ const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 const tell = () => { for (const stream of streams) stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "machines", machines: roster })}\n\n`)); };
 const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
   const path = new URL(request.url).pathname;
-  if (path === "/api/health") return Response.json({ ok: true, auth: { authenticated: true, required: false, role: "drive" }, herdr: { version: "0.9.3", protocol: 22 }, web_ui: { revision: null, boot_id: "qa" } });
+  if (path === "/api/health") return Response.json({ ok: true, auth: { authenticated: true, required: false }, herdr: { version: "0.9.3", protocol: 22 }, web_ui: { revision: null, boot_id: "qa" } });
   if (path === "/api/machines") return Response.json({ machines: roster });
   if (path === "/api/machines/events") {
     let held: ReadableStreamDefaultController<Uint8Array> | undefined;

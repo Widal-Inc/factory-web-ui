@@ -132,7 +132,7 @@ final class WebPageController: NSObject, ObservableObject {
 
     /// Safari's own end of the user agent, then this app's name. A web view sends neither by itself, and
     /// the terminal's Korean input goes by "Safari" (xterm.js's Hangul handling, patches/), as do the
-    /// client's device names; "OvisMac" tells the client it runs in this app (src/lib/nativeApp.ts).
+    /// client's device names; "OvisMac" tells the client it runs in this app (src/lib/macApp.ts).
     /// The web view is the system's WebKit, the one the installed Safari uses, so it reports that version.
     static let userAgentSuffix: String = {
         let safari = Bundle(path: "/Applications/Safari.app")?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -194,7 +194,7 @@ final class WebPageController: NSObject, ObservableObject {
         carryBefore = before
     }
 
-    /// This Mac's own server, which the app reaches without pairing: the only addresses drafts move between.
+    /// This Mac's own server, which the app reaches over loopback: the only addresses drafts move between.
     static func isLoopback(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "http" || url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased() else { return false }

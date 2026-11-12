@@ -106,7 +106,7 @@ it("distinguishes failed Chat lookups from permanently unsupported references", 
 });
 
 it("leaves the inline address for ReservedImage to resolve once and resolves only the download link", async () => {
-  setTransport({ ...nativeTransport, kind: "relay", resourceUrl: async (path) => `mapped:${path}` });
+  setTransport({ ...nativeTransport, kind: "custom", resourceUrl: async (path) => `mapped:${path}` });
   let size = 1;
   const fetchInfo = async (path: string): Promise<FileInfo> => ({ path, name: "a.png", size, modified: "2026-10-11T00:00:00Z", mime: "image/png", kind: "image" });
   const fileUrl = (path: string, download: boolean): string => `/api/fs/file?path=${path}${download ? "&download=1" : ""}`;

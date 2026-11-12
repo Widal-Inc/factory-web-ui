@@ -41,7 +41,7 @@ try {
     if (Date.now() > deadline) throw new Error("fictional Agy process did not start");
     await Bun.sleep(50);
   }
-  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), tailscaleOwner: null });
+  server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state") });
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? chromium.executablePath(), headless: true, args: ["--no-sandbox"] });
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 }, locale: "en-US" });
   page.setDefaultTimeout(12_000);

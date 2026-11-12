@@ -2636,7 +2636,7 @@ it("refuses an agent-only message on a bridge without agent-only, and names it w
 
 it("runs on a transport's socket where the page has no global WebSocket", () => {
   // Given a transport that opens its own socket and no browser WebSocket global
-  setTransport({ ...nativeTransport, kind: "relay", openSocket: (url) => new FakeSocket(url) as unknown as WebSocketLike });
+  setTransport({ ...nativeTransport, kind: "custom", openSocket: (url) => new FakeSocket(url) as unknown as WebSocketLike });
   globals.WebSocket = undefined;
   const client = new HerdrSocket("ws://test/ws");
   try {

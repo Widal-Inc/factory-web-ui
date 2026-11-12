@@ -81,7 +81,7 @@ it("returns results and bounded RPC errors after sequential reads exceed HTTP in
     await new Promise<void>((resolve, reject) => { daemon.once("error", reject); daemon.listen(socketAddress(socketPath), resolve); });
     process.env.HERDR_SOCKET = socketPath;
     forgetTranscriptState();
-    app = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), herdrProfiles: async () => [], registerBridge: false, tailscaleOwner: null });
+    app = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(root, "state"), herdrProfiles: async () => [], registerBridge: false });
     const base = `http://127.0.0.1:${app.port}`;
     const [commands, aliasCommands, failure, aliasFailure] = await Promise.all([
       request(base, "/api/pane/commands?pane_id=fixture"),

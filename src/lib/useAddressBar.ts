@@ -4,7 +4,6 @@ import type { Machine } from "../../shared/machines.ts";
 import type { PaneView } from "./actions.ts";
 import { isNavigation, linkSearch, NAV_KEY, readLink, resolveLink, slugOf, type AppLink, type LinkNote } from "./deepLink.ts";
 import { withoutFile } from "./historyKeys.ts";
-import { pageAddress, pageSearch } from "./pageQuery.ts";
 import type { SelectionMark } from "./selectionMark.ts";
 import { settingsEntry, settingsSteppedOff } from "./settingsHistory.ts";
 import { sheetSteppedOff } from "./sheetHistory.ts";
@@ -86,7 +85,7 @@ export function useAddressBar({ newSessionOpen, selectedPane, selectedPaneId, se
   const popStill = useRef(0);
   const [, setPopSettled] = useState(0);
   const filePop = fileFromPop();
-  const entryLink = fileLeft && filePop !== 0 && popStill.current !== filePop ? readLink(pageSearch()) : null;
+  const entryLink = fileLeft && filePop !== 0 && popStill.current !== filePop ? readLink(window.location.search) : null;
   const fileLanding = entryLink !== null && viewing !== null && entryLink.machine === viewing.machineId && entryLink.pane === viewing.paneId &&
     shownSelection.current.machineId === selectedMachineId && shownSelection.current.paneId === selectedPaneId;
   const fileFromPopRef = useRef(fileFromPop); fileFromPopRef.current = fileFromPop;
@@ -121,12 +120,12 @@ export function useAddressBar({ newSessionOpen, selectedPane, selectedPaneId, se
     };
     const previous = writtenLink.current;
     writtenLink.current = link;
-    const search = linkSearch(link, pageSearch());
+    const search = linkSearch(link, window.location.search);
     const popped = poppedTo.current;
     poppedTo.current = false;
     // Back and Forward land where the address already says: nothing to write
-    if (search === pageSearch()) return;
-    const url = pageAddress(window.location.pathname, search, window.location.hash);
+    if (search === window.location.search) return;
+    const url = `${window.location.pathname}${search}${window.location.hash}`;
     const kept = fileKept.current;
     fileKept.current = false;
     if (previous !== null && !popped && !autoSelected && !settingsOpen && !newSessionOpen && isNavigation(previous, link)) {
@@ -164,7 +163,7 @@ export function useAddressBar({ newSessionOpen, selectedPane, selectedPaneId, se
       // Settings closing lands on the entry it opened over: what was picked while it was up stays
       // (hiding a PC here moves the selection off it), and the entry is written to say so
       if (settingsSteppedOff()) { sayShown(); return; }
-      const link = readLink(pageSearch());
+      const link = readLink(window.location.search);
       // before the PCs are in, nothing can say the entry's PC is still set up: it waits as a link
       // opened with the page does, settled against its roster or answered with a note once they are
       if (machinesRef.current.length === 0) {
@@ -209,8 +208,8 @@ export function useAddressBar({ newSessionOpen, selectedPane, selectedPaneId, se
     };
     const sayShown = (): void => {
       const shown = writtenLink.current;
-      const search = shown ? linkSearch(shown, pageSearch()) : pageSearch();
-      if (search !== pageSearch()) window.history.replaceState(window.history.state, "", pageAddress(window.location.pathname, search, window.location.hash));
+      const search = shown ? linkSearch(shown, window.location.search) : window.location.search;
+      if (search !== window.location.search) window.history.replaceState(window.history.state, "", `${window.location.pathname}${search}${window.location.hash}`);
     };
     // the file viewer's listener has shown the entry's file by now: a pop that moves nothing says so,
     // and the render that follows leaves its file behind

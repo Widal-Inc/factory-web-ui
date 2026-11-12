@@ -38,7 +38,7 @@ export interface RowMenuItem {
   current?: boolean;
   /** a switch's state, when the item is one: it is then a checkbox item (a pressed button in the sheet), not a plain item */
   checked?: boolean;
-  /** shown with its state but not runnable here (a watching device and a shared switch): it keeps its place in the keyboard order, and a press on it leaves the menu open */
+  /** shown with its state but not runnable here (an action that is unavailable right now): it keeps its place in the keyboard order, and a press on it leaves the menu open */
   disabled?: boolean;
   run: () => void;
   /** a second button at the item's end, its own stop in the keyboard order: a tab list's Close */

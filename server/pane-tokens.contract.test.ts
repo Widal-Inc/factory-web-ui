@@ -16,7 +16,7 @@ it("carries a plugin's pane tokens and agent line to the browsers' roster, live,
   writeFileSync(herdrConfigPath, `[ui.sidebar.agents]\nrows = [["state_icon", "workspace"], ["agent", "$quota"]]\n`);
   const workspace = await workspaceCreate({ cwd: stateDir, label: "ovis-test-pane-tokens" });
   const paneId = workspace.root_pane.pane_id;
-  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", tailscaleOwner: null, herdrConfigPath });
+  const server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", herdrConfigPath });
   const abort = new AbortController();
   try {
     await herdrRpc("pane.report_agent", { pane_id: paneId, source: "manual", agent: "claude", state: "idle" });
@@ -89,7 +89,7 @@ describe("a browser's own snapshots", () => {
     const workspace = await workspaceCreate({ cwd: stateDir, label: "ovis-test-pane-tokens-snapshots" });
     workspaceId = workspace.workspace.workspace_id;
     paneId = workspace.root_pane.pane_id;
-    server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", bridgeToken: bridge, tailscaleOwner: null, herdrConfigPath });
+    server = createServer({ port: 0, hostname: "127.0.0.1", stateDir, token: "test-token", bridgeToken: bridge, herdrConfigPath });
     await herdrRpc("pane.report_agent", { pane_id: paneId, source: "manual", agent: "claude", state: "idle" });
     await herdrRpc("pane.report_metadata", { pane_id: paneId, source: "plugin:quota", tokens: { quota: "off · private", eta: "soon" } });
   }, 60_000);
@@ -112,10 +112,10 @@ describe("a browser's own snapshots", () => {
   it("leaves them in every snapshot of a bridge this app starts on a PC, whose only client is its connection server", async () => {
     // as server/remote-entry.ts starts one: no machines, bridge only, its registered credential as its token
     const bridgeState = mkdtempSync(join(tmpdir(), "ovis-test-pane-tokens-bridge-"));
-    const managed = createServer({ port: 0, hostname: "127.0.0.1", stateDir: bridgeState, token: "registered-credential", machines: false, bridgeOnly: true, tailscaleOwner: null, herdrConfigPath });
+    const managed = createServer({ port: 0, hostname: "127.0.0.1", stateDir: bridgeState, token: "registered-credential", machines: false, bridgeOnly: true, herdrConfigPath });
     // a server without machines that browsers do reach still leaves them out
     const plainState = mkdtempSync(join(tmpdir(), "ovis-test-pane-tokens-plain-"));
-    const plain = createServer({ port: 0, hostname: "127.0.0.1", stateDir: plainState, token: "browser-token", machines: false, tailscaleOwner: null, herdrConfigPath });
+    const plain = createServer({ port: 0, hostname: "127.0.0.1", stateDir: plainState, token: "browser-token", machines: false, herdrConfigPath });
     try {
       const browserRead = await fetch(`http://127.0.0.1:${plain.port}/api/session`, { headers: { authorization: "Bearer browser-token" } });
       expect(tokensIn(((await browserRead.json()) as { snapshot: Snapshot }).snapshot)).toEqual({ eta: "soon" });

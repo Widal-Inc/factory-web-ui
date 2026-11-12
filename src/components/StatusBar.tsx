@@ -1,7 +1,7 @@
 /**
  * The pane column's bottom line from 769px, as the Herdr app's status bar (herdr-app
  * defaults/mods/workspace-status, Apache-2.0, THIRD_PARTY_NOTICES.md): where the open pane is (PC,
- * workspace, folder) and its branch on the left; a watching device's View only, the jump to the next
+ * workspace, folder) and its branch on the left; the jump to the next
  * session waiting for you and the connection on the right. The header's one row keeps only the tabs
  * and their tools.
  */
@@ -19,7 +19,6 @@ export interface StatusBarProps {
   place: string;
   path: string | null;
   session: string | null;
-  watching: boolean;
   waiting: number;
   onNextWaiting: (() => void) | null;
   /** live, reconnecting (lost after it was up), connected (back, for a moment: lib/headerConnection.ts) or lost */
@@ -27,7 +26,7 @@ export interface StatusBarProps {
   connectionWord: string;
 }
 
-export function StatusBar({ machineId, workspaceId, machine, place, path, session, watching, waiting, onNextWaiting, connection, connectionWord }: StatusBarProps) {
+export function StatusBar({ machineId, workspaceId, machine, place, path, session, waiting, onNextWaiting, connection, connectionWord }: StatusBarProps) {
   const t = useT();
   const branch = usePaneBranch(machineId, workspaceId);
   return (
@@ -42,7 +41,6 @@ export function StatusBar({ machineId, workspaceId, machine, place, path, sessio
       </span>}
       {session !== null && <span className="status-bar-item status-bar-text">{session}</span>}
       <span className="status-bar-end">
-        {watching && <span className="status-bar-item status-bar-watch">{t("View only")}</span>}
         {/* with no other session to open it stays a button (aria-disabled, not disabled), so the press that
             opened the last one does not drop the keyboard's focus */}
         {waiting > 0 && <button type="button" className="status-bar-item status-bar-waiting" aria-disabled={onNextWaiting === null || undefined} onClick={() => onNextWaiting?.()}

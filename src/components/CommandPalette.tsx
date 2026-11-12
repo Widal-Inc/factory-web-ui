@@ -54,8 +54,6 @@ interface CommandPaletteProps {
   selectedPaneId: string | null;
   view: PaneView;
   actions: AppActions;
-  /** this device may only watch: the PCs refuse it their checkouts, so no branch is read (#2250) */
-  watching?: boolean;
 }
 
 interface PaletteAction {
@@ -154,7 +152,7 @@ function ShortcutHint({ shortcutId }: { shortcutId?: ShortcutId }) {
   return <span className="palette-shortcut" aria-label={keys.join(" + ")}>{keys.map((key) => <kbd className="kbd" key={key}>{key}</kbd>)}</span>;
 }
 
-export function CommandPalette({ open, initialQuery = "", onClose, machines, onSelect, snapshot, online, selectedPaneId, view, actions, watching = false }: CommandPaletteProps) {
+export function CommandPalette({ open, initialQuery = "", onClose, machines, onSelect, snapshot, online, selectedPaneId, view, actions }: CommandPaletteProps) {
   const t = useT();
   const { settings } = useSettings();
   const firstLines = useSyncExternalStore(subscribeTabLabels, shownTabLabels, shownTabLabels);
@@ -204,12 +202,10 @@ export function CommandPalette({ open, initialQuery = "", onClose, machines, onS
       return new Map(previous).set(id, inventory);
     });
   }, []);
-  // the palette stays mounted while closed: what it read while driving is dropped when the device turns to watching
-  useEffect(() => { if (watching) setInventories((previous) => previous.size === 0 ? previous : new Map()); }, [watching]);
-  const branches = useMemo<MachineBranches>(() => watching ? new Map() : new Map(machines.flatMap((machine) => {
+  const branches = useMemo<MachineBranches>(() => new Map(machines.flatMap((machine) => {
     const inventory = inventories.get(machine.id);
     return inventory?.signature === worktreeWorkspaceSignature(machine.snapshot?.workspaces ?? []) ? [[machine.id, inventory.branches] as const] : [];
-  })), [inventories, machines, watching]);
+  })), [inventories, machines]);
 
   // Terminal attachment can move focus after the palette opens. Escape belongs to
   // this modal even then, and must not leak through to the underlying terminal.
@@ -669,7 +665,7 @@ export function CommandPalette({ open, initialQuery = "", onClose, machines, onS
   let rowIndex = 0;
   return (
     <div className="modal-scrim palette-scrim" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      {!watching && machines.filter((machine) => machine.state === "connected").map((machine) => <MachineContext.Provider key={machine.id} value={machine.id}><PaletteBranchReader machine={machine} onChange={onInventory} /></MachineContext.Provider>)}
+      {machines.filter((machine) => machine.state === "connected").map((machine) => <MachineContext.Provider key={machine.id} value={machine.id}><PaletteBranchReader machine={machine} onChange={onInventory} /></MachineContext.Provider>)}
       <section ref={surface} className="menu command-palette" role="dialog" aria-modal="true" aria-label={t("Command palette")} onKeyDown={onSurfaceKeyDown} onFocus={onSurfaceFocus}>
         <div className="palette-search">
           <input ref={inputRef} className="input" type="search" value={query} placeholder={t("Search panes and actions…")} aria-label={t("Search panes and actions")} aria-controls="palette-results" aria-activedescendant={itemCount ? `palette-item-${activeIndex}` : undefined} onKeyDown={onInputKeyDown} onChange={(event) => { setQuery(event.target.value); setSelection(NO_SELECTION); }} />

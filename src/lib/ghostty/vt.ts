@@ -127,8 +127,7 @@ function loadModule(): Promise<{ exports: Exports; layout: TypeLayout }> {
         if (memory) console.debug("[ghostty-vt]", new TextDecoder().decode(new Uint8Array(memory.buffer, ptr, len)));
       },
     };
-    // compiled from the bytes, not streamed: that needs `application/wasm`, which neither this PC's server
-    // nor the relay's resource worker promises
+    // compiled from the bytes, not streamed: that needs `application/wasm`, which this PC's server does not promise
     const wasmUrl = new URL("./ghostty-vt.wasm", import.meta.url);
     const response = await fetch(wasmUrl);
     if (!response.ok) throw new Error(`ghostty-vt: ${wasmUrl.href} answered ${response.status}`);

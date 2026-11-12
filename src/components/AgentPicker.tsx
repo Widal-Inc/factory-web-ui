@@ -133,7 +133,7 @@ export const AgentPicker = forwardRef<HTMLButtonElement, AgentPickerProps>(funct
   const choose = (index: number): void => {
     setOpen(false);
     if (index === addIndex) addAgent!.onSelect();
-    // the Add row can go while the list is open (the device turned into a watching one): its index is then no row
+    // the Add row can go while the list is open (its owner stops offering it): its index is then no row
     else if (options[index] !== undefined) onChange(options[index].kind);
   };
 

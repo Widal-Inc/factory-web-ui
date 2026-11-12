@@ -127,8 +127,6 @@ export interface AgentSidebarProps {
   selectedPaneId: string | null;
   /** a PC's state in words, for the tooltip of a row whose PC is not connected */
   stateWord(machine: Machine): string;
-  /** this device only watches: it sees the shared mutes and cannot change them */
-  watching?: boolean;
   /** a fold the line above the list asks for (SidebarSplit.tsx), each new `seq` once: the caret's own fold */
   foldRequest?: { folded: boolean; seq: number } | null;
   /** the list's id, for the line that sizes it (SidebarSplit.tsx `controls`); one of its own without it */
@@ -211,7 +209,7 @@ interface PinMenu { key: string; anchor: HTMLElement; point?: { x: number; y: nu
  * right-click (or the context-menu key) opens the menu. A row's ⋯, or a right-click on it, opens its
  * menu, which pins or unpins it, and mutes or unmutes its alerts for every browser and device.
  */
-export function AgentSidebar({ machines, selectedMachineId, selectedPaneId, stateWord, watching = false, foldRequest = null, listId: givenListId, onSelect }: AgentSidebarProps) {
+export function AgentSidebar({ machines, selectedMachineId, selectedPaneId, stateWord, foldRequest = null, listId: givenListId, onSelect }: AgentSidebarProps) {
   const t = useT();
   const ownListId = useId();
   const listId = givenListId ?? ownListId;
@@ -612,22 +610,21 @@ export function AgentSidebar({ machines, selectedMachineId, selectedPaneId, stat
       // only a pinned row locks: this app then offers no close for its pane or its tab (lib/paneLocks.ts)
       // Settings -> Lock pinned agents (experimental), off until chosen
       ...(!menuPinned || !settings.agentLocks ? [] : [{
-        // a watching device sends no settings: it sees the lock and cannot change it, as with Mute alerts
-        id: menuLocked ? "unlock" : "lock", label: menuLocked ? t("Unlock agent") : t("Lock agent"), icon: menuLocked ? LockOpen : Lock, disabled: watching,
+        id: menuLocked ? "unlock" : "lock", label: menuLocked ? t("Unlock agent") : t("Lock agent"), icon: menuLocked ? LockOpen : Lock,
         run: () => updateSettings({ lockedAgents: toggleAgentLock(settings.lockedAgents, pinned, menu.key) }),
       }]),
-      // Settings -> Named agent groups: into each other group, and out of the one it was put in; a watching device sends no settings
+      // Settings -> Named agent groups: into each other group, and out of the one it was put in
       ...(menuRow === undefined || menuBackground ? [] : groupNames.filter((name) => name !== menuGroup).map((name) => ({
-        id: `group:${name}`, label: t("Move to {group}", { group: name }), icon: FolderInput, disabled: watching,
+        id: `group:${name}`, label: t("Move to {group}", { group: name }), icon: FolderInput,
         run: () => setGroup(menu.key, name),
       }))),
       ...(menuOwnGroup === undefined || menuBackground || !groupNames.includes(menuOwnGroup) ? [] : [{
-        id: "ungroup", label: t("Remove from {group}", { group: menuOwnGroup }), icon: FolderOutput, disabled: watching,
+        id: "ungroup", label: t("Remove from {group}", { group: menuOwnGroup }), icon: FolderOutput,
         run: () => setGroup(menu.key, null),
       }]),
-      // one switch for every alert channel and every browser (lib/paneMutes.ts); a watching device sees its state and cannot flip it
+      // one switch for every alert channel and every browser (lib/paneMutes.ts)
       ...(muted === null || menuRow === undefined ? [] : [{
-        id: "mute", label: menuMuted ? t("Unmute alerts") : t("Mute alerts"), icon: menuMuted ? Bell : BellOff, checked: menuMuted, disabled: watching,
+        id: "mute", label: menuMuted ? t("Unmute alerts") : t("Mute alerts"), icon: menuMuted ? Bell : BellOff, checked: menuMuted,
         run: () => toggleMute(menuRow.machine.id, menuRow.entry.pane.pane_id),
       }]),
     ]} />}

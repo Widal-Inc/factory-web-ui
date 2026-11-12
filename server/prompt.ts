@@ -1325,8 +1325,6 @@ export interface PromptRequestOptions {
   codexHome?: string;
   /** a Claude pane's transcript, for the plan file behind a plan card */
   claudeTranscript?: (paneId: string) => string | null;
-  /** the requester can only watch: it gets the screen's card, never the plan file's text or path */
-  readOnly?: boolean;
   /** OpenCode state dir where service.json lives; tests use an isolated directory */
   openCodeStateDir?: string;
   /** Each server owns its drafts and clears them when stopped. */
@@ -1398,10 +1396,7 @@ export async function handlePromptRequest(request: Request, url: URL, options: P
       const read = await readPrompt(paneId, options.codexHome, options.openCodeStateDir, options.openCodeState, request.signal);
       if (read.stale) return promptChanged();
       const { agent, status } = read;
-      // `plan=0` is how a connection server asks for a watching device through its PC proxy, which
-      // reaches this PC with its own credential: it only ever narrows the answer
-      const watching = options.readOnly || url.searchParams.get("plan") === "0";
-      const prompt = watching ? read.prompt : await withPlanFile(read.prompt, options.claudeTranscript?.(paneId));
+      const prompt = await withPlanFile(read.prompt, options.claudeTranscript?.(paneId));
       // no menu up: what Claude suggests typing next, for the composer's placeholder, and the chat's
       // own last message where Claude put it back into the box on a cancel. Only a nicety: it is read
       // only while Claude waits for the next prompt (a working agent shows none), and a failed or
@@ -1416,7 +1411,7 @@ export async function handlePromptRequest(request: Request, url: URL, options: P
         prompt,
         suggestion: box === null ? null : parseClaudeSuggestion(box),
         restored: box === null ? null : await restoredOnLiveScreen(paneId, box).catch(() => null),
-        ...(outcomes.length ? { outcomes: watching ? outcomes.map(({ preview: _preview, result_text: _resultText, ...outcome }) => outcome) : outcomes } : {}),
+        ...(outcomes.length ? { outcomes } : {}),
       } satisfies PanePromptResponse);
     }
 

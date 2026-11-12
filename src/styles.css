@@ -118,8 +118,6 @@
   --fs-lg: calc(16px * var(--ui-scale));
   --fs-xl: calc(18px * var(--ui-scale));
   --fs-display: calc(22px * var(--ui-scale));
-  /* the pairing code: a size of its own, still on the density scale (compact overrides it) */
-  --fs-pairing: calc(32px * var(--ui-scale));
   --fs-input: 16px; /* the one size iOS Safari does not zoom on focus */
   --lh-tight: 1.2;
   --lh-base: 1.5;
@@ -1507,7 +1505,6 @@
   --fs-lg: calc(15px * var(--ui-scale));
   --fs-xl: calc(17px * var(--ui-scale));
   --fs-display: calc(21px * var(--ui-scale));
-  --fs-pairing: calc(26px * var(--ui-scale));
   --lh-base: 1.45;
   --header-h: 46px;
   --sidebar-w: 300px;

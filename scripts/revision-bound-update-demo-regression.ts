@@ -55,8 +55,6 @@ class Fixture {
   /** what a held tab keeps reading */
   held = new Map<string, UpdateStatus>();
   posts: Post[] = [];
-  /** `watch`: a device paired to watch only, which the server refuses every mutation (server/index.ts) */
-  role: "drive" | "watch" = "drive";
   /** the status cannot be fetched at all, as with the server out of reach */
   unreachable = false;
   private waiters: Array<{ path: string; resolve: (post: Post) => void }> = [];
@@ -87,9 +85,7 @@ class Fixture {
     try { parsed = body === null ? null : JSON.parse(body); } catch { parsed = body; }
     const refuse = (status: number, code: string) => ({ status, body: { error: { code, message: `fixture ${code}` } } });
     let reply: { status: number; body: unknown };
-    // as the server answers a watching device, before any update route is reached: nothing changes
-    if (this.role === "watch") reply = { status: 403, body: { error: { code: "read_only", message: "this device can only watch" } } };
-    else if (path === "/api/updates/check") {
+    if (path === "/api/updates/check") {
       reply = { status: 202, body: { accepted: true } };
       this.status = { ...this.status, phase: "idle", error: null, error_code: null };
     } else {
@@ -348,24 +344,6 @@ async function behaviour(browser: Browser, url: string): Promise<Record<string, 
     receipts["restart_recovered"] = { refused: unbound.code, after_restart: { body: recovered.body, status: recovered.status } };
     console.log("PASS a refusal for want of the capability ends once the server reports it again");
 
-    // observe-only: a watching device sees the offer, and its press changes nothing on the server
-    fixture.status = offer();
-    fixture.notes = notesFor(A, "9.9.9");
-    fixture.role = "watch";
-    await page.goto(url);
-    await line.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
-    const unchanged = JSON.stringify(fixture.status);
-    sent = fixture.next("/api/updates/install");
-    await line.getByRole("button", { name: "Update", exact: true }).click();
-    const watched = await sent;
-    assert.deepEqual([watched.body, watched.status, watched.code], [{ expected_revision: A }, 403, "read_only"], "a watching device's install is refused");
-    await line.getByText("The update could not be installed.", { exact: true }).waitFor();
-    await settingsOpen(page, "en");
-    await settings.getByText("this device can only watch", { exact: false }).first().waitFor();
-    assert.equal(JSON.stringify(fixture.status), unchanged, "the refused install changed no status");
-    receipts["observe"] = { status: watched.status, code: watched.code, status_unchanged: true };
-    fixture.role = "drive";
-    console.log("PASS a watching device's install is refused and changes nothing");
     assert.deepEqual(errors, []);
     receipts["posts"] = fixture.posts;
     return receipts;
@@ -400,7 +378,6 @@ async function captures(browser: Browser, url: string, dir: string): Promise<voi
     { state: "unmanaged", status: () => ({ ...offer(), managed: false, available: false, latest_revision: null, latest_version: null, revision_bound_install: undefined }) },
     { state: "up-to-date", status: () => offer(A, "9.9.9", { available: false, latest_revision: null, latest_version: null }) },
     { state: "unreachable", status: () => offer() },
-    { state: "observe", status: () => offer() },
   ];
   const combos = [
     ...[390, 1440].flatMap((width) => (["light", "dark"] as const).map((theme) => ({ width, theme, language: "en" as const }))),
@@ -418,7 +395,6 @@ async function captures(browser: Browser, url: string, dir: string): Promise<voi
         for (const surface of ["header", "settings"] as const) {
           fixture.status = status();
           fixture.notes = notes?.() ?? notesFor(fixture.status.latest_revision ?? A, fixture.status.latest_version ?? "9.9.9");
-          fixture.role = state === "observe" ? "watch" : "drive";
           fixture.unreachable = state === "unreachable";
           const read = fixture.nextRead();
           await page.goto(url);
@@ -445,15 +421,10 @@ async function captures(browser: Browser, url: string, dir: string): Promise<voi
               await read;
               await frames(page);
               assert.equal(await line.count(), 0, `${state}: the header offers no update`);
-            } else if (state === "observe") {
-              const sent = fixture.next("/api/updates/install");
-              await line.getByRole("button", { name: t("Update"), exact: true }).click();
-              assert.equal((await sent).status, 403);
-              await line.getByText(t("The update could not be installed."), { exact: true }).waitFor();
             }
             else await line.getByRole("button", { name: t("What's new"), exact: true }).waitFor();
             const empty = state === "unmanaged" || state === "up-to-date" || state === "unreachable";
-            target = empty ? null : line.getByRole("button", { name: t(state === "retry" || state === "observe" ? "Try again" : "Update"), exact: true });
+            target = empty ? null : line.getByRole("button", { name: t(state === "retry" ? "Try again" : "Update"), exact: true });
           } else {
             await settingsOpen(page, combo.language);
             const section = page.locator(".settings-updates");
@@ -467,12 +438,6 @@ async function captures(browser: Browser, url: string, dir: string): Promise<voi
               await read;
               await section.getByText(t(state === "unreachable" ? "Waiting for an update check…" : "Up to date."), { exact: true }).waitFor();
             } else await section.locator(".update-notes").waitFor();
-            if (state === "observe") {
-              const sent = fixture.next("/api/updates/install");
-              await section.getByRole("button", { name: t("Update and restart"), exact: true }).click();
-              assert.equal((await sent).status, 403);
-              await section.getByText("this device can only watch", { exact: false }).first().waitFor();
-            }
             if (state === "notes-end") {
               await section.locator(".update-notes").evaluate((notesBox) => { notesBox.scrollTop = notesBox.scrollHeight; });
               await page.waitForFunction(() => { const box = document.querySelector(".settings-updates .update-notes"); return !!box && Math.abs(box.scrollTop + box.clientHeight - box.scrollHeight) <= 1; });
@@ -510,7 +475,7 @@ async function captures(browser: Browser, url: string, dir: string): Promise<voi
             await page.mouse.up();
           }
           shots.push({ file, width: combo.width, height: combo.width === 390 ? 844 : 900, theme: combo.theme, language: combo.language, state: `${surface}-${state}` });
-          if (["moved-offer", "restart-required", "offered", "observe", "unmanaged", "up-to-date", "unreachable"].includes(state)) {
+          if (["moved-offer", "restart-required", "offered", "unmanaged", "up-to-date", "unreachable"].includes(state)) {
             const selector = surface === "header" ? ".update-notice" : ".settings-updates";
             const korean = combo.language === "ko" ? { korean_lines: await lines(page, selector, t(state === "moved-offer" ? MOVED : RESTART)) } : {};
             measurements.push({ file, ...korean, ...await page.evaluate((selector) => {

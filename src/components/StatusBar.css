@@ -44,10 +44,6 @@
   margin-left: auto;
 }
 
-.status-bar-watch {
-  color: var(--text-strong);
-}
-
 .status-bar-waiting {
   height: 20px;
   padding: 0 var(--space-2);

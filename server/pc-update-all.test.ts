@@ -43,8 +43,7 @@ function fixture() {
   });
   const pc = (id: string) => manager.list().find((machine) => machine.id === id)!;
   const until = async (done: () => boolean) => { const deadline = Date.now() + 2000; while (!done()) { if (Date.now() > deadline) throw new Error("condition timed out"); await Bun.sleep(5); } };
-  const request = (path: string, method = "POST") => handleMachineRequest(new Request(`http://localhost:7317/api/machines/${path}`, { method, headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager,
-    undefined, undefined, false, undefined, undefined, undefined, undefined, true);
+  const request = (path: string, method = "POST") => handleMachineRequest(new Request(`http://localhost:7317/api/machines/${path}`, { method, headers: { origin: "http://localhost:7317", "x-herdr-machine": "1", "x-herdr-update": "1" } }), manager);
   return { manager, internals, asked, ends, pc, until, request };
 }
 

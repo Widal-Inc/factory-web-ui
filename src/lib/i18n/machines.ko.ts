@@ -39,7 +39,6 @@ export const MACHINES_KO: Record<string, string> = {
   "Hide on this device": "이 기기에서 숨기기",
   "Remove PC…": "PC 제거…",
   "over SSH": "SSH 경유",
-  "through the relay": "릴레이 경유",
   "No saved sessions": "저장된 세션이 없습니다",
   "Updating the bridge": "브리지 업데이트 중",
   "You can keep using the app; this PC reconnects when it is done.": "앱은 계속 쓸 수 있습니다. 끝나면 이 PC가 다시 연결됩니다.",

@@ -39,7 +39,6 @@ export const MACHINES_JA: Record<string, string> = {
   "Hide on this device": "このデバイスで非表示",
   "Remove PC…": "PC を削除…",
   "over SSH": "SSH 経由",
-  "through the relay": "リレー経由",
   "No saved sessions": "保存されたセッションはありません",
   "Updating the bridge": "ブリッジを更新しています",
   "You can keep using the app; this PC reconnects when it is done.": "アプリはそのまま使用できます。完了するとこの PC は再接続されます。",

@@ -39,7 +39,7 @@ The inherited voice implementation can send audio to an OpenAI-compatible servic
 
 ## On your phone
 
-No Widal phone onboarding or store build is documented as supported here. Do not scan upstream pairing codes or use its hosted relay app as Factory login. See [native-app status](native-app.md) and [retired relay guidance](relay.md).
+No Widal phone onboarding or store build is documented as supported here. Do not scan upstream pairing codes or use its hosted relay app as Factory login.
 
 Browser home-screen installation requires a suitable secure origin. A development server or installed shortcut does not provide shared sign-in or Setup.
 
@@ -55,7 +55,7 @@ A connection server routes operations to the selected PC. This inherited topolog
 
 Anyone allowed to control a pane can run commands with its permissions. Keep source development on loopback and use an isolated session for testing. Current development authentication does not supply Factory authorization.
 
-The current base still contains legacy token, device, account, relay, Portal and Tailscale-owner paths. Their removal is separate work. They are retired as Widal setup instructions, not claimed removed by these docs. Shared sign-in, signed proxy identity validation, owner authorization and Setup remain pending. An arbitrary identity header must not be trusted.
+The account service, relay, device pairing, Portal and Tailscale-owner login are removed from this fork. The bridge token remains for source development and for SSH-connected PCs. Shared sign-in, signed proxy identity validation, owner authorization and Setup remain pending. An arbitrary identity header must not be trusted.
 
 ### On your LAN over HTTPS
 

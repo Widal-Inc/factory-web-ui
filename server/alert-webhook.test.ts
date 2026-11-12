@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -68,6 +68,38 @@ function webhook(retryDelays: number[] = [1, 1, 1]): AlertWebhook {
 const alert = { kind: "input" as const, title: "codex", body: "waiting for your input", pc: "Work PC", pane_id: "w1:p1", workspace_id: "w1" };
 
 describe("alert webhook presets", () => {
+  it.each(["revoked-device", undefined])("leaves a legacy destination inactive until explicitly saved again (owner %s)", async (owner) => {
+    const path = join(stateDir, "alert-webhook.json");
+    const old = JSON.stringify({ preset: "json", secret: destination.url(), alerts: { input: true, done: "always" }, ...(owner === undefined ? {} : { owner }) });
+    writeFileSync(path, old);
+    const hook = webhook();
+    expect(hook.view().configured).toBe(false);
+    expect(hook.prefs()).toBeNull();
+    expect(hook.wants("input")).toBe(false);
+    hook.send(alert);
+    await hook.settled();
+    expect(await hook.test()).toBeNull();
+    expect(destination.received).toHaveLength(0);
+    expect(readFileSync(path, "utf8")).toBe(old);
+    // A preferences-only save cannot silently reuse the suppressed secret.
+    expect(() => hook.save({ preset: "json", alerts: { input: true, done: "always" } }, undefined)).toThrow("URL is required");
+    expect(readFileSync(path, "utf8")).toBe(old);
+    hook.save({ preset: "json", url: destination.url() }, undefined);
+    expect(JSON.parse(readFileSync(path, "utf8")).owner).toBeNull();
+    const restarted = webhook();
+    restarted.send(alert);
+    await restarted.settled();
+    expect(destination.received).toHaveLength(1);
+  });
+
+  it("retains an explicitly owner-saved destination from the previous release", async () => {
+    writeFileSync(join(stateDir, "alert-webhook.json"), JSON.stringify({ owner: null, preset: "json", secret: destination.url(), alerts: { input: true, done: "long" } }));
+    const hook = webhook();
+    hook.send(alert);
+    await hook.settled();
+    expect(destination.received).toHaveLength(1);
+  });
+
   it("posts each preset's own format, naming the PC, the pane and what happened, with a link to the pane", async () => {
     const hook = webhook();
     const base = "https://pc.tail.ts.net:7421";
@@ -115,19 +147,10 @@ describe("alert webhook presets", () => {
     expect(webhook().view()).toMatchObject({ configured: true, preset: "discord", alerts: { input: false, done: "always" } });
   });
 
-  it("keeps the link base a relay request cannot give", async () => {
-    const hook = webhook();
-    hook.save({ preset: "json", url: destination.url() }, "https://pc.example:7421");
-    hook.save({ preset: "json", alerts: { input: true, done: "always" } }, "https://relay.ovis.invalid");
-    hook.send(alert);
-    await hook.settled();
-    expect(JSON.parse(destination.received[0]!.body).url).toBe("https://pc.example:7421/?pane=w1%3Ap1&view=chat");
-  });
-
   it("keeps a reachable link base when this PC's own loopback address saves, and says when none is known", async () => {
     const hook = webhook();
-    // a first save over the relay knows no address a phone opens
-    expect(hook.save({ preset: "json", url: destination.url() }, "https://relay.ovis.invalid").reachable_link).toBe(false);
+    // a first save from this PC's own loopback address knows no address a phone opens
+    expect(hook.save({ preset: "json", url: destination.url() }, "http://127.0.0.1:7317").reachable_link).toBe(false);
     expect(hook.save({ preset: "json" }, "http://127.0.0.1:7317").reachable_link).toBe(false);
     expect(hook.save({ preset: "json" }, "https://pc.tailnet.example").reachable_link).toBe(true);
     expect(hook.save({ preset: "json", alerts: { input: true, done: "always" } }, "http://127.0.0.1:7317").reachable_link).toBe(true);
@@ -177,28 +200,6 @@ describe("alert webhook delivery", () => {
     expect(await hook.test()).toEqual({ ok: true });
     expect(hook.view()).toMatchObject({ last_error: null });
     expect(JSON.parse(destination.received[1]!.body)).toEqual({ type: "test", text: "Ovis: alerts reach this destination" });
-  });
-});
-
-describe("alert webhook ownership", () => {
-  it("posts nothing once whoever set it lost access, as a push subscription's device would get nothing", async () => {
-    const allowed = new Set<string | null>([null, "dev-a"]);
-    let gated = false;
-    const hook = createAlertWebhook({ stateDir, loopbackHttp: true, retryDelays: [1], canDeliver: (owner) => owner === undefined ? !gated : allowed.has(owner) });
-    hook.save({ preset: "json", url: destination.url() }, undefined, "dev-a");
-    hook.send(alert);
-    await hook.settled();
-    allowed.delete("dev-a");
-    hook.send(alert);
-    await hook.settled();
-    expect(destination.received).toHaveLength(1);
-    // the open LAN (no owner) is heard only while it stays open, also after a restart
-    hook.save({ preset: "json", url: destination.url() }, undefined, undefined);
-    gated = true;
-    const restarted = createAlertWebhook({ stateDir, loopbackHttp: true, canDeliver: (owner) => owner === undefined ? !gated : allowed.has(owner) });
-    restarted.send(alert);
-    await restarted.settled();
-    expect(destination.received).toHaveLength(1);
   });
 });
 

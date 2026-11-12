@@ -19,13 +19,11 @@ const listings: Record<string, unknown> = {
 // Keep React, the hook, its cache and the API function real; only the network is a stand-in.
 describe("useWorktreeBranches", () => {
   let renderer: ReactTestRenderer | null = null;
-  /** while set, every listing is refused as a watching device's is (#2250) */
-  let refused = false;
   /** while set, the PC's bridge is from before GET /api/worktree/inventory and answers it as an unknown endpoint */
   let before = false;
   let fetchSpy: ReturnType<typeof spyOn<typeof globalThis, "fetch">>;
   const asked = () => fetchSpy.mock.calls.map(([input]) => new URL(String(input), "http://pc"));
-  function Probe({ watching = false }: { watching?: boolean }) { useWorktreeBranches(snapshot, true, false, undefined, watching); return null; }
+  function Probe() { useWorktreeBranches(snapshot, true); return null; }
   let shown: ReadonlyMap<string, WorkspaceBranch> = new Map();
   const unmarked = new Set(["w3"]);
   function Wide({ online = true }: { online?: boolean }) { shown = useWorktreeBranches(wide, online, false, unmarked).branches; return null; }
@@ -48,11 +46,9 @@ describe("useWorktreeBranches", () => {
   });
   beforeEach(() => {
     jest.useFakeTimers();
-    refused = false;
     before = false;
     shown = new Map();
     fetchSpy = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: string | URL | Request) => {
-      if (refused) return Response.json({ error: { code: "read_only", message: "this device can only watch" } }, { status: 403 });
       const url = new URL(String(input), "http://pc");
       const ids = url.searchParams.getAll("workspace_id");
       if (url.pathname.endsWith("/worktree/inventory")) {
@@ -69,41 +65,12 @@ describe("useWorktreeBranches", () => {
     jest.useRealTimers();
   });
 
-  it("asks a driving device's PC again on its next poll", async () => {
+  it("asks the PC again on its next poll", async () => {
     await act(async () => { renderer = create(createElement(Probe)); });
     await settle(() => fetchSpy.mock.calls.length >= 1);
     await act(async () => { jest.advanceTimersByTime(30_000); });
     await settle(() => fetchSpy.mock.calls.length >= 2);
     expect(fetchSpy.mock.calls.length).toBe(2);
-  });
-
-  it("does not ask again when the device may only watch (#2250)", async () => {
-    refused = true;
-    await act(async () => { renderer = create(createElement(Probe)); });
-    await settle(() => fetchSpy.mock.calls.length >= 1);
-    await settle(() => false);
-    await act(async () => { jest.advanceTimersByTime(120_000); });
-    await settle(() => false);
-    expect(fetchSpy.mock.calls.length).toBe(1);
-  });
-
-  it("asks nothing while watching, and reads branches once the device may drive (#2250)", async () => {
-    await act(async () => { renderer = create(createElement(Probe, { watching: true })); });
-    await settle(() => false);
-    await act(async () => { jest.advanceTimersByTime(60_000); });
-    await settle(() => false);
-    expect(fetchSpy.mock.calls.length).toBe(0);
-    // a refusal seen before the page learns the role does not outlive the role either
-    refused = true;
-    await act(async () => { renderer!.update(createElement(Probe, { watching: false })); });
-    await settle(() => fetchSpy.mock.calls.length >= 1);
-    refused = false;
-    await act(async () => { renderer!.update(createElement(Probe, { watching: true })); });
-    await act(async () => { renderer!.update(createElement(Probe, { watching: false })); });
-    await settle(() => fetchSpy.mock.calls.length >= 2);
-    await act(async () => { jest.advanceTimersByTime(30_000); });
-    await settle(() => fetchSpy.mock.calls.length >= 3);
-    expect(fetchSpy.mock.calls.length).toBe(3);
   });
 
   it("reads every repository and unmarked git workspace of the PC in one request per poll, each poll starting one further on (#2661)", async () => {

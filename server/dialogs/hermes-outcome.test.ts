@@ -179,9 +179,6 @@ describe("Hermes result outcomes", () => {
       expect(owner.outcomes?.at(-1)?.result_text?.split("\n")[0]).toStartWith("Hermes Agent v");
       // a result is not a waiting prompt card
       expect(owner.prompt).toBeNull();
-      const watched = await (await handlePromptRequest(new Request(url), url, { readOnly: true }))?.json() as PanePromptResponse;
-      expect(watched.outcomes?.at(-1)?.state).toBe("result-observed");
-      expect(watched.outcomes?.at(-1)).not.toHaveProperty("result_text");
     } finally {
       if (previous === undefined) delete process.env.HERDR_SOCKET;
       else process.env.HERDR_SOCKET = previous;

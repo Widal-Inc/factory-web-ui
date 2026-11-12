@@ -104,17 +104,16 @@ export function noteOverflows(waiting: readonly ReplyComment[], draft: string, q
   return messageWithComments([...next, { id: "", quote, comment: note.trim() }], draft).length > MAX_COMPOSER_CHARS;
 }
 
-export type NoteBlock = "no-pane" | "pc-offline" | "pane-gone" | "watching" | "pane-not-open" | "observing" | "no-agent";
+export type NoteBlock = "no-pane" | "pc-offline" | "pane-gone" | "pane-not-open" | "observing" | "no-agent";
 
 /**
  * Why the diff's own pane cannot take a note, or null when it can. Only that pane ever does: never
  * one on another PC, nor whichever is selected now.
  */
-export function noteBlock({ paneId, pane, watching, observing = false, mounted = true, reachable = true }: { paneId: string | null; reachable?: boolean; mounted?: boolean; pane: { agent?: string | null; agent_status: AgentStatus } | undefined; watching: boolean; observing?: boolean }): NoteBlock | null {
+export function noteBlock({ paneId, pane, observing = false, mounted = true, reachable = true }: { paneId: string | null; reachable?: boolean; mounted?: boolean; pane: { agent?: string | null; agent_status: AgentStatus } | undefined; observing?: boolean }): NoteBlock | null {
   if (paneId === null) return "no-pane";
   if (!reachable) return "pc-offline";
   if (pane === undefined) return "pane-gone";
-  if (watching) return "watching";
   // a pane this window shows no terminal of: whether it may type there is not known yet
   if (!mounted) return "pane-not-open";
   if (observing) return "observing";
@@ -128,7 +127,6 @@ export function noteBlockWord(t: Translate, block: NoteBlock): string {
     case "no-pane": return t("Notes go to the pane this diff came from, and it has none.");
     case "pc-offline": return t("That PC is not reachable right now.");
     case "pane-gone": return t("The pane this diff came from has closed, so a note has nowhere to go.");
-    case "watching": return t("This device can only watch.");
     case "pane-not-open": return t("Open the pane this diff came from first, so this window knows it can type there.");
     case "observing": return t("This window only watches the pane while another one types in it. Click the pane to type, then add the note.");
     case "no-agent": return t("No agent is running in the pane this diff came from.");

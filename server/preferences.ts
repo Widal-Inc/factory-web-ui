@@ -28,7 +28,7 @@ export class PreferencesTooLarge extends Error {
 
 /**
  * The preferences every browser of this server shares (shared/preferences.ts), kept in the state
- * directory beside devices.json. One document: a browser sends the settings it changed (and the
+ * directory. One document: a browser sends the settings it changed (and the
  * pins when they changed), laid over what is held, last write wins per setting; the others take
  * the whole document from the event. A change is held, and told, only once it is on disk.
  * The muted panes are always in the document, empty while nothing is muted: a server with none
@@ -264,7 +264,7 @@ export class PreferenceStore {
   }
 }
 
-/** /api/preferences: GET the shared document, PUT a change to it. A watching device's PUT is refused before this (index.ts). */
+/** /api/preferences: GET the shared document, PUT a change to it.  */
 export async function handlePreferencesRequest(request: Request, store: PreferenceStore): Promise<Response> {
   const reply = (body: unknown, status = 200) => jsonResponse(body, status, { "cache-control": "no-store" });
   const tooLarge = () => reply({ error: { code: "too_large", message: new PreferencesTooLarge().message } }, 413);

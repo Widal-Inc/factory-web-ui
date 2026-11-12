@@ -4,7 +4,7 @@
   "desktopName": "ovis.desktop",
   "private": true,
   "version": "0.0.0",
-  "description": "Run your coding agents and follow them from this computer, a browser or your phone",
+  "description": "Run your coding agents and follow them from this computer or a browser",
   "author": "devswha",
   "license": "MIT",
   "homepage": "https://ovis.sh",

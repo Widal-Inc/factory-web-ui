@@ -25,31 +25,6 @@
   color: var(--accent);
 }
 
-.phone-command {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
-  background: var(--bg-input);
-  border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.phone-command code {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  color: var(--text-strong);
-  scrollbar-width: none;
-}
-
-.phone-command code::-webkit-scrollbar {
-  display: none;
-}
-
 .phone-actions {
   display: flex;
   gap: var(--space-2);
@@ -58,13 +33,6 @@
 @media (max-width: 640px) {
   .phone-address {
     flex-direction: column;
-  }
-
-  /* a phone has no room to scroll a hidden line: the whole command shows, wrapped where it must */
-  .phone-command code {
-    overflow-x: visible;
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
 }
 

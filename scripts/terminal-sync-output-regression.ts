@@ -308,7 +308,7 @@ async function run(): Promise<void> {
     await herdrRpc("pane.send_input", { pane_id: pane, text: `exec ${quote(process.execPath)} ${quote(join(state, "producer.mjs"))}`, keys: ["enter"] });
     const unready = await ready;
     if (unready !== null) throw new Error("the producer never started", { cause: unready });
-    server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(state, "server"), tailscaleOwner: null, usage: new UsageService(undefined, []) });
+    server = createServer({ port: 0, hostname: "127.0.0.1", token: "", stateDir: join(state, "server"), usage: new UsageService(undefined, []) });
     browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox"] });
     const page = await openTerminalPage(browser, server.port, pane);
     await page.locator(shownRows(), { hasText: "PRODUCER_READY" }).waitFor();

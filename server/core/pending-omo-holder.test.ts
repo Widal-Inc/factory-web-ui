@@ -43,7 +43,7 @@ function omoPane(holderPids: number[], foreground: Foreground[]) {
 
   const pane = { pane_id: "p", terminal_id: "p", workspace_id: "w", tab_id: "t", agent: "omo", agent_status: "working", cwd, focused: false, revision: 0 } as HerdrPane;
   const frames: ServerMessage[] = [];
-  const owner = { data: connectionData({ deviceId: undefined, readOnly: false }), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value)); return 1; } } as Client;
+  const owner = { data: connectionData({}), getBufferedAmount: () => 0, send: (value: string) => { frames.push(JSON.parse(value)); return 1; } } as Client;
   owner.data.attached.set("p", { keepSize: false });
   let tail: Promise<unknown> = Promise.resolve();
   const serialize = <T>(_pane: string, task: () => T | Promise<T>): Promise<T> => { const run = tail.catch(() => {}).then(task); tail = run; return run; };

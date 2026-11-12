@@ -120,7 +120,7 @@ describe("preferences sync", () => {
     const known = base(DEFAULT_SETTINGS, ["pc:w2:p3"]);
     const remote = { revision: 4, settings: { darkTheme: "gruvbox", palette: "gruvbox", lightTheme: DEFAULT_SETTINGS.lightTheme }, pins: ["pc:w2:p3", "pc:w2:p4"] };
     const body = preferencesChange(known, { settings: local, pins: ["local:w1:p1"], muted: null })!;
-    const refused = takePreferences(known, { settings: local, pins: ["local:w1:p1"], muted: null }, remote, null, false, body);
+    const refused = takePreferences(known, { settings: local, pins: ["local:w1:p1"], muted: null }, remote, null, body);
     expect(refused.patch).toEqual({ darkTheme: "gruvbox", palette: "gruvbox" });
     expect(refused.pins).toEqual(["pc:w2:p3", "pc:w2:p4"]);
     // what is left unsent is only what nobody changed elsewhere: the light side
@@ -137,7 +137,7 @@ describe("preferences sync", () => {
     const remote = { revision: 4, settings: {}, pins: [], muted_panes: [] };
     const body = preferencesChange(known, local(DEFAULT_SETTINGS, [], mine))!;
     expect(body).toEqual({ settings: {}, muted_panes: mine });
-    const refused = takePreferences(known, local(DEFAULT_SETTINGS, [], mine), remote, null, false, body);
+    const refused = takePreferences(known, local(DEFAULT_SETTINGS, [], mine), remote, null, body);
     expect(refused.muted).toEqual([]);
     expect(preferencesChange(refused.base, local(DEFAULT_SETTINGS, [], refused.muted!))).toBeNull();
     const pending = takePreferences(known, local(DEFAULT_SETTINGS, [], mine), remote, null);
@@ -172,7 +172,7 @@ describe("preferences sync", () => {
     // the document that arrives (another browser's, or this browser's own refused value that landed after all)
     for (const darkTheme of ["gruvbox", "tokyo-night"]) {
       const remote = { revision: 4, settings: { darkTheme, palette: darkTheme }, pins: ["pc:w2:p3", "pc:w2:p4"] };
-      const taken = takePreferences(known, { settings: now, pins: ["pc:w2:p3", "local:w1:p2"], muted: null }, remote, null, false, body);
+      const taken = takePreferences(known, { settings: now, pins: ["pc:w2:p3", "local:w1:p2"], muted: null }, remote, null, body);
       expect(taken.patch).toEqual({});
       expect(taken.pins).toBeNull();
       expect(preferencesChange(taken.base, { settings: now, pins: ["pc:w2:p3", "local:w1:p2"], muted: null })).toEqual({ settings: { darkTheme: "kanagawa", palette: "kanagawa" }, pins: ["pc:w2:p3", "local:w1:p2"] });
@@ -211,11 +211,6 @@ describe("preferences sync", () => {
     expect(pinning.base.pins).toEqual([]);
   });
 
-  it("a watching device takes everything", () => {
-    const taken = takePreferences(base(DEFAULT_SETTINGS, ["a:b"]), local(light, ["a:b", "c:d"]), { revision: 5, settings: { theme: "dark" }, pins: [] }, null, true);
-    expect(taken.patch).toEqual({ theme: "dark" });
-    expect(taken.pins).toEqual([]);
-  });
   it("older server without muted_panes stays unsupported", () => {
     // a document without the list: the server keeps none, so there is nothing to take and nothing to send
     const taken = takePreferences(base(DEFAULT_SETTINGS, []), local(DEFAULT_SETTINGS, []), { revision: 1, settings: {}, pins: [] }, null);
@@ -249,9 +244,6 @@ describe("preferences sync", () => {
     // the document that answers the change carries it: it is the server's list now, not an edit of this page's
     const answered = takePreferences(base(DEFAULT_SETTINGS, [], []), local(DEFAULT_SETTINGS, [], ["w1:p1"]), { revision: 3, settings: {}, muted_panes: ["w1:p1"] }, { settings: {}, muted_panes: ["w1:p1"] });
     expect(answered.muted).toEqual(["w1:p1"]);
-    // a watching device takes the list as it takes everything
-    const watching = takePreferences(base(DEFAULT_SETTINGS, [], []), local(DEFAULT_SETTINGS, [], ["w1:p1"]), { revision: 3, settings: {}, muted_panes: [] }, null, true);
-    expect(watching.muted).toEqual([]);
   });
 
   it("offline PC survives pruning", () => {

@@ -11,11 +11,10 @@ import { DEMO_FILE_PREVIEW_SCRIPT } from "./demo-file-preview.ts";
 import { KO } from "../src/lib/i18n.ko.ts";
 
 /**
- * The access facts on Settings → Phone & devices, over the demo's fictional answers
+ * The access facts on Settings → Devices and PCs, over the demo's fictional answers
  * (site/demo/transport.ts, `?demo_security=`): each fact on its own labelled line, no control to
  * change any of them, public reachability unknown unless the request proved it, an older server
- * and a failed check shown as such rather than filled in, and the open-LAN warning exactly as
- * before. No herdr session is opened; the app is served on loopback from a temporary directory.
+ * and a failed check shown as such rather than filled in. No herdr session is opened; the app is served on loopback from a temporary directory.
  *
  * With UI_EVIDENCE_DIR set it also writes the capture matrix there
  * (`security-summary-<390|1440>-<light|dark>[-ko]-<state>.png`) and the measurements behind it.
@@ -23,19 +22,14 @@ import { KO } from "../src/lib/i18n.ko.ts";
 const app = mkdtempSync(join(tmpdir(), "herdr-security-summary-demo-"));
 const evidence = process.env["UI_EVIDENCE_DIR"] || "";
 const SECTION = '.settings-body:not([hidden]) [data-section="access"]';
-const LAN = '[data-testid="lan-exposure-notice"]';
-const LAN_TEXT = "Anyone who can reach 0.0.0.0 on your network can type into every pane: no access token is set and no device is paired yet.Devices and PCs";
 
-const known = { "Access token": "Set", "Pairing gate": "Closed", "Listens on": "Loopback", "This connection": "Through Tailscale", "Public internet": "Unknown" };
+const known = { "Access token": "Set", "Listens on": "Loopback", "This connection": "No proxy seen", "Public internet": "Unknown" };
 const FACTS: Record<string, Record<string, string>> = {
   known,
-  watch: known,
-  unknown: { "Access token": "Not set", "Pairing gate": "Not yet closed", "Listens on": "Other address", "This connection": "Unknown", "Public internet": "Unknown" },
-  proxy: { "Access token": "Not set", "Pairing gate": "Not yet closed", "Listens on": "Loopback", "This connection": "Through a proxy", "Public internet": "Unknown" },
-  gated: { "Access token": "Not set", "Pairing gate": "Closed", "Listens on": "Other address", "This connection": "No proxy seen", "Public internet": "Unknown" },
-  funnel: { "Access token": "Set", "Pairing gate": "Closed", "Listens on": "Loopback", "This connection": "Through Tailscale Funnel", "Public internet": "Reachable" },
-  tailnet: { "Access token": "Set", "Pairing gate": "Closed", "Listens on": "Tailscale address", "This connection": "No proxy seen", "Public internet": "Unknown" },
-  unavailable: { "Access token": "Not set", "Pairing gate": "Unavailable", "Listens on": "Other address", "This connection": "No proxy seen", "Public internet": "Unknown" },
+  unknown: { "Access token": "Not set", "Listens on": "Other address", "This connection": "Unknown", "Public internet": "Unknown" },
+  proxy: { "Access token": "Not set", "Listens on": "Loopback", "This connection": "Through a proxy", "Public internet": "Unknown" },
+  funnel: { "Access token": "Set", "Listens on": "Loopback", "This connection": "Through Tailscale Funnel", "Public internet": "Reachable" },
+  tailnet: { "Access token": "Set", "Listens on": "Tailscale address", "This connection": "No proxy seen", "Public internet": "Unknown" },
 };
 const STATUS: Record<string, string> = {
   older: "This server does not report these facts. Updating it adds them.",
@@ -83,35 +77,7 @@ async function holdOpeningTurn(context: BrowserContext): Promise<void> {
   });
 }
 
-/** demo answers whose pairing gate is closed, so devices have been paired: the list beside the facts is a real one */
-const PAIRED = ["known", "watch", "funnel", "tailnet", "gated", "older", "error", "loading"];
-
-/**
- * The demo pairs no devices (its /api/devices is a 404 by design, scripts/conventions.test.ts), so
- * for the variants above this answers GET /api/devices with two fictional ones, in front of the
- * demo's own fetch: Access is then seen beside a populated Devices list, as on a real server.
- */
-async function pairedDevices(context: BrowserContext): Promise<void> {
-  await context.addInitScript((paired) => {
-    const variant = new URLSearchParams(location.search).get("demo_security") ?? "known";
-    if (!paired.includes(variant)) return;
-    const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
-    const devices = [
-      { id: "demo-phone", label: "iPhone (Safari)", role: variant === "watch" ? "watch" : "drive", created_at: ago(60 * 24 * 9), last_seen_at: ago(0), current: true },
-      { id: "demo-tablet", label: "Galaxy Tab S9 (Chrome)", role: "drive", created_at: ago(60 * 24 * 30), last_seen_at: ago(60 * 3), current: false },
-    ];
-    const wrap = (inner: typeof window.fetch): typeof window.fetch => ((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
-      const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-      if (url.pathname.endsWith("/api/devices") && method === "GET") return Promise.resolve(new Response(JSON.stringify({ devices }), { headers: { "content-type": "application/json" } }));
-      return inner(input, init);
-    }) as typeof window.fetch;
-    let current = window.fetch;
-    Object.defineProperty(window, "fetch", { configurable: true, get: () => current, set: (next: typeof window.fetch) => { current = wrap(next); } });
-  }, PAIRED);
-}
-
-/** Opens Phone & devices at its Access group for one demo answer, once that answer has been drawn. */
+/** Opens Devices and PCs at its Access group for one demo answer, once that answer has been drawn. */
 async function open(context: BrowserContext, variant: string, settings = true, label: (name: string) => string = (name) => name): Promise<Page> {
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(`${variant}: ${error.message}`));
@@ -126,10 +92,7 @@ async function open(context: BrowserContext, variant: string, settings = true, l
   await page.locator(SECTION).waitFor();
   await page.locator(SECTION).scrollIntoViewIfNeeded();
   if (variant in STATUS) await page.locator(`${SECTION} [role='status']`, { hasText: label(STATUS[variant]!) }).waitFor();
-  else await page.locator(`${SECTION} .settings-fact`).nth(4).waitFor();
-  // the Devices group beside it has its list: the two fictional devices, or none where nothing is paired
-  if (PAIRED.includes(variant)) await page.locator(".settings-body:not([hidden]) .devices-row").nth(1).waitFor();
-  else await page.locator(".settings-body:not([hidden]) .devices-panel").getByText(label("No devices paired yet.")).waitFor();
+  else await page.locator(`${SECTION} .settings-fact`).nth(Object.keys(FACTS[variant]!).length - 1).waitFor();
   return page;
 }
 
@@ -141,7 +104,6 @@ async function check(browser: Browser, width: 390 | 1440): Promise<void> {
   const context = await browser.newContext(width === 390 ? { ...devices["iPhone 14"] } : { viewport: { width: 1440, height: 900 } });
   try {
     await holdOpeningTurn(context);
-    await pairedDevices(context);
     await context.addInitScript(() => localStorage.setItem("ovis:settings", JSON.stringify({ language: "en", theme: "dark" })));
     for (const variant of [...Object.keys(FACTS), ...Object.keys(STATUS)]) {
       const page = await open(context, variant);
@@ -157,10 +119,6 @@ async function check(browser: Browser, width: 390 | 1440): Promise<void> {
       assert.deepEqual(seen.controls, [], `${variant} @${width}: read-only, with nothing to press or change`);
       assert.doesNotMatch(seen.text, verdicts, `${variant} @${width}: no safety verdict`);
       assert.deepEqual(seen.overflow, [], `${variant} @${width}: nothing clipped or scrolling sideways`);
-      // the open-LAN warning is unchanged and only where the server sends it
-      const lan = page.locator(LAN);
-      if (variant === "unknown") assert.equal((await lan.textContent())?.trim(), LAN_TEXT);
-      else assert.equal(await lan.count(), 0, `${variant}: no LAN warning`);
       await page.close();
     }
     // a failed check replaces the facts it last showed, and the next answer brings them back
@@ -172,7 +130,7 @@ async function check(browser: Browser, width: 390 | 1440): Promise<void> {
     await refresh("older");
     await page.locator(`${SECTION} [role='status']`, { hasText: STATUS["older"]! }).waitFor();
     await refresh("known");
-    await page.locator(`${SECTION} .settings-fact`).nth(4).waitFor();
+    await page.locator(`${SECTION} .settings-fact`).nth(Object.keys(known).length - 1).waitFor();
     assert.deepEqual((await read(page)).facts, known);
     // an earlier check that answers after a newer one failed never brings its facts back: hold a
     // successful read, let the next one fail, then release the first
@@ -209,7 +167,7 @@ async function check(browser: Browser, width: 390 | 1440): Promise<void> {
     assert.equal(late.status, STATUS["error"]);
     await page.close();
     assert.deepEqual(pageErrors, [], "no page raised an error");
-    console.log(`PASS @${width}: current, unknown, proxy, gated, funnel, unavailable, watch, older-server, loading and error states; no controls; LAN warning unchanged; no stale facts`);
+    console.log(`PASS @${width}: current, unknown, proxy, funnel, tailnet, older-server, loading and error states; no controls; no stale facts`);
   } finally {
     await context.close();
   }
@@ -220,16 +178,13 @@ const STATES: Array<{ state: string; variant: string; desktopOnly?: boolean; set
   { state: "rest", variant: "known" },
   { state: "focus", variant: "known" },
   { state: "hover", variant: "known", desktopOnly: true },
-  { state: "watch", variant: "watch" },
   { state: "older", variant: "older" },
   { state: "loading", variant: "loading" },
   { state: "error", variant: "error" },
-  { state: "long", variant: "unavailable" },
   { state: "proxy", variant: "proxy" },
   { state: "funnel", variant: "funnel" },
   { state: "tailnet", variant: "tailnet" },
   { state: "unknown", variant: "unknown" },
-  { state: "lan", variant: "unknown", settings: false },
   { state: "offline", variant: "known" },
   { state: "end", variant: "known" },
 ];
@@ -269,12 +224,10 @@ async function capture(browser: Browser): Promise<void> {
         const context = await browser.newContext(width === 390 ? { ...devices["iPhone 14"], locale: language } : { viewport: { width: 1440, height: 900 }, locale: language });
         try {
           await holdOpeningTurn(context);
-          await pairedDevices(context);
-          await context.addInitScript((settings) => localStorage.setItem("ovis:settings", settings), JSON.stringify({ language, theme }));
+                await context.addInitScript((settings) => localStorage.setItem("ovis:settings", settings), JSON.stringify({ language, theme }));
           for (const { state, variant, desktopOnly, settings } of STATES) {
             if (desktopOnly && width !== 1440) continue;
             const page = await open(context, variant, settings ?? true, label);
-            if (settings === false) await page.locator(LAN).waitFor();
             if (state === "focus" || state === "hover") {
               // the neighbouring control before the facts: keyboard focus from the group, or the pointer
               await page.locator(SECTION).focus();

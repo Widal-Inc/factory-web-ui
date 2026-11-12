@@ -129,21 +129,12 @@ describe("demo transport", () => {
    * (server to server, or behind a state the demo never reaches).
    */
   const DEMO_404: Record<string, string> = {
-    "/api/account/enroll": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
     "/api/updates/cancel": "a connection server asks a PC's own Ovis to stop its update; the demo's browser never does",
-    "/api/account/introduce": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
-    "/api/account/introduction": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
-    "/api/account/link": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
-    "/api/account/records": "account linking: no screen of the app asks for it yet (the account screens come with their own demo answers)",
-    "/api/account/relay-account": "relay pass: named by a signed-in owner's account screen, which the demo never reaches (no sign-in there)",
-    "/api/devices/pair/cancel": "called by the plugin's terminal `link --code` only (scripts/plugin-link.ts); no screen of the app asks for it",
     "/api/auth": "the demo is never locked (/api/health says authenticated), so neither the token form nor sign-out runs",
     "/api/bridge": "a remote PC's bridge endpoint, asked by another server, never by the browser",
     "/api/runtime": "switching the runtime: the demo's health carries no herdr_runtime, so Settings offers no Switch",
     "/api/event": "OpenCode v2's own service's event stream, read by this server (opencode-service.ts), never by the browser",
     "/api/info": "OpenCode v2's own service's identity, checked by this server (opencode-service.ts), never by the browser",
-    "/api/devices/pair": "pairing a device: the demo is never locked, so the pairing form does not run",
-    "/api/relay/pairings": "the waiting relay pairings, read by `plugin.ts pair --approve` in the PC's terminal; the browser hears of them on its event stream",
     "/api/pane/conversation/image": "an image in a chat turn: the demo's transcripts carry none (listed when this guard was added)",
     "/api/pane/conversation/tool-output": "a tool call's full output: not part of the demo (listed when this guard was added)",
     "/api/pane/image": "pasting an image: the demo stores no files (listed when this guard was added)",
@@ -185,7 +176,7 @@ describe("demo transport", () => {
 });
 
 describe("names from before Ovis", () => {
-  // Settings are OVIS_*, the sign-in cookies ovis_token and ovis_device, browser storage keys ovis:*,
+  // Settings are OVIS_*, the sign-in cookie ovis_token, browser storage keys ovis:*,
   // pasted files <cwd>/.ovis.
   // The old names stay only where an install from before the rename still hands them in.
   const CARRY_OVER: Record<string, string> = {
@@ -212,10 +203,10 @@ describe("names from before Ovis", () => {
   const HISTORY = [":!CHANGELOG.md", ":!release-summaries.json", ":!changelog.d", ":!telemetry"];
 
   it("appear only where an older install hands them in", () => {
-    const grep = spawnSync("git", ["grep", "--untracked", "-I", "-l", "-E", "HERDR_WEB_[A-Z0-9_]+|herdr_web_(token|device)|herdr-web-ui[:]|[/\"'`][.]herdr-web-ui([^a-z.-]|$)", "--", ".", ...HISTORY], { cwd: repo, encoding: "utf8" });
+    const grep = spawnSync("git", ["grep", "--untracked", "-I", "-l", "-E", "HERDR_WEB_[A-Z0-9_]+|herdr_web_(token)|herdr-web-ui[:]|[/\"'`][.]herdr-web-ui([^a-z.-]|$)", "--", ".", ...HISTORY], { cwd: repo, encoding: "utf8" });
     if (grep.status === null || grep.status > 1) return;
     const offenders = grep.stdout.split("\n").filter((file) => file !== "" && !(file in CARRY_OVER));
-    fail(offenders, "Use the Ovis names: OVIS_* for settings, ovis_token and ovis_device for cookies, ovis:* for browser storage keys, .ovis for pasted files. The old names are read only by the files in CARRY_OVER (scripts/conventions.test.ts), which carry an older install over.");
+    fail(offenders, "Use the Ovis names: OVIS_* for settings, ovis_token for the cookie, ovis:* for browser storage keys, .ovis for pasted files. The old names are read only by the files in CARRY_OVER (scripts/conventions.test.ts), which carry an older install over.");
   });
 });
 
@@ -363,8 +354,8 @@ describe("raw NUL bytes", () => {
 
   it("binary, untracked, deleted and linked files are not read", () => {
     const nul = Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 1, 0, 0]);
-    expect(["bun.lock", "crates/pty-sidecar/Cargo.lock", "tools/new.ts", "LICENSE", "src/README", "app/ios/App.swift", "scripts/fixtures/a.ansi", "dist/index.js"].filter((path) => !isText(path))).toEqual([]);
-    expect(["src/fonts/a.woff2", "src/icon.png", "app/Icon.PNG", "ovis-site/a.webp", "ovis-site/a.jpg", "public/favicon.ico", "app/android/gradle/wrapper/gradle-wrapper.jar", "site/clip.webm"].filter(isText)).toEqual([]);
+    expect(["bun.lock", "crates/pty-sidecar/Cargo.lock", "tools/new.ts", "LICENSE", "src/README", "app/mac/App.swift", "scripts/fixtures/a.ansi", "dist/index.js"].filter((path) => !isText(path))).toEqual([]);
+    expect(["src/fonts/a.woff2", "src/icon.png", "app/Icon.PNG", "ovis-site/a.webp", "ovis-site/a.jpg", "public/favicon.ico", "tools/gradle/wrapper/gradle-wrapper.jar", "site/clip.webm"].filter(isText)).toEqual([]);
     const outside = mkdtempSync(join(tmpdir(), "tracked-text-outside-"));
     try {
       writeFileSync(join(outside, "target.ts"), "\0");
