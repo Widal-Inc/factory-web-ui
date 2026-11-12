@@ -354,7 +354,7 @@ async function behaviour(browser: Browser, url: string): Promise<Record<string, 
     fixture.notes = notesFor(A, "9.9.9");
     fixture.role = "watch";
     await page.goto(url);
-    await line.getByText(brandedExpected("Ovis v9.9.9 is available."), { exact: true }).waitFor();
+    await line.getByText("Ovis v9.9.9 is available.", { exact: true }).waitFor();
     const unchanged = JSON.stringify(fixture.status);
     sent = fixture.next("/api/updates/install");
     await line.getByRole("button", { name: "Update", exact: true }).click();
