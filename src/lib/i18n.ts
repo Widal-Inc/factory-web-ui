@@ -9,6 +9,7 @@
  * work is redone. Helpers outside React (status labels, shortcut labels, work summaries)
  * call the module-level `t`, which reads the language the SettingsProvider last set.
  */
+import { brandTemplate } from "../../shared/brand.ts";
 import { useMemo } from "react";
 import { JA } from "./i18n.ja.ts";
 import { KO } from "./i18n.ko.ts";
@@ -56,7 +57,7 @@ export type Vars = Record<string, string | number>;
 
 /** The text for `key` in `language`, placeholders filled; pure, for tests and for both `t`s. */
 export function translate(language: Language, key: string, vars?: Vars): string {
-  const text = DICTIONARIES[language][key] ?? key;
+  const text = brandTemplate(DICTIONARIES[language][key] ?? key);
   return vars === undefined ? text : text.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match));
 }
 

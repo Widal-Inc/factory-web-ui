@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,9 +30,10 @@ const INSTALL_TIMEOUT_MS = 20 * 60_000;
 const STOP_WAIT_MS = 15_000;
 
 /** what installerRun says when the installer could not even be downloaded: none of it ran */
+// Compatibility marker emitted by older installers; do not brand parsed output.
 const DOWNLOAD_FAILED = "Ovis: could not download the installer of";
-const CHANGED_WORDS = "That PC's Ovis changed since it was looked at, so nothing was stopped. Reconnect it and try again.";
-const NOT_REGISTERED_WORDS = (pid: number) => `The process ${pid} on that PC started after that Ovis registered, so it may be another program that took its process id; nothing was stopped. Reconnect it and try again.`;
+const CHANGED_WORDS = `That PC's ${BRAND.name} changed since it was looked at, so nothing was stopped. Reconnect it and try again.`;
+const NOT_REGISTERED_WORDS = (pid: number) => `The process ${pid} on that PC started after that ${BRAND.name} registered, so it may be another program that took its process id; nothing was stopped. Reconnect it and try again.`;
 /** a folder captureServer made: only such a path is ever put back into a command (quoted) */
 export const SAVED_SERVER = /^\/[^\n\0]*\/ovis-restore\.[A-Za-z0-9]{8}$/;
 /** how long a copy may stay on that PC whatever becomes of the install (this server stopping mid-job, say) */
@@ -271,7 +273,7 @@ export class PcInstaller {
    */
   private async startAgain(state: State, request: { target: SshTarget; machine_id?: string }, saved: string, socket: string, before: Set<string>, restore: number | null | false): Promise<string> {
     const job = state.public;
-    job.step = restore === false ? "Removing the copy of that PC's Ovis…" : "Starting that PC's Ovis again as it was (this can take a few minutes, and is not cancelled)…";
+    job.step = restore === false ? `Removing the copy of that PC's ${BRAND.name}…` : `Starting that PC's ${BRAND.name} again as it was (this can take a few minutes, and is not cancelled)…`;
     this.options.onChange?.(job);
     let ssh: SshConnection | undefined;
     try {
@@ -330,7 +332,7 @@ export class PcInstaller {
     const launch = async (command: string) => {
       try { await state.ssh!.run(command); } catch (error) {
         if (abort.signal.aborted) throw error;
-        throw new InstallFailed("not_started", `Ovis could not be started on that PC: ${(error instanceof Error ? error.message : String(error)).slice(0, 300)}`);
+        throw new InstallFailed("not_started", `${BRAND.name} could not be started on that PC: ${(error instanceof Error ? error.message : String(error)).slice(0, 300)}`);
       }
     };
     // whether an Ovis was installed or started in its place: "maybe" while that command still ran, when a cancel can come
@@ -344,7 +346,7 @@ export class PcInstaller {
     const forget = async () => { if (saved) { const dir = saved; saved = null; await state.ssh?.run(forgetServer(dir)).catch(() => {}); } };
     try {
       // the installer sets Ovis up for herdr's default session; one for a named session is not this app's to guess
-      if (target.session) throw new InstallFailed("unsupported", `Installing from here sets Ovis up for herdr's default session only, and this PC is added with the session "${target.session}". Add it without a session to install there.`);
+      if (target.session) throw new InstallFailed("unsupported", `Installing from here sets ${BRAND.name} up for herdr's default session only, and this PC is added with the session "${target.session}". Add it without a session to install there.`);
       const ssh = new SshConnection(target, this.options.sshDir, request.machine_id ? join(this.options.sshDir, request.machine_id) : undefined);
       state.ssh = ssh;
       // no challenge: BatchMode, so a PC that wants a password or an unknown host key refuses instead of asking
@@ -353,11 +355,11 @@ export class PcInstaller {
       let facts: Facts;
       try { facts = parseProbe(await ssh.run(PROBE)); } catch (error) { if (abort.signal.aborted) throw error; throw sshFailure(error); }
       if (!["Linux", "Darwin"].includes(facts.os) || !["x86_64", "amd64", "aarch64", "arm64"].includes(facts.arch)) {
-        throw new InstallFailed("unsupported", `Installing Ovis from here works on Linux and macOS PCs (x64 or arm64); that PC is ${facts.os ? `${facts.os} ${facts.arch}` : "not one (no POSIX shell answered)"}.`);
+        throw new InstallFailed("unsupported", `Installing ${BRAND.name} from here works on Linux and macOS PCs (x64 or arm64); that PC is ${facts.os ? `${facts.os} ${facts.arch}` : "not one (no POSIX shell answered)"}.`);
       }
       for (const tool of ["curl", "git", "tar"]) if (!facts.tools.has(tool)) throw new InstallFailed("missing_tool", `That PC has no ${tool}, which the installer needs. Install ${tool} there with its package manager, then try again.`);
-      if (!facts.writable) throw new InstallFailed("permission", "This SSH account cannot write to its own home folder on that PC, where Ovis installs.");
-      if (facts.freeKb !== null && facts.freeKb < MIN_FREE_KB) throw new InstallFailed("disk", `That PC has only ${Math.floor(facts.freeKb / 1024)} MB free in its home folder; installing Ovis needs about 1 GB.`);
+      if (!facts.writable) throw new InstallFailed("permission", `This SSH account cannot write to its own home folder on that PC, where ${BRAND.name} installs.`);
+      if (facts.freeKb !== null && facts.freeKb < MIN_FREE_KB) throw new InstallFailed("disk", `That PC has only ${Math.floor(facts.freeKb / 1024)} MB free in its home folder; installing ${BRAND.name} needs about 1 GB.`);
       const inspection = await posixHost.inspect(ssh);
       const listed = inspection.descriptors.filter((d) => d.socket_path === inspection.expectedSocket);
       const live: BridgeDescriptor[] = [];
@@ -372,7 +374,7 @@ export class PcInstaller {
       let gone = false;
       if (!plan) {
         if (live.some((d) => d.managed_remote)) throw new InstallFailed("bridge_there", "That PC runs this app's bridge for herdr; update it from its card with Update instead.");
-        if (live.length) throw new InstallFailed("ovis_there", "Ovis already runs on that PC. Add it with Add PC, or update it from its card.");
+        if (live.length) throw new InstallFailed("ovis_there", `${BRAND.name} already runs on that PC. Add it with Add PC, or update it from its card.`);
       } else {
         // only the very process the plan was made for, only a server this app did not start, and only while that pid
         // still runs an Ovis server: a pid reused by another program since is never signalled
@@ -391,23 +393,23 @@ export class PcInstaller {
         if (!gone && !born) throw new InstallFailed("changed", NOT_REGISTERED_WORDS(plan.pid));
         if (gone && plan.mode === "replace") stopped = true;
         // a restart goes through the launcher that runs it, which must be there before anything is stopped
-        if (plan.mode === "restart" && !installed) throw new InstallFailed("no_launcher", "That PC's Ovis was not installed as a herdr plugin or a user service, so it cannot be restarted from here. Restart it on that PC (Settings → Updates there tells how), then update it.");
+        if (plan.mode === "restart" && !installed) throw new InstallFailed("no_launcher", `That PC's ${BRAND.name} was not installed as a herdr plugin or a user service, so it cannot be restarted from here. Restart it on that PC (Settings → Updates there tells how), then update it.`);
         if (plan.mode === "replace" && !gone) {
-          step("stopping", `Stopping that PC's Ovis (process ${plan.pid}); herdr and its sessions keep running…`);
+          step("stopping", `Stopping that PC's ${BRAND.name} (process ${plan.pid}); herdr and its sessions keep running…`);
           // copied first, so an install that fails or is cancelled starts it again as it was
           // copied only while starting it again is turned on (experimental): off, it stays stopped if the install then fails
           const copy = this.options.restore?.() === true ? (await ssh.run(captureServer(plan.pid, identity)).catch(() => "error")).trim() : "";
           if (copy === "changed") throw new InstallFailed("changed", CHANGED_WORDS);
           // copying failed this time: it is not stopped without a way back. One that cannot be copied faithfully at all is
           // stopped as on macOS, without a copy, and the job then says it stays stopped
-          if (copy && copy !== "unfaithful" && !SAVED_SERVER.test(copy)) throw new InstallFailed("not_stopped", "That PC's Ovis could not be copied first, to start it again as it was if the install fails, so nothing was stopped. Try again.");
+          if (copy && copy !== "unfaithful" && !SAVED_SERVER.test(copy)) throw new InstallFailed("not_stopped", `That PC's ${BRAND.name} could not be copied first, to start it again as it was if the install fails, so nothing was stopped. Try again.`);
           saved = SAVED_SERVER.test(copy) ? copy : null;
           // the stop, in the same command as the check that it is still that process
           signalled = plan.pid;
           // ... and only the very server its registration names (its birth): never another that took the pid after it ended
           if ((await ssh.run(`${shown ? registeredAs(plan.pid, shown) : "false"} && ${sameProcess(plan.pid, identity)} && kill -TERM ${plan.pid} && echo stopping || echo changed`)).trim() !== "stopping") { signalled = null; throw new InstallFailed("changed", CHANGED_WORDS); }
           for (const until = Date.now() + this.stopMs; await posixHost.alive(ssh, plan.pid);) {
-            if (Date.now() >= until) throw new InstallFailed("not_stopped", `That PC's Ovis (process ${plan.pid}) did not stop within ${Math.round(this.stopMs / 1000)} seconds, so nothing was installed.`);
+            if (Date.now() >= until) throw new InstallFailed("not_stopped", `That PC's ${BRAND.name} (process ${plan.pid}) did not stop within ${Math.round(this.stopMs / 1000)} seconds, so nothing was installed.`);
             await pause();
             if (abort.signal.aborted) throw new Error("Install cancelled");
           }
@@ -417,7 +419,7 @@ export class PcInstaller {
       // updated once it answers: a restarted supervisor, or an install there that was kept as it was
       let update = job.mode === "restart";
       if (facts.launcher !== "none") {
-        step("starting", job.mode === "restart" ? "Restarting that PC's Ovis through its own launcher…" : "Starting the Ovis already installed on that PC…");
+        step("starting", job.mode === "restart" ? `Restarting that PC's ${BRAND.name} through its own launcher…` : `Starting the ${BRAND.name} already installed on that PC…`);
         // a plugin's actions need a herdr server: without one, herdr is started headless and starts the plugin itself
         const plugin = facts.launcher === "plugin" || facts.launcher === "plugin-legacy";
         if (plugin && !facts.herdrRunning) { if (stopped) replaced = "maybe"; await launch(HEADLESS_HERDR); }
@@ -434,7 +436,7 @@ export class PcInstaller {
               for (const extra of (await posixHost.descriptors(ssh)).filter((d) => d.socket_path === inspection.expectedSocket && !d.managed_remote && !before.has(d.token) && Number.isSafeInteger(d.pid) && d.pid > 0 && d.pid !== plan.pid)) {
                 if (OVIS_COMMAND.test(await ssh.run(`ps -o args= -p ${extra.pid} 2>/dev/null || true`))) await ssh.run(`kill -TERM ${extra.pid} 2>/dev/null || true`);
               }
-              throw new InstallFailed("not_stopped", `That PC's Ovis (process ${plan.pid}) was not started by its launcher, so restarting the launcher did not restart it; the one the launcher started beside it was stopped again. Stop it on that PC, then update it.`);
+              throw new InstallFailed("not_stopped", `That PC's ${BRAND.name} (process ${plan.pid}) was not started by its launcher, so restarting the launcher did not restart it; the one the launcher started beside it was stopped again. Stop it on that PC, then update it.`);
             }
             await pause();
             if (abort.signal.aborted) throw new Error("Install cancelled");
@@ -442,7 +444,7 @@ export class PcInstaller {
         }
         update = true;
       } else {
-        step("installing", `Installing Ovis ${release} with its official installer (about a minute)…`);
+        step("installing", `Installing ${BRAND.name} ${release} with its official installer (about a minute)…`);
         // downloaded first, so a failed download is told as one (piped, sh would run an empty script and exit 0), then
         // run with nothing on stdin, on herdr (a herdr plugin that updates itself, as the steps shown say). The exit
         // status is printed rather than returned, so the installer's own last words come back either way
@@ -456,23 +458,23 @@ export class PcInstaller {
           // later may have started herdr or its plugin already
           if (lines.some((line) => line.startsWith(DOWNLOAD_FAILED))) replaced = "no";
           const said = lines.filter((line) => !line.startsWith("ovis-install-exit=")).slice(-3).join(" ").slice(0, 500);
-          throw new InstallFailed("installer_failed", `The Ovis installer failed on that PC: ${said || "it said nothing"}`);
+          throw new InstallFailed("installer_failed", `The ${BRAND.name} installer failed on that PC: ${said || "it said nothing"}`);
         }
         if (stopped) replaced = "yes";
         // the plugin starts with herdr: one not running is started headless, which runs the plugin's startup hook
         // (as scripts/fresh-install-docker.ts checks), in a session of its own so it outlives this SSH connection
         if (!facts.herdrRunning) await launch(HEADLESS_HERDR);
       }
-      step("starting", "Waiting for Ovis to answer on that PC…");
+      step("starting", `Waiting for ${BRAND.name} to answer on that PC…`);
       for (const until = Date.now() + this.startMs; ;) {
         const answering = (await posixHost.descriptors(ssh)).find((d) => d.socket_path === inspection.expectedSocket && !d.managed_remote && !before.has(d.token) && Number.isSafeInteger(d.pid) && d.pid > 0);
         if (answering && await posixHost.alive(ssh, answering.pid)) { await forget(); break; }
-        if (Date.now() >= until) throw new InstallFailed("not_started", `Ovis is ${job.mode === "restart" ? "restarted" : "installed"} on that PC but did not start within ${Math.round(this.startMs / 1000)} seconds. Check herdr's plugin log there (herdr plugin log list).`);
+        if (Date.now() >= until) throw new InstallFailed("not_started", `${BRAND.name} is ${job.mode === "restart" ? "restarted" : "installed"} on that PC but did not start within ${Math.round(this.startMs / 1000)} seconds. Check herdr's plugin log there (herdr plugin log list).`);
         await pause();
         if (abort.signal.aborted) throw new Error("Install cancelled");
       }
       ssh.close();
-      step("connecting_pc", "Connecting to that PC's Ovis…");
+      step("connecting_pc", `Connecting to that PC's ${BRAND.name}…`);
       const connect = this.options.connect({ target, ...(request.name ? { name: request.name } : {}), ...(request.machine_id ? { machine_id: request.machine_id } : {}), ...(request.revision ? { revision: request.revision } : {}), update,
         // a follow-up connect (its update after the first one found it older) is the one to follow from now on
         onJob: (id) => { job.connect_job = id; this.options.onChange?.(job); } });
@@ -490,25 +492,25 @@ export class PcInstaller {
       const again = saved ? await this.startAgain(state, request, saved, socket, before, (stopped || signalled !== null) && replaced === "no" ? signalled : false) : null;
       // the signal never stopped it: as if nothing was stopped
       if (again === "running") stopped = false;
-      const restored = again === "started" ? " The Ovis started by hand on that PC was stopped for the install, and has been started again as it was."
-        : again === "replaced" ? " The Ovis started by hand on that PC was stopped for the install, and another already runs in its place; it was not started beside it."
-        : again && !["running", "forgotten"].includes(again) ? ` The Ovis started by hand on that PC was stopped for the install, and starting it again as it was failed: ${again} Update tries the install again.` : null;
+      const restored = again === "started" ? ` The ${BRAND.name} started by hand on that PC was stopped for the install, and has been started again as it was.`
+        : again === "replaced" ? ` The ${BRAND.name} started by hand on that PC was stopped for the install, and another already runs in its place; it was not started beside it.`
+        : again && !["running", "forgotten"].includes(again) ? ` The ${BRAND.name} started by hand on that PC was stopped for the install, and starting it again as it was failed: ${again} Update tries the install again.` : null;
       if (abort.signal.aborted) {
         job.phase = "cancelled"; job.step = "Cancelled";
         if (restored) job.error = `Cancelled.${restored}`;
         else if (stopped) job.error = replaced === "no" && again !== "replaced"
-          ? "Cancelled after the Ovis started by hand on that PC was stopped, so none runs there now; Update tries the install again."
-          : `Cancelled after the Ovis started by hand on that PC was stopped and another was ${replaced === "yes" ? "installed" : "being installed"} in its place, which may not be running; Update tries again.`;
+          ? `Cancelled after the ${BRAND.name} started by hand on that PC was stopped, so none runs there now; Update tries the install again.`
+          : `Cancelled after the ${BRAND.name} started by hand on that PC was stopped and another was ${replaced === "yes" ? "installed" : "being installed"} in its place, which may not be running; Update tries again.`;
       }
       else {
         job.phase = "failed"; job.step = "Install failed";
         job.error_code = error instanceof InstallFailed ? error.code : null;
         job.error = (error instanceof Error ? error.message : String(error))
           + (restored ?? (!stopped ? "" : replaced === "yes"
-            ? " The Ovis started by hand on that PC was stopped, and the one installed in its place did not connect; Update tries again."
+            ? ` The ${BRAND.name} started by hand on that PC was stopped, and the one installed in its place did not connect; Update tries again.`
             : replaced === "maybe"
-            ? " The Ovis started by hand on that PC was stopped, and another may have been installed in its place; Update tries again."
-            : " The Ovis started by hand on that PC was already stopped, so none runs there now; Update tries the install again."));
+            ? ` The ${BRAND.name} started by hand on that PC was stopped, and another may have been installed in its place; Update tries again.`
+            : ` The ${BRAND.name} started by hand on that PC was already stopped, so none runs there now; Update tries the install again.`));
       }
     } finally {
       state.ssh?.close();

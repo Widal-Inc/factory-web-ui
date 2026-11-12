@@ -8,6 +8,15 @@ Current tokens and UI conventions are retained while Widal branding is integrate
 
 ## 1. Atmosphere & Identity
 
+### Configured product identity
+
+The web app's name, mark, install metadata and default theme come from `shared/brand.json`
+([configuration and regeneration](docs/branding.md)). Colours stay in the theme blocks of
+`src/styles.css`. This follows [T3 Code's environment theme defaults](https://github.com/pingdotgg/t3code/blob/main/docs/user/appearance.md):
+an installation selects the starting appearance while saved device preferences win. The existing
+sidebar header keeps its layout and displays the configured mark and name. No third-party code
+or artwork was copied for this change. Hub email and page integration remain separate work.
+
 The herdr look (amber) is a warm terminal: an amber-phosphor console on lamp-lit graphite (dark) or ledger paper (light),
 with chat-app clarity. Tonal surfaces and hairlines keep the chrome out of the way. There is ONE
 chrome color, amber: focus, the chosen lens, the terminal cursor and the user's own action (Send, primary

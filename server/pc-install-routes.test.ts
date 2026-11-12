@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, expect, it, spyOn, setSystemTime } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -68,7 +69,7 @@ it("starts an install on a PC not added here, tells its job, refuses a request f
   expect(job).toMatchObject({ machine_id: null, mode: "install", phase: "connecting", target: { destination: "me@new.invalid" } });
   // one job at a time per PC: neither another install nor a setup goes there meanwhile
   expect((await call("install", "POST", { destination: "me@new.invalid" })).status).toBe(409);
-  expect(() => manager.setup({ destination: "me@new.invalid" })).toThrow("Ovis is being installed on this PC");
+  expect(() => manager.setup({ destination: "me@new.invalid" })).toThrow(brandedExpected("Ovis is being installed on this PC"));
   await reached("me@new.invalid");
   waiting.get("me@new.invalid")!.refuse("me@new.invalid: Permission denied (publickey).");
   expect((await ended(job.id)).phase).toBe("failed");
@@ -208,7 +209,7 @@ it("keeps one install or setup at a time per SSH address: across herdr sessions,
   const job = manager.install({ destination: "me@new.invalid" });
   await reached("me@new.invalid");
   // another herdr session on the same PC: the install restarts herdr's and its Ovis there too
-  expect(() => manager.setup({ destination: "me@new.invalid", session: "work" })).toThrow("Ovis is being installed on this PC");
+  expect(() => manager.setup({ destination: "me@new.invalid", session: "work" })).toThrow(brandedExpected("Ovis is being installed on this PC"));
   manager.cancelInstall(job.id);
   // a PC saved here whose address another install is busy at: not started beside it
   const runtime = internals.machines.get(SAVED)!;
@@ -314,8 +315,8 @@ it("keeps one install or setup per PC as ssh resolves it: an alias, or the defau
   const job = manager.install({ destination: "me@new.invalid" });
   await reached("me@new.invalid");
   // the same PC by its alias, and by its address with the default port given
-  expect(() => manager.setup({ destination: "new-alias" })).toThrow("Ovis is being installed on this PC");
-  expect(() => manager.setup({ destination: "me@new.invalid", port: 22 })).toThrow("Ovis is being installed on this PC");
+  expect(() => manager.setup({ destination: "new-alias" })).toThrow(brandedExpected("Ovis is being installed on this PC"));
+  expect(() => manager.setup({ destination: "me@new.invalid", port: 22 })).toThrow(brandedExpected("Ovis is being installed on this PC"));
   expect(() => manager.install({ destination: "new-alias" })).toThrow("being installed or connected already");
   manager.cancelInstall(job.id);
   // a PC saved here, named by its alias or with its default port given: already added, not added again
@@ -344,7 +345,7 @@ it("counts a PC that ssh cannot resolve as possibly busy, so an alias never star
   (sshAddresses.resolve as unknown as { mockImplementation(fn: (target: SshTarget) => Promise<string | null>): void }).mockImplementation(async (target) => target.destination === "unresolved-alias" ? null : literalAddress(target));
   forgetSshAddresses();
   await warmSshAddresses([{ destination: "unresolved-alias" }]);
-  expect(() => manager.setup({ destination: "unresolved-alias" })).toThrow("Ovis is being installed on this PC");
+  expect(() => manager.setup({ destination: "unresolved-alias" })).toThrow(brandedExpected("Ovis is being installed on this PC"));
   // and is never refused as already added for that alone
   manager.cancelInstall(job.id);
 });

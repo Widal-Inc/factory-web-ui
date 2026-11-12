@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 /**
  * Which runtime this PC's server serves, decided from facts and the user's own choice:
  * `OVIS_RUNTIME` in the environment, else the choice saved from Settings (`runtime.json` in the
@@ -77,7 +78,7 @@ export function environmentRuntime(env: Env = process.env): Runtime | undefined 
   const value = env["OVIS_RUNTIME"];
   if (value === undefined || value === "") return undefined;
   if (value === "herdr" || value === "herdr-core") return value;
-  throw new Error(`OVIS_RUNTIME=${value} is not a runtime Ovis knows: use herdr (the default) or herdr-core`);
+  throw new Error(`OVIS_RUNTIME=${value} is not a runtime ${BRAND.name} knows: use herdr (the default) or herdr-core`);
 }
 
 export interface ChooseOptions extends TraceOptions {
@@ -174,7 +175,7 @@ export function runtimeService(options: RuntimeServiceOptions): RuntimeService {
     request: (target) => {
       if (target !== "herdr" && target !== "herdr-core") return { ok: false, status: 400, code: "invalid_runtime", message: "runtime must be herdr or herdr-core" };
       const now = facts();
-      if (now.locked !== null) return { ok: false, status: 409, code: "runtime_locked", message: now.locked === "env" ? "OVIS_RUNTIME in the server's environment decides the runtime" : now.locked === "unmanaged" ? "this server was not started by Ovis's launcher, so it cannot restart itself" : "herdr-core is served on Linux and macOS only" };
+      if (now.locked !== null) return { ok: false, status: 409, code: "runtime_locked", message: now.locked === "env" ? "OVIS_RUNTIME in the server's environment decides the runtime" : now.locked === "unmanaged" ? `this server was not started by ${BRAND.name}'s launcher, so it cannot restart itself` : "herdr-core is served on Linux and macOS only" };
       if (requested || options.accepted?.() === false) return { ok: false, status: 409, code: "runtime_switching", message: requested ? "the server is already restarting on another runtime" : "the server is still starting; switch once it is up" };
       if (now.switch_to !== target) return { ok: false, status: 409, code: "runtime_unavailable", message: target === now.serving ? `this server already serves ${target}` : `${target} is not on this PC` };
       const id = randomUUID();

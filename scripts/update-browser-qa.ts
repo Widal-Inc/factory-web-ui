@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 /** End-to-end update QA: private Git remote/install + owned herdr pane, never the live app. */
 import "./test-herdr.ts"; // a herdr session of its own: nothing shows in the user's
 import assert from "node:assert/strict";
@@ -126,7 +127,7 @@ try {
   // A reload is explicit. The new frontend's build revision must match the server.
   await page.locator(".update-notice").getByRole("button", { name: "Reload app" }).click();
   // the new version tells of the update: its line opens Settings on what the update brought
-  await page.locator(".update-notice").getByText("Ovis was updated to v99.0.0.", { exact: true }).waitFor();
+  await page.locator(".update-notice").getByText(brandedExpected("Ovis was updated to v99.0.0."), { exact: true }).waitFor();
   await page.screenshot({ path: join(evidence, "updated-line-desktop.png") });
   await page.locator(".update-notice").getByRole("button", { name: "What's new", exact: true }).click();
   await page.getByRole("region", { name: "What the last update brought", exact: true }).waitFor();

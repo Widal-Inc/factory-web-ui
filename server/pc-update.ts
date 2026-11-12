@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import type { PcUpdateOffer } from "../shared/machines.ts";
 import { REVISION, type UpdateStatus, INSTALL_ID } from "../shared/update.ts";
 import { discard, readCappedJson, REMOTE_LIMITS } from "./remote-json.ts";
@@ -31,10 +32,10 @@ export function offerFromStatus(status: unknown): PcUpdateOffer | null {
   const told = status as Partial<UpdateStatus>;
   if (told.available !== true || typeof told.latest_revision !== "string" || !REVISION.test(told.latest_revision)) return null;
   const offer = (reason: string | null): PcUpdateOffer => ({ how: "own", current_version: releaseVersion(told.current_version), latest_version: releaseVersion(told.latest_version), updatable: reason === null, reason });
-  if (told.managed !== true) return offer(`That PC's Ovis does not update itself: ${words(told.blocked_reason) ?? "it was not started by its updater."}`);
+  if (told.managed !== true) return offer(`That PC's ${BRAND.name} does not update itself: ${words(told.blocked_reason) ?? "it was not started by its updater."}`);
   const blocked = words(told.blocked_reason);
-  if (blocked) return offer(`That PC's Ovis cannot update itself now: ${blocked}`);
-  if (told.revision_bound_install !== true) return offer("That PC's Ovis is too old to take an update asked for from another PC.");
+  if (blocked) return offer(`That PC's ${BRAND.name} cannot update itself now: ${blocked}`);
+  if (told.revision_bound_install !== true) return offer(`That PC's ${BRAND.name} is too old to take an update asked for from another PC.`);
   return offer(null);
 }
 
@@ -97,8 +98,8 @@ export class OwnUpdateCancelled extends Error {
 }
 /** what a cancel of an update that ran there says: never that the update ended, when it goes on */
 export const cancelledWords = (there: "stopped" | "continues" | "none"): string => there === "stopped"
-  ? "Update cancelled: that PC's own Ovis stopped it before it was installed."
-  : there === "continues" ? "Update cancelled here, but that PC's own Ovis may still finish it there (it had started, and did not confirm it stopped): look at its Settings → Updates." : "Update cancelled";
+  ? `Update cancelled: that PC's own ${BRAND.name} stopped it before it was installed.`
+  : there === "continues" ? `Update cancelled here, but that PC's own ${BRAND.name} may still finish it there (it had started, and did not confirm it stopped): look at its Settings → Updates.` : "Update cancelled";
 
 /**
  * Asks a connected PC's own Ovis to install the release it offers, then follows it until the PC answers again on
@@ -134,8 +135,8 @@ async function followOwn(options: OwnUpdateOptions, state: { last: Partial<Updat
     let status = await read();
     for (const until = Date.now() + checkMs; status?.phase === "checking" && Date.now() < until;) { await pause(); cancelled(); status = await read(); }
     if (!options.endpoint()) throw new Error("This PC is not connected; update it once it is back.");
-    if (!status) throw new Error("That PC's Ovis did not tell its update status. Try again in a moment.");
-    if (status.phase === "checking") throw new Error("That PC's Ovis is still checking for updates. Try again in a moment.");
+    if (!status) throw new Error(`That PC's ${BRAND.name} did not tell its update status. Try again in a moment.`);
+    if (status.phase === "checking") throw new Error(`That PC's ${BRAND.name} is still checking for updates. Try again in a moment.`);
     return status;
   };
   let before = await settled();
@@ -148,9 +149,9 @@ async function followOwn(options: OwnUpdateOptions, state: { last: Partial<Updat
   if (foreign()) throw new Error(CHANGED);
   for (let attempt = 1; !started; attempt++) {
     const now = offerFromStatus(before);
-    if (!now || typeof before.latest_revision !== "string") throw new Error("That PC's Ovis has no update on offer any more.");
+    if (!now || typeof before.latest_revision !== "string") throw new Error(`That PC's ${BRAND.name} has no update on offer any more.`);
     if (before.latest_revision !== revision) throw new Error(CHANGED);
-    if (!now.updatable) throw new Error(now.reason ?? "That PC's Ovis cannot take this update.");
+    if (!now.updatable) throw new Error(now.reason ?? `That PC's ${BRAND.name} cannot take this update.`);
     const endpoint = options.endpoint();
     if (!endpoint) throw new Error("This PC is not connected; update it once it is back.");
     // cancelled before the request could leave: nothing was asked of that PC
@@ -164,7 +165,7 @@ async function followOwn(options: OwnUpdateOptions, state: { last: Partial<Updat
     if (refusal?.code === "update_offer_changed") throw new Error(CHANGED);
     // busy: an install of it runs there already (its own Settings, another app), which is followed; or a check
     // for releases started since its status was read, after which the install is asked for again
-    if (refusal?.code !== "update_busy" || attempt >= 3) throw new Error(`That PC's Ovis refused to update: ${words(refusal?.message) ?? `it answered ${response.status}`}`);
+    if (refusal?.code !== "update_busy" || attempt >= 3) throw new Error(`That PC's ${BRAND.name} refused to update: ${words(refusal?.message) ?? `it answered ${response.status}`}`);
     before = await settled();
     started = installing(before);
     if (foreign()) throw new Error(CHANGED);
@@ -173,21 +174,21 @@ async function followOwn(options: OwnUpdateOptions, state: { last: Partial<Updat
   const deadline = Date.now() + OWN_UPDATE_LIMIT_MS, startBy = Date.now() + startMs;
   for (;;) {
     cancelled();
-    if (Date.now() >= deadline) throw new Error(`That PC's Ovis did not come back on its new version within ${OWN_UPDATE_LIMIT_MS / 60_000} minutes. Check its Settings → Updates there.`);
+    if (Date.now() >= deadline) throw new Error(`That PC's ${BRAND.name} did not come back on its new version within ${OWN_UPDATE_LIMIT_MS / 60_000} minutes. Check its Settings → Updates there.`);
     const refused = options.refused?.() ?? null;
     if (refused) throw new Error(refused);
     const status = await read();
     if (status === null) {
       // away: its server restarts on the new release, so the install ran
-      if (!options.endpoint()) { started = true; options.onStep(`This PC's own Ovis is restarting${to}…`); }
+      if (!options.endpoint()) { started = true; options.onStep(`This PC's own ${BRAND.name} is restarting${to}…`); }
     } else {
       if (typeof revision === "string" && status.current_revision === revision && !installing(status)) return;
       if (installing(status)) {
         started = true;
-        options.onStep(`This PC's own Ovis is updating itself${to}: ${STEPS[status.step ?? ""] ?? status.phase}…`);
+        options.onStep(`This PC's own ${BRAND.name} is updating itself${to}: ${STEPS[status.step ?? ""] ?? status.phase}…`);
       }
-      if (status.phase === "error" && (started || words(status.error) !== earlierError)) throw new Error(`That PC's Ovis could not update itself: ${words(status.error) ?? "no reason given."}`);
-      if (!started && Date.now() >= startBy) throw new Error(`That PC's Ovis did not start its update within ${Math.max(1, Math.round(startMs / 1000))} seconds of being asked. Check its Settings → Updates there.`);
+      if (status.phase === "error" && (started || words(status.error) !== earlierError)) throw new Error(`That PC's ${BRAND.name} could not update itself: ${words(status.error) ?? "no reason given."}`);
+      if (!started && Date.now() >= startBy) throw new Error(`That PC's ${BRAND.name} did not start its update within ${Math.max(1, Math.round(startMs / 1000))} seconds of being asked. Check its Settings → Updates there.`);
     }
     await pause();
   }

@@ -2,11 +2,17 @@ import { buildXtermSource } from "./scripts/build-xterm.ts";
 import { compressedAssets } from "./scripts/compressed-assets.ts";
 import { serviceWorkerBuild } from "./scripts/service-worker-build.ts";
 import { themeBootstrapBuild } from "./scripts/theme-bootstrap-build.ts";
+import { renderBrandMetadata } from "./scripts/brand-metadata.ts";
 import { defineConfig, normalizePath, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+
+// A config-only identity change must not ship a stale install sheet or notification worker.
+for (const { path, content } of renderBrandMetadata(fileURLToPath(new URL(".", import.meta.url)))) {
+  if (readFileSync(new URL(path, import.meta.url), "utf8") !== content) throw new Error(`Stale brand metadata: ${path}. Run bun scripts/brand-metadata.ts`);
+}
 
 const xtermSource = normalizePath(buildXtermSource(fileURLToPath(new URL(".", import.meta.url))));
 

@@ -1,3 +1,4 @@
+import { brandedExpected } from "./brand-test-helpers.ts";
 /**
  * OSC 52 in replayed output (the screen a new attach is handed, `pty-data` with `replay: true`)
  * never writes the clipboard; live copies still do, once each. Runs the real client and its
@@ -663,7 +664,7 @@ try {
           await shot(page, name("observe-only"));
           // the reconnect overlay, held while the fixture keeps the next socket from opening
           await fixture(page, (state) => { state.holdConnect = true; state.sockets.at(-1)!.close(); });
-          await page.getByText("Reconnecting to Ovis…").waitFor();
+          await page.getByText(brandedExpected("Reconnecting to Ovis…")).waitFor();
           await shot(page, name("reconnecting"));
         }
         assert.deepEqual(pageErrors(page), []);

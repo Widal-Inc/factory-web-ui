@@ -1,3 +1,4 @@
+import { BRAND } from "./brand.ts";
 /** App updates are independent of the herdr daemon and its terminal sessions. */
 export interface UpdateStatus {
   managed: boolean;
@@ -254,7 +255,7 @@ export function readInstalledNotes(value: unknown): InstalledNotes {
 }
 
 /** Why a server the desktop app runs (OVIS_DESKTOP_APP) offers no update here: the app updates itself and its server with it. */
-export const DESKTOP_APP_UPDATES = "This server is part of the Ovis app, which updates them together: updates come with the app, not from here.";
+export const DESKTOP_APP_UPDATES = `This server is part of the ${BRAND.name} app, which updates them together: updates come with the app, not from here.`;
 
 export function unmanagedUpdateStatus(desktopApp = false): UpdateStatus {
   return {

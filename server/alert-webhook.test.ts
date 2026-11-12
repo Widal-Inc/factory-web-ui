@@ -1,3 +1,4 @@
+import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -121,7 +122,7 @@ describe("alert webhook presets", () => {
 
     const link = "https://pc.tail.ts.net:7421/?pane=w1%3Ap1&view=chat";
     const [slack, discord, ntfy, telegram, json] = destination.received;
-    expect(JSON.parse(slack!.body)).toEqual({ text: `Work PC · codex: waiting for your input\n<${link}|Open in Ovis>` });
+    expect(JSON.parse(slack!.body)).toEqual({ text: brandedExpected(`Work PC · codex: waiting for your input\n<${link}|Open in Ovis>`) });
     expect(JSON.parse(discord!.body)).toEqual({ content: `Work PC · codex: waiting for your input\n${link}`, allowed_mentions: { parse: [] } });
     expect(ntfy!.body).toBe("Work PC · codex: waiting for your input");
     expect(ntfy!.headers.get("click")).toBe(link);
@@ -199,7 +200,7 @@ describe("alert webhook delivery", () => {
     expect(hook.view().last_error).toBe("HTTP 404");
     expect(await hook.test()).toEqual({ ok: true });
     expect(hook.view()).toMatchObject({ last_error: null });
-    expect(JSON.parse(destination.received[1]!.body)).toEqual({ type: "test", text: "Ovis: alerts reach this destination" });
+    expect(JSON.parse(destination.received[1]!.body)).toEqual({ type: "test", text: brandedExpected("Ovis: alerts reach this destination") });
   });
 });
 

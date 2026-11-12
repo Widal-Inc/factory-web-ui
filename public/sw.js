@@ -1,4 +1,4 @@
-// Service worker for Ovis. Policy: navigations are network-first (so a
+// Service worker. Policy: navigations are network-first (so a
 // fresh build always wins when online) falling back to the cached shell when
 // offline; static assets (hashed bundles, icons, favicons) are cache-first since
 // they are content-addressed or rarely change. The web manifest is not: its URL
@@ -29,6 +29,7 @@
 // A retired cache's own shell keeps its entry script and stylesheet here too: a page that started
 // from that shell offline and has not asked for them yet still boots, then offers a reload.
 const CACHE_NAME = "ovis-v4-sheep";
+const BRAND = {"name":"Widal Factory","icon":"/icons/icon-192.png?v=factory1","badge":"/icons/badge-96.png?v=factory1"};
 const BUILD = "";
 const BUILD_FILES = null;
 const CACHE = BUILD ? `${CACHE_NAME}-${BUILD}` : CACHE_NAME;
@@ -265,8 +266,8 @@ async function answerFromAlert(data, index) {
     body,
     tag: data.tag,
     data: { pane_id: data.pane_id, machine_id: data.machine_id, workspace_id: data.workspace_id, alert_id: crypto.randomUUID() },
-    icon: "/icons/icon-192.png?v=sheep1",
-    badge: "/icons/badge-96.png?v=sheep1",
+    icon: BRAND.icon,
+    badge: BRAND.badge,
   });
 }
 
@@ -290,7 +291,7 @@ self.addEventListener("push", (event) => {
       const watching = windows.some((client) => client.visibilityState === "visible");
       const earlier = await earlierAlerts(tag);
       const answers = answerButtons(payload);
-      await self.registration.showNotification(payload.title || "Ovis", {
+      await self.registration.showNotification(payload.title || BRAND.name, {
         body: payload.body || "",
         tag,
         renotify: !watching,
@@ -298,11 +299,11 @@ self.addEventListener("push", (event) => {
         ...(answers ? { actions: answers.map((answer, index) => ({ action: `answer-${index}`, title: answer.label })) } : {}),
         data: {
           pane_id: payload.pane_id || null, machine_id: payload.machine_id || "local", workspace_id: payload.workspace_id || null, alert_id: alertId,
-          ...(answers ? { prompt_id: payload.prompt_id, actions: answers, title: payload.title || "Ovis", tag } : {}),
+          ...(answers ? { prompt_id: payload.prompt_id, actions: answers, title: payload.title || BRAND.name, tag } : {}),
         },
-        icon: "/icons/icon-192.png?v=sheep1",
+        icon: BRAND.icon,
         // Android's status bar and small icon: white on transparent, or Chrome's bell
-        badge: "/icons/badge-96.png?v=sheep1",
+        badge: BRAND.badge,
       });
       await closeEarlierAlerts(tag, earlier);
     })(),

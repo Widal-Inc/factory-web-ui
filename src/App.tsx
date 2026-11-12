@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ChevronDown, CircleHelp, Ellipsis, FolderOpen, Link, Menu, MessageCircle, MessageSquare, PanelLeft, Search, SquareTerminal, Target, X } from "lucide-react";
 
@@ -88,8 +89,6 @@ import { useConnectionChip, useServerMessageHandler } from "./lib/useConnectionC
 import { useHeaderConnection } from "./lib/headerConnection.ts";
 import { ConnectionRouteMark } from "./components/ConnectionRouteMark.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
-import logoDark from "./assets/brand/logo-dark.png";
-import logoLight from "./assets/brand/logo-light.png";
 import { nextWaitingPane, sessionCounts, tabPosition } from "./lib/headerSessions.ts";
 import { selectionStill } from "./lib/selectionMark.ts";
 import { carryMovedPane, movedView } from "./lib/paneMove.ts";
@@ -115,7 +114,7 @@ import { useAddressBar } from "./lib/useAddressBar.ts";
 import { catchTypeAhead } from "./lib/typeAhead.ts";
 import { goalStatusWord, sessionMenuLines, sizeWords, useSessionStats, workedWords } from "./lib/sessionStats.ts";
 
-const APP_TITLE = "Ovis";
+const APP_TITLE = BRAND.name;
 /** how soon after a key press a focus counts as the user's own (lastKeyAtRef) */
 const KEY_FOCUS_MS = 1000;
 
@@ -162,11 +161,12 @@ function ConnectionChip({ connected, word, title, quiet }: { connected: boolean;
   );
 }
 
-/** The sidebar's head (from 769px): the Ovis wordmark in the theme's colours (ovis-site's logo pair). */
-function SidebarBrand({ dark }: { dark: boolean }) {
+/** Product identity in the sidebar's existing header. */
+function SidebarBrand() {
   return (
     <div className="brand sidebar-brand">
-      <img src={dark ? logoDark : logoLight} alt="Ovis" width="68" height="24" />
+      <img src={BRAND.logo} alt="" width="24" height="24" />
+      <span className="brand-name">{BRAND.name}</span>
     </div>
   );
 }
@@ -174,9 +174,9 @@ function SidebarBrand({ dark }: { dark: boolean }) {
 function Brand() {
   return (
     <h1 className="brand">
-      <img src="/icons/icon-192.png?v=sheep1" alt="" width="22" height="22" className="brand-mark" />
+      <img src={BRAND.icon} alt="" width="22" height="22" className="brand-mark" />
       <span className="brand-name">
-        Ovis
+        {BRAND.name}
       </span>
     </h1>
   );
@@ -451,7 +451,7 @@ export function App() {
 
   const tabTitle = selectedPane ? tabPaneTitle(selectedPane) : null;
   useEffect(() => {
-    document.title = tabTitle ? `${tabTitle} · Ovis` : APP_TITLE;
+    document.title = tabTitle ? `${tabTitle} · ${BRAND.name}` : APP_TITLE;
   }, [tabTitle]);
 
   // A new tab's workspace: the named one, else the selected pane's. Its folder is the workspace's:
@@ -775,7 +775,7 @@ export function App() {
             .header-side is the sidebar's own top row from 769px (styles.css); below that its
             buttons sit in the bar */}
         <div className="header-side">
-          {wideScreen && !sidebarCollapsed && <SidebarBrand dark={resolvedTheme === "dark"} />}
+          {wideScreen && !sidebarCollapsed && <SidebarBrand />}
           <button
             type="button"
             className="icon-button drawer-toggle"

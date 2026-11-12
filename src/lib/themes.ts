@@ -1,4 +1,5 @@
 /** The authored theme role contract. Theme values live only in src/styles.css. */
+import { BRAND } from "../../shared/brand.ts";
 import { SUPPORTED_ENTRIES, THEME_IDS } from "./themes.generated.ts";
 import type { ThemeId } from "./themes.generated.ts";
 import type { LIGHT_ANSI_ROLES } from "./themeRoles.ts";
@@ -19,7 +20,8 @@ export function isThemeId(value: unknown): value is ThemeId {
 }
 
 /** The theme either side starts from, and falls back to for an unknown id. */
-export const DEFAULT_THEME: ThemeId = "codex";
+if (!isThemeId(BRAND.theme)) throw new Error(`Unknown brand theme: ${BRAND.theme}`);
+export const DEFAULT_THEME: ThemeId = BRAND.theme;
 /** The default before codex (#1267 added it, then it became the default): a side still on it was never chosen either. */
 const FORMER_DEFAULT: ThemeId = "amber";
 

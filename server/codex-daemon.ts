@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readlink, realpath } from "node:fs/promises";
@@ -138,7 +139,7 @@ export class DaemonConnection {
     try {
       await this.ready;
       const initialized = await this.request("initialize", {
-        clientInfo: { name: "ovis", title: "Ovis", version: "0" },
+        clientInfo: { name: "ovis", title: `${BRAND.name}`, version: "0" },
         capabilities: { experimentalApi: false },
       });
       this.userAgent = isObject(initialized) && typeof initialized.userAgent === "string" ? initialized.userAgent : "";

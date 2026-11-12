@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * GET /api/agent-catalog: every agent Ovis can install, with this PC's own official command for each
  * and whether it is installed here, at which version (server/agent-catalog-detect.ts). Read only:
@@ -10,7 +11,7 @@ import { badRequest, errorResponse, jsonResponse, setRequestRoute } from "./http
 
 /** What this PC can tell about another machine of the core's agents: nothing (machine-bridge.ts). */
 const UNKNOWN = { installed: null, binary: null, on_path: null, version: null, version_error: null, meets_min_version: null } as const;
-const OTHER_MACHINE = "Ovis cannot tell what this machine has installed: install agents from a terminal on it.";
+const OTHER_MACHINE = `${BRAND.name} cannot tell what this machine has installed: install agents from a terminal on it.`;
 
 export async function agentCatalogFor(platform: CatalogPlatform | null, detector: AgentDetector): Promise<AgentCatalogResponse> {
   const agents = await Promise.all(AGENT_CATALOG.map(async (entry) => catalogRow(entry, platform, await detector.state(entry, platform))));

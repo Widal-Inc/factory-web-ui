@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 /**
  * The supervisor owns builds and bridge restarts; herdr continues to own every PTY.
  * server/managed.ts launches it from the active release, so an update replaces this code too:
@@ -212,7 +213,7 @@ export async function runSupervisor(root = resolve(import.meta.dir, "..")) {
    */
   function restartForRuntime(id: string) {
     return exclusive(async () => {
-      if (stopping) { console.error("Not switching the runtime: Ovis is stopping."); return; }
+      if (stopping) { console.error(`Not switching the runtime: ${BRAND.name} is stopping.`); return; }
       switching = true;
       try {
         await stopChild();

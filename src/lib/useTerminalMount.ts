@@ -1,3 +1,4 @@
+import { BRAND } from "../../shared/brand.ts";
 import { useLayoutEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -1565,7 +1566,7 @@ export function useTerminalMount(deps: TerminalMountDeps): void {
             }
             return;
           }
-          writeOutput(`\r\n\u001b[31m[Ovis] ${message.code}: ${message.message}\u001b[0m\r\n`);
+          writeOutput(`\r\n\u001b[31m[${BRAND.name}] ${message.code}: ${message.message}\u001b[0m\r\n`);
         }
         setConnected(socket.connected);
         setConversationPushes(socket.conversationPushes());

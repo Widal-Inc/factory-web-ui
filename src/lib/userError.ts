@@ -1,3 +1,5 @@
+import { brandTemplate } from "../../shared/brand.ts";
+import { OWN_UPDATE_OFFER } from "../../shared/machines.ts";
 import { ApiError } from "./api.ts";
 import { t, type Translate } from "./i18n.ts";
 
@@ -119,7 +121,9 @@ export function machineErrorText(words: string, translateIn: Translate): string 
     ["The other PC's answer was larger than this app accepts", t("The other PC's answer was larger than this app accepts")],
     ["The other PC's answer could not be read", t("The other PC's answer could not be read")],
   ];
-  return known.reduce((text, [english, local]) => text.replaceAll(english, local), words);
+  const text = known.reduce((text, [english, local]) => text.replaceAll(english, local), words);
+  // A fixed legacy offer prefix is also a compatibility discriminator for older bridges.
+  return text.startsWith(OWN_UPDATE_OFFER) ? `${brandTemplate(OWN_UPDATE_OFFER)}${text.slice(OWN_UPDATE_OFFER.length)}` : text;
 }
 
 /** The failure's parts: the cause when the status or the server's words name one, the advice, the words. */

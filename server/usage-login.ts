@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -482,7 +483,7 @@ export class UsageLoginService {
         return jsonResponse({ error: { code: "account_not_found", message: "This PC no longer lists that account. Refresh and try again." } }, 404);
       }
       if (found && "ambiguous" in found) {
-        return conflictResponse("account_ambiguous", "This account is signed in in more than one credential folder on this PC, so Ovis cannot tell which one to renew. Sign in again from a terminal in the folder you want.");
+        return conflictResponse("account_ambiguous", `This account is signed in in more than one credential folder on this PC, so ${BRAND.name} cannot tell which one to renew. Sign in again from a terminal in the folder you want.`);
       }
       const place = found;
       // a default home holding the CLI's credential file has a sign-in, even one this server cannot read; and
@@ -502,13 +503,13 @@ export class UsageLoginService {
           : separate ? `${id}:${canonicalPath(join(this.home, `.${id}-${body["name"]}`))}` : id;
       } catch (error) {
         console.warn("Could not tell which credential home a sign-in would write", error);
-        return conflictResponse("credential_home_unreadable", "Ovis cannot read this account's credential folder, so it cannot tell whether a sign-in is already running there. Check the folder's permissions on the server PC.");
+        return conflictResponse("credential_home_unreadable", `${BRAND.name} cannot read this account's credential folder, so it cannot tell whether a sign-in is already running there. Check the folder's permissions on the server PC.`);
       }
       try { holding = await this.reserve(loginHome); }
       catch (error) {
         if (!(error instanceof LoginStateUnreadable)) throw error;
         console.warn("Could not read the sign-ins running in herdr tabs", error);
-        return conflictResponse("login_state_unreadable", "Ovis cannot read its record of the sign-ins running on this PC (usage-logins.json in its state folder), so it cannot tell whether one is already open for this account. Close any sign-in tab still open, then repair or remove that file on the server PC.");
+        return conflictResponse("login_state_unreadable", `${BRAND.name} cannot read its record of the sign-ins running on this PC (usage-logins.json in its state folder), so it cannot tell whether one is already open for this account. Close any sign-in tab still open, then repair or remove that file on the server PC.`);
       }
       if (holding === null) {
         return conflictResponse("login_in_progress", "A sign-in to this account is already open. Finish or close it first.");

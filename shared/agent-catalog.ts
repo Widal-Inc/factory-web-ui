@@ -1,3 +1,4 @@
+import { BRAND } from "./brand.ts";
 /**
  * The agents Ovis can install for a user: every supported coding agent and the always-on
  * assistants, each with the vendor's own install command per platform, copied from the vendor's
@@ -155,7 +156,7 @@ export interface AgentCatalogResponse {
 
 /** One entry as a PC on `platform` answers it, with what that PC found (server/agent-catalog-routes.ts, the demo). */
 export function catalogRow({ install, no_install, ...entry }: AgentCatalogEntry, platform: CatalogPlatform | null, state: AgentInstallState): AgentCatalogRow {
-  if (platform === null) return { ...entry, install: null, no_install: "Ovis has no install commands for this operating system.", state };
+  if (platform === null) return { ...entry, install: null, no_install: `${BRAND.name} has no install commands for this operating system.`, state };
   return { ...entry, install: install[platform], no_install: install[platform] === null ? no_install[platform] ?? null : null, state };
 }
 
@@ -331,11 +332,11 @@ const method = (shell: InstallShell, command: string, requires: readonly Install
 const only = (primary: InstallMethod, ...alternatives: InstallMethod[]): PlatformInstall => ({ primary, alternatives });
 
 const DEVIN_LOGIN = "Ends by starting its own sign-in (devin setup): with no browser it stops at \"Login canceled\" and exits 1, or waits until you press Ctrl+C. Devin is installed either way: sign in afterwards with devin auth login.";
-const OMP_BUN = "Stops when an older Bun (before 1.4.4) is on PATH, as Ovis's own installer may have put there: run bun upgrade first.";
+const OMP_BUN = `Stops when an older Bun (before 1.4.4) is on PATH, as ${BRAND.name}'s own installer may have put there: run bun upgrade first.`;
 const PI_NODE = "Needs Node.js 22.19 or later: without it, it asks in the terminal whether to install it, and without a terminal it stops.";
 const PI_NODE_SUDO = "Needs Node.js 22.19 or later: without it, it asks in the terminal whether to install it (which may ask for sudo), and without a terminal it stops.";
 const DSH_PNPM = "dsh-tui sets up its dsh profile with pnpm on its first start: without pnpm it stops there. Install it first: npm install -g pnpm.";
-const DSH_WINDOWS = "Ovis cannot start DeepSeek Harness on Windows yet, so it neither installs it nor offers it there.";
+const DSH_WINDOWS = `${BRAND.name} cannot start DeepSeek Harness on Windows yet, so it neither installs it nor offers it there.`;
 const DSH_VERSIONS = "dsh 0.2.1-rc.5 refuses dsh-tui 0.17.0 as an untested pair on its first start (\"nothing was installed\"). To accept that risk, run the command dsh prints, dsh plugin --profile dsh-tui allow-version @deepseek-harness-tui/dsh-tui@0.17.0 --dsh-version 0.2.1-rc.5 --accept-risk, then start dsh-tui again.";
 const CURL_BASH: readonly InstallRequirement[] = [{ tool: "curl" }, { tool: "bash" }];
 const CURL_SH: readonly InstallRequirement[] = [{ tool: "curl" }, { tool: "sh" }];
@@ -863,7 +864,7 @@ const CATALOG_ENTRIES: readonly AgentCatalogEntry[] = [
     sources: [source("https://github.com/Yeachan-Heo/gajae-code/blob/main/docs/install.md"), source("https://github.com/Yeachan-Heo/gajae-code/blob/86cbbabff39336ccc67adccc76936cb5d951fe01/README.md")],
     detect: { binaries: ["gjc"], version_args: ["--version"], install_dirs: { macos: ["~/.local/bin"], linux: ["~/.local/bin"] } },
     sign_in: { provider: null, command: null, in_agent: "/login", api_keys: [], required: true },
-    after_install: ["For Chat and done alerts, install Ovis's GJC extension and restart GJC (Supported agents in the guide)."],
+    after_install: [`For Chat and done alerts, install ${BRAND.name}'s GJC extension and restart GJC (Supported agents in the guide).`],
     min_version: null,
   },
   {
@@ -924,7 +925,7 @@ const CATALOG_ENTRIES: readonly AgentCatalogEntry[] = [
     install: {
       macos: only(method("posix", "npm i -g command-code", [{ tool: "node" }, { tool: "npm" }])),
       linux: only(method("posix", "npm i -g command-code", [{ tool: "node" }, { tool: "npm" }])),
-      windows: only(method("powershell", "npm i -g command-code", [{ tool: "node" }, { tool: "npm" }], { known_issues: ["Its command is cmd, the name of Windows' own command prompt: Ovis cannot tell on Windows whether it is installed."] })),
+      windows: only(method("powershell", "npm i -g command-code", [{ tool: "node" }, { tool: "npm" }], { known_issues: [`Its command is cmd, the name of Windows' own command prompt: ${BRAND.name} cannot tell on Windows whether it is installed.`] })),
     },
     no_install: {},
     url_prefixes: [],
@@ -978,7 +979,7 @@ const CATALOG_ENTRIES: readonly AgentCatalogEntry[] = [
     detect: { binaries: ["dsh-tui"], needs: ["dsh"], version_args: ["--version"], unreliable_on: { windows: DSH_WINDOWS } },
     // Sign in opens dsh-tui itself: the key goes into its own first-run prompt; Ovis has no field that asks for it
     sign_in: { provider: null, command: null, in_agent: "on its first start: a DeepSeek API key from https://platform.deepseek.com/api_keys typed into its own prompt, or an OpenAI- or Anthropic-compatible provider", api_keys: ["DEEPSEEK_API_KEY"], required: true },
-    after_install: ["It needs a model before it can work: a DeepSeek API key (https://platform.deepseek.com/api_keys) or an OpenAI- or Anthropic-compatible provider, entered in dsh-tui's own first-run prompt: Ovis does not ask for the key."],
+    after_install: [`It needs a model before it can work: a DeepSeek API key (https://platform.deepseek.com/api_keys) or an OpenAI- or Anthropic-compatible provider, entered in dsh-tui's own first-run prompt: ${BRAND.name} does not ask for the key.`],
     min_version: null,
   },
   {
