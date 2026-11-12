@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getTransport, nativeTransport, setTransport, type Transport } from "../lib/transport.ts";
+import type { ReaderTarget } from "../lib/fileReader.ts";
 import { directTransport } from "./directTransport.ts";
 
 // The fork's own App (chat, terminal, answer cards, state grouping) is the live view; it is loaded
@@ -14,30 +15,31 @@ const FactoryApp = lazy(() => import("./FactoryApp.tsx"));
  * gives that transport back when it unmounts (a page refresh unmounts it), so the person can open
  * their factory again without reloading the document.
  */
-export function OwnerFactory({ factory, origin }: { factory: string; origin: string }) {
-  const [open, setOpen] = useState(false);
+export function OwnerFactory({ factory, origin, reader }: { factory: string; origin: string; reader?: ReaderTarget }) {
+  const [open, setOpen] = useState(reader !== undefined);
+  const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const installed = useRef<Transport | null>(null);
   // React runs a parent's unmount cleanup before its children's, and the App's own cleanup may still
   // make a request through the transport. So the transport is given back one microtask later, and only
   // if it is still this view's: a view opened since keeps its own.
-  useEffect(() => () => {
-    const mine = installed.current;
-    installed.current = null;
-    if (mine) queueMicrotask(() => { if (getTransport() === mine) setTransport(nativeTransport); });
-  }, []);
-  function start() {
-    if (getTransport() !== nativeTransport) { setError("Another factory view is already open on this page."); return; }
+  useEffect(() => {
+    if (!open) return;
+    // StrictMode may replay this effect before its deferred release. Reacquire only our own
+    // previous transport; another view's transport still refuses the connection.
+    if (getTransport() !== nativeTransport && getTransport() !== installed.current) { setError("Another factory view is already open on this page."); return; }
     try {
       const transport = directTransport(origin, window.location.origin);
       setTransport(transport);
       installed.current = transport;
-      setOpen(true);
+      setConnected(true);
+      return () => { queueMicrotask(() => { if (getTransport() === transport) setTransport(nativeTransport); }); };
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The factory could not be reached.");
     }
-  }
+  }, [open, origin]);
   if (error) return <p role="alert" className="hub-muted">{error}</p>;
-  if (!open) return <p><button type="button" className="btn" onClick={start}>{`Open ${factory}`}</button></p>;
-  return <div className="hub-owner-live"><Suspense fallback={<p className="hub-muted">Loading the live view…</p>}><FactoryApp /></Suspense></div>;
+  if (!open) return <p><button type="button" className="btn" onClick={() => setOpen(true)}>{`Open ${factory}`}</button></p>;
+  const loading = <p className="hub-muted" role="status">Loading the live view…</p>;
+  return <div className={reader ? "hub-owner-reader" : "hub-owner-live"}>{connected ? <Suspense fallback={loading}><FactoryApp factory={factory} reader={reader} /></Suspense> : loading}</div>;
 }
