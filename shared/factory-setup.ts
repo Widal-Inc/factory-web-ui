@@ -11,8 +11,15 @@ export type SetupStep = "github" | "linear" | "settings" | "claude";
 export interface SetupGithub {
   readonly state: "connected" | "expired" | "not_connected" | "unavailable";
   readonly login?: string;
+  /** GitHub's id of the account: a save names the accounts its choices were made with (SetupSave). */
+  readonly id?: number;
   /** The `<id>+<login>@users.noreply.github.com` address GitHub gives commits of a person who keeps their email private. */
   readonly noreplyEmail?: string;
+  /**
+   * When the token stops working, in milliseconds since the epoch; absent when GitHub gave it no lifetime. It
+   * cannot be renewed on the factory: after it, the person connects GitHub again.
+   */
+  readonly expiresAt?: number;
   /** Why it cannot be used, for the page; never an upstream body. */
   readonly reason?: string;
 }
@@ -21,6 +28,10 @@ export interface SetupLinear {
   /** `not_used`: the organization chose that its team does not use Linear. */
   readonly state: "connected" | "expired" | "not_connected" | "not_used" | "unavailable";
   readonly name?: string;
+  /** Linear's id of the account. */
+  readonly id?: string;
+  /** When the current token stops working (milliseconds since the epoch); the factory renews it before then. */
+  readonly expiresAt?: number;
   readonly reason?: string;
 }
 
@@ -31,16 +42,30 @@ export interface SetupSettings {
   readonly gitEmail: string;
 }
 
+/**
+ * PUT /settings: the choices, and the accounts the page showed when they were made. The factory refuses the
+ * save when either is no longer the connected one (another tab connected a different account meanwhile).
+ */
+export interface SetupSave extends SetupSettings {
+  readonly accounts: { readonly github: number; readonly linear: string | null };
+}
+
 export interface SetupStatus {
   readonly version: 1;
   readonly github: SetupGithub;
   readonly linear: SetupLinear;
   /** null until the person saved the choices */
   readonly settings: SetupSettings | null;
+  /**
+   * Saved repositories the GitHub connection no longer reaches (the organization's app lost access), rechecked
+   * at most every minute. While any is listed Setup is not ready and the next step is `settings`.
+   */
+  readonly unreachableRepositories: readonly string[];
   readonly claude: { readonly state: "signed_in" | "not_signed_in" | "unavailable" };
   /**
-   * True only when every required connection exists and the choices are saved. The factory starts no
-   * agent before this is true; it is also written to `factory-setup.json` in the state folder.
+   * True only when every required connection exists, none has expired, and the choices are saved. The factory
+   * starts no agent before this is true; it is also written to `factory-setup.json` in the state folder, and
+   * taken back there within a minute when a credential expires.
    */
   readonly ready: boolean;
   /** The first step that still needs the person. */

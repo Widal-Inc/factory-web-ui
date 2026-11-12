@@ -153,6 +153,8 @@ function GithubStep({ value, api, deps, onChange }: { value: SetupStatus; api: O
       <button type="button" className="btn" onClick={() => { run.current?.abort(); setDevice(null); setBusy(false); }}>Cancel</button></div>
       : <p><button type="button" className="btn" disabled={busy || github.state === "unavailable"} onClick={() => void connect()}>{github.state === "connected" ? "Connect a different GitHub account" : github.state === "expired" ? "Reconnect GitHub" : "Connect GitHub"}</button>{github.state === "connected" && <> <button type="button" className="btn" onClick={() => void api.githubDisconnect().then(onChange, (cause) => setError(text(cause)))}>Disconnect</button></>}</p>}
     {github.state === "connected" && <p className="hub-muted">Your agents will open pull requests as {github.login}.</p>}
+    {github.state === "connected" && github.expiresAt !== undefined && <p className="hub-muted">GitHub ends this connection at {new Date(github.expiresAt).toLocaleString()}. From then on your agents cannot use GitHub and do not start until you connect GitHub again here.</p>}
+    {github.state === "expired" && <p className="hub-muted">Your agents cannot use GitHub and do not start until you connect GitHub again.</p>}
     {error && <Problem>{error}</Problem>}</Step>;
 }
 
@@ -195,28 +197,36 @@ function ChoicesStep({ value, api, onChange }: { value: SetupStatus; api: OwnerS
       // A repository the account can no longer reach has no checkbox, so it is never kept selected or sent.
       const reachable = new Set(found.repositories.map((repo) => repo.fullName));
       const onlyTeam = found.teams.length === 1 ? found.teams[0]!.key : "";
+      // likewise a team that no longer exists is not kept selected
+      const teamOr = (key: string | null | undefined) => key && found.teams.some((t) => t.key === key) ? key : onlyTeam;
       if (selectedFor.current !== account) {
         selectedFor.current = account;
         setRepositories((settings?.repositories ?? []).filter((name) => reachable.has(name)));
         setGitName(settings?.gitName || found.proposed.gitName);
         setGitEmail(settings?.gitEmail || found.proposed.gitEmail);
-        setTeam(settings?.linearTeam || onlyTeam);
+        setTeam(teamOr(settings?.linearTeam));
         return;
       }
       setRepositories((current) => current.filter((name) => reachable.has(name)));
       setGitName((current) => current || found.proposed.gitName);
       setGitEmail((current) => current || found.proposed.gitEmail);
-      setTeam((current) => current || onlyTeam);
+      setTeam(teamOr);
     }, (cause) => { if (!controller.signal.aborted) setChoices({ state: "error", message: text(cause) }); });
     return () => controller.abort();
   }, [api, needed, account]); // eslint-disable-line react-hooks/exhaustive-deps -- settings is read only when the account changes
   async function save(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setError(null); setSaved(false);
-    try { await api.saveSettings({ repositories, linearTeam: value.linear.state === "not_used" ? null : team || null, gitName: gitName.trim(), gitEmail: gitEmail.trim() }); setSaved(true); await onChange(); } catch (cause) { setError(text(cause)); } finally { setBusy(false); }
+    // the accounts this page shows: if another tab connected a different one meanwhile, the factory refuses the save
+    // (a connected GitHub always has its id; -1 is never one, so a status without it cannot save over anything)
+    const accounts = { github: value.github.id ?? -1, linear: value.linear.state === "not_used" ? null : value.linear.id ?? null };
+    try { await api.saveSettings({ repositories, linearTeam: value.linear.state === "not_used" ? null : team || null, gitName: gitName.trim(), gitEmail: gitEmail.trim(), accounts }); setSaved(true); await onChange(); } catch (cause) { setError(text(cause)); } finally { setBusy(false); }
   }
-  const label = value.settings ? `Saved: ${value.settings.repositories.length} repositor${value.settings.repositories.length === 1 ? "y" : "ies"}${value.settings.linearTeam ? `, team ${value.settings.linearTeam}` : ""}.` : needed ? "Not saved yet." : "Connect your accounts first.";
+  const lost = value.unreachableRepositories;
+  const label = value.settings && lost.length > 0 ? "Saved, but no longer usable: choose again and save."
+    : value.settings ? `Saved: ${value.settings.repositories.length} repositor${value.settings.repositories.length === 1 ? "y" : "ies"}${value.settings.linearTeam ? `, team ${value.settings.linearTeam}` : ""}.` : needed ? "Not saved yet." : "Connect your accounts first.";
   return <Step n={value.linear.state === "not_used" ? 2 : 3} title="Choose repositories, team and git identity" state={label}>
+    {value.settings && lost.length > 0 && <Problem>The organization's GitHub App no longer reaches {lost.length === 1 ? "this saved repository" : "these saved repositories"}: {lost.join(", ")}. Your agents do not start until you save your choices again, or an administrator gives the app access again.</Problem>}
     {choices.state === "loading" && <p role="status">Loading what you can choose…</p>}{choices.state === "error" && <Problem>{choices.message}</Problem>}
     {choices.state === "ready" && <form onSubmit={(event) => void save(event)}>
       <fieldset><legend>Repositories your agents may work in</legend>{choices.value.repositories.length === 0 ? <p>The organization's GitHub App reaches no repositories for you. Ask an administrator to install it on them.</p> : choices.value.repositories.map((repo) => <label key={repo.fullName} className="hub-check"><input type="checkbox" checked={repositories.includes(repo.fullName)} onChange={(event) => setRepositories((current) => event.target.checked ? [...current, repo.fullName] : current.filter((name) => name !== repo.fullName))} /> {repo.fullName}{repo.private ? " (private)" : ""}</label>)}</fieldset>
@@ -284,17 +294,35 @@ function ClaudeStep({ value, api, deps, onChange }: { value: SetupStatus; api: O
 }
 
 /**
- * Where Linear sends the person back (`<hub origin>/linear/callback?code&state`). The code is one-time and
- * secret: the address is cleaned at once, and the code goes only to the person's own registered factory,
- * which holds the verifier it needs. The hub's own page never reads it or forwards it.
+ * Linear's callback query, handed out once for the page's life: the first call reads it and removes it from the
+ * address bar (`replace` gets the path without it); every later call answers null. "Refresh page data" mounts the
+ * callback page again, and that mount must find no code to send a second time.
  */
-export function LinearCallback({ identity, deps, search, clean }: { identity: Bootstrap["me"]; deps: SetupDeps; search: string; clean: () => void }) {
+export function callbackOnce(read: () => { pathname: string; search: string }, replace: (path: string) => void): () => string | null {
+  let taken = false;
+  return () => {
+    if (taken) return null;
+    taken = true;
+    const { pathname, search } = read();
+    if (search) replace(pathname);
+    return pathname === "/linear/callback" ? search : "";
+  };
+}
+
+/**
+ * Where Linear sends the person back (`<hub origin>/linear/callback?code&state`). The code is one-time and
+ * secret: `take` (callbackOnce) removes it from the address at once and never hands it out again, and the code
+ * goes only to the person's own registered factory, which holds the verifier it needs. The hub's own page
+ * never reads it or forwards it.
+ */
+export function LinearCallback({ identity, deps, take }: { identity: Bootstrap["me"]; deps: SetupDeps; take: () => string | null }) {
   const [result, setResult] = useState<{ state: "working" } | { state: "done"; name: string } | { state: "failed"; message: string }>({ state: "working" });
   const started = useRef(false);
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    clean();
+    const search = take();
+    if (search === null) { setResult({ state: "failed", message: "This Linear sign-in was already used on this page. Open Setup to see whether Linear is connected." }); return; }
     const params = new URLSearchParams(search);
     const code = params.get("code");
     const state = params.get("state");
@@ -311,7 +339,7 @@ export function LinearCallback({ identity, deps, search, clean }: { identity: Bo
         setResult({ state: "failed", message: error instanceof FactoryUnreachable ? "Your factory did not answer with your sign-in. Open Setup, sign in to your factory, and connect Linear again." : text(error) });
       }
     })();
-  }, [search, clean, deps, identity.person]);
+  }, [take, deps, identity.person]);
   if (result.state === "working") return <p role="status">Finishing the Linear connection…</p>;
   if (result.state === "done") return <p role="status">Linear connected as {result.name}. Returning to Setup…</p>;
   return <section role="alert" className="hub-notice"><h2>Linear was not connected</h2><p>{result.message}</p><p><a className="btn" href="/setup">Back to Setup</a></p></section>;

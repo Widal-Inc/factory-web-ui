@@ -126,7 +126,8 @@ function InviteStep({ api, canInvite, why, identity, invites, setInvites }: { ap
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // set in the effect too: StrictMode unmounts and mounts again, and a ref left false would keep the step busy
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   async function reload() { try { setInvites({ state: "ready", value: await api.invites() }); } catch (cause) { if (alive.current) setInvites({ state: "error", message: message(cause) }); } }
   async function run(action: () => Promise<string>) {
     setBusy(true); setError(null); setNote(null);

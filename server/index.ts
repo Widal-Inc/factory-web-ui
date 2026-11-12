@@ -418,7 +418,7 @@ export function createServer(
     }) : null,
     ...(factoryAuth ? { factorySetup: new FactorySetup({
       stateDir, secretsPath: options.factorySecretsPath ?? defaultSecretsPath(), hubOrigin: factoryAuth.browserOrigin,
-      apps: (identity) => factoryAuth.setupApps(identity),
+      apps: (identity) => factoryAuth.setupApps(identity), owner: factoryAuth.owner,
       claudeSignedIn: async () => (await usageLogin.signedInAccounts("claude")).length > 0,
       ...(options.factorySetupFetch ? { fetch: options.factorySetupFetch } : {}),
     }) } : {}),
@@ -436,6 +436,8 @@ export function createServer(
   const releaseFilePool = holdFilePool();
   const releaseCommandHistory = holdCommandHistory();
   core.start();
+  // renews Setup's Linear token and takes back a `ready` an expired credential no longer supports, with nobody on the Setup page
+  services.factorySetup?.start();
 
   return {
     context: socketContext(server),
@@ -454,6 +456,7 @@ export function createServer(
     },
     stop: () => {
       services.runtimeMove?.stop();
+      services.factorySetup?.stop();
       core.stop(() => {
         clearInterval(draftTimer);
         openCodeState.clear();

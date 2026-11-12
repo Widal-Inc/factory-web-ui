@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { StrictMode } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { AdminOnboarding } from "./AdminOnboarding.tsx";
 import { HubError } from "./contract.ts";
@@ -136,6 +137,19 @@ describe("Admin onboarding", () => {
     expect(text(view)).toContain("Deploying ada-factory for ada@example.com.");
     const noLinear = await mount(fakeHub({ status: { ...withGithub, usesLinear: false }, invites: [] }).api);
     expect(button(noLinear, "Invite").props.disabled).toBe(false);
+  });
+
+  it("is ready for the next invite after one, also under StrictMode's second mount", async () => {
+    const hub = fakeHub({ status: complete, invites: [] });
+    let view!: ReactTestRenderer;
+    await act(async () => { view = create(<StrictMode><AdminOnboarding api={hub.api} identity={admin} /></StrictMode>); });
+    renderers.push(view);
+    await settle();
+    await type(view, "Email", "ada@example.com");
+    await submit(view, 1);
+    expect(text(view)).toContain("Deploying ada-factory for ada@example.com.");
+    expect(button(view, "Invite").props.disabled).toBe(false);
+    expect(button(view, "Create my own factory").props.disabled).toBe(false);
   });
 
   it("says plainly that an admin or viewer invite makes no factory, and that the hub refused an incomplete setup", async () => {
