@@ -3,7 +3,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import type { SetupChoices, SetupStatus } from "../../shared/factory-setup.ts";
 import { fixtureBootstrap, fixtureOverview } from "./fixtures.ts";
 import { FactoryUnreachable, SetupApiError, type OwnerSetupApi } from "./ownerSetupApi.ts";
-import { LinearCallback, SetupPage, type SetupDeps } from "./SetupPage.tsx";
+import { callbackOnce, LinearCallback, SetupPage, type SetupDeps } from "./SetupPage.tsx";
 
 // The components talk to stand-ins for the owner factory, GitHub, Linear and Claude, with made-up canaries.
 const identity = fixtureBootstrap.me;
@@ -11,9 +11,9 @@ const renderers: ReactTestRenderer[] = [];
 beforeAll(() => { Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true }); });
 afterEach(() => { for (const renderer of renderers.splice(0)) act(() => renderer.unmount()); });
 
-const base: SetupStatus = { version: 1, github: { state: "not_connected" }, linear: { state: "not_connected" }, settings: null, claude: { state: "not_signed_in" }, ready: false, next: "github" };
+const base: SetupStatus = { version: 1, github: { state: "not_connected" }, linear: { state: "not_connected" }, settings: null, unreachableRepositories: [], claude: { state: "not_signed_in" }, ready: false, next: "github" };
 const choices: SetupChoices = { repositories: [{ fullName: "example-org/widgets", private: true }, { fullName: "example-org/docs", private: false }], teams: [{ key: "ENG", name: "Engineering" }], proposed: { gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com" } };
-const connected = { state: "connected" as const, login: "ada-dev", noreplyEmail: "4242+ada-dev@users.noreply.github.com" };
+const connected = { state: "connected" as const, login: "ada-dev", id: 4242, noreplyEmail: "4242+ada-dev@users.noreply.github.com" };
 
 function fakeOwner(state: { status: SetupStatus | Error }, overrides: Partial<OwnerSetupApi> = {}) {
   const calls: { name: string; args: unknown[] }[] = [];
@@ -154,7 +154,7 @@ describe("Setup page", () => {
   });
 
   it("saves the chosen repositories, team and git identity, prefilled from the connected account", async () => {
-    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example" }, next: "settings" as const } as SetupStatus | Error };
+    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example", id: "lin-user-1" }, next: "settings" as const } as SetupStatus | Error };
     const saved: unknown[] = [];
     const owner = fakeOwner(state, { saveSettings: async (settings) => { saved.push(settings); state.status = { ...(state.status as SetupStatus), settings, next: "claude" }; return settings; } });
     const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
@@ -165,28 +165,28 @@ describe("Setup page", () => {
     await act(async () => { boxes[0]!.props.onChange({ target: { checked: true } }); });
     await act(async () => { view.root.findByType("select").props.onChange({ target: { value: "ENG" } }); });
     await act(async () => { view.root.findAllByType("form")[0]!.props.onSubmit({ preventDefault() {} }); }); await settle();
-    expect(saved).toEqual([{ repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com" }]);
+    expect(saved).toEqual([{ repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com", accounts: { github: 4242, linear: "lin-user-1" } }]);
     expect(text(view)).toContain("Saved: 1 repository, team ENG.");
   });
 
   it("drops a saved repository the account can no longer reach, so the choices can still be saved", async () => {
     const settings = { repositories: ["example-org/widgets", "example-org/retired"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com" };
-    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example" }, settings, next: "claude" as const } as SetupStatus | Error };
+    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example", id: "lin-user-1" }, settings, next: "claude" as const } as SetupStatus | Error };
     const saved: unknown[] = [];
     const owner = fakeOwner(state, { saveSettings: async (next) => { saved.push(next); return next; } });
     const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
     expect(view.root.findAllByProps({ type: "checkbox" }).map((box) => box.props.checked)).toEqual([true, false]);
     await act(async () => { view.root.findAllByType("form")[0]!.props.onSubmit({ preventDefault() {} }); }); await settle();
-    expect(saved).toEqual([{ ...settings, repositories: ["example-org/widgets"] }]);
+    expect(saved).toEqual([{ ...settings, repositories: ["example-org/widgets"], accounts: { github: 4242, linear: "lin-user-1" } }]);
   });
 
   it("starts another GitHub account from its own choices, not the previous account's", async () => {
     const previous = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com" };
-    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example" }, settings: previous, next: "claude" as const } as SetupStatus | Error };
+    const state = { status: { ...base, github: connected, linear: { state: "connected" as const, name: "Ada Example", id: "lin-user-1" }, settings: previous, next: "claude" as const } as SetupStatus | Error };
     const saved: unknown[] = [];
     const owner = fakeOwner(state, {
       saveSettings: async (next) => { saved.push(next); return next; },
-      githubDisconnect: async () => { state.status = { ...(state.status as SetupStatus), github: { state: "connected", login: "ada-other", noreplyEmail: "77+ada-other@users.noreply.github.com" }, settings: null, next: "settings" }; },
+      githubDisconnect: async () => { state.status = { ...(state.status as SetupStatus), github: { state: "connected", login: "ada-other", id: 77, noreplyEmail: "77+ada-other@users.noreply.github.com" }, settings: null, next: "settings" }; },
       choices: async () => ({ repositories: [{ fullName: "example-org/docs", private: false }], teams: choices.teams, proposed: { gitName: "Ada Other", gitEmail: "77+ada-other@users.noreply.github.com" } }),
     });
     const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
@@ -194,7 +194,7 @@ describe("Setup page", () => {
     expect(view.root.findAllByProps({ type: "checkbox" }).map((box) => box.props.checked)).toEqual([false]);
     await act(async () => { view.root.findAllByProps({ type: "checkbox" })[0]!.props.onChange({ target: { checked: true } }); });
     await act(async () => { view.root.findAllByType("form")[0]!.props.onSubmit({ preventDefault() {} }); }); await settle();
-    expect(saved).toEqual([{ repositories: ["example-org/docs"], linearTeam: "ENG", gitName: "Ada Other", gitEmail: "77+ada-other@users.noreply.github.com" }]);
+    expect(saved).toEqual([{ repositories: ["example-org/docs"], linearTeam: "ENG", gitName: "Ada Other", gitEmail: "77+ada-other@users.noreply.github.com", accounts: { github: 77, linear: "lin-user-1" } }]);
   });
 
   it("does not offer the Claude sign-in before the choices are saved", async () => {
@@ -278,6 +278,37 @@ describe("Setup page", () => {
     expect(text(second)).toContain("did not finish");
   });
 
+  it("says when the GitHub connection ends, and that agents wait for a reconnect once it has", async () => {
+    const ends = Date.UTC(2026, 10, 12, 18, 0);
+    const live = await mount(<SetupPage identity={identity} deps={deps(fakeOwner({ status: { ...base, github: { ...connected, expiresAt: ends }, next: "linear" } }).api).value} />);
+    expect(text(live)).toContain(`GitHub ends this connection at ${new Date(ends).toLocaleString()}`);
+    const expired = await mount(<SetupPage identity={identity} deps={deps(fakeOwner({ status: { ...base, github: { state: "expired", login: "ada-dev", id: 4242, expiresAt: ends }, next: "github" } }).api).value} />);
+    expect(text(expired)).toContain("do not start until you connect GitHub again");
+    expect(text(expired)).toContain("Reconnect GitHub");
+  });
+
+  it("shows saved repositories the GitHub App no longer reaches, never as plainly saved", async () => {
+    const settings = { repositories: ["example-org/widgets", "example-org/retired"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.com" };
+    const owner = fakeOwner({ status: { ...base, github: connected, linear: { state: "connected", name: "Ada Example", id: "lin-user-1" }, settings, unreachableRepositories: ["example-org/retired"], claude: { state: "signed_in" }, ready: false, next: "settings" } });
+    const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
+    expect(text(view)).toContain("no longer reaches this saved repository: example-org/retired");
+    expect(text(view)).toContain("Saved, but no longer usable");
+    expect(text(view)).not.toContain("Saved: 2 repositories");
+    expect(text(view)).not.toContain("Setup is complete");
+  });
+
+  it("does not keep a saved Linear team that no longer exists", async () => {
+    const settings = { repositories: ["example-org/widgets"], linearTeam: "GONE", gitName: "Ada Example", gitEmail: "ada@example.com" };
+    const two = { ...choices, teams: [{ key: "ENG", name: "Engineering" }, { key: "OPS", name: "Operations" }] };
+    const owner = fakeOwner({ status: { ...base, github: connected, linear: { state: "connected", name: "Ada Example", id: "lin-user-1" }, settings, next: "claude" } }, { choices: async () => two });
+    const view = await mount(<SetupPage identity={identity} deps={deps(owner.api).value} />);
+    expect(view.root.findByType("select").props.value).toBe("");
+    // with a single team left, that one is proposed instead
+    const single = fakeOwner({ status: { ...base, github: connected, linear: { state: "connected", name: "Ada Example", id: "lin-user-1" }, settings, next: "claude" } });
+    const again = await mount(<SetupPage identity={identity} deps={deps(single.api).value} />);
+    expect(again.root.findByType("select").props.value).toBe("ENG");
+  });
+
   it("is not ready until every part is, however the status is worded", async () => {
     const view = await mount(<SetupPage identity={identity} deps={deps(fakeOwner({ status: { ...base, github: connected, linear: { state: "connected", name: "Ada" }, settings: null, ready: false } }).api).value} />);
     expect(text(view)).not.toContain("Setup is complete");
@@ -286,12 +317,15 @@ describe("Setup page", () => {
 
 describe("Linear callback page", () => {
   const search = "?code=linear-code-canary&state=state-1";
+  // the address bar as the hub page sees it on Linear's return
+  const address = (query: string) => { const replaced: string[] = []; return { replaced, take: callbackOnce(() => ({ pathname: "/linear/callback", search: query }), (path) => { replaced.push(path); }) }; };
+  const once = (query: string) => address(query).take;
   it("removes the one-time code from the address, sends it only to the person's own factory and returns to Setup", async () => {
     const owner = fakeOwner({ status: base });
     const setup = deps(owner.api);
-    let cleaned = 0;
-    const view = await mount(<LinearCallback identity={identity} deps={setup.value} search={search} clean={() => { cleaned += 1; }} />);
-    expect(cleaned).toBe(1);
+    const bar = address(search);
+    const view = await mount(<LinearCallback identity={identity} deps={setup.value} take={bar.take} />);
+    expect(bar.replaced).toEqual(["/linear/callback"]);
     expect(owner.calls.find((call) => call.name === "linearCallback")!.args).toEqual(["linear-code-canary", "state-1"]);
     expect(setup.navigations).toEqual(["/setup"]);
     expect(text(view)).not.toContain("linear-code-canary");
@@ -301,15 +335,34 @@ describe("Linear callback page", () => {
   it("uses the code once even when the page renders again", async () => {
     const owner = fakeOwner({ status: base });
     const setup = deps(owner.api);
-    const view = await mount(<LinearCallback identity={identity} deps={setup.value} search={search} clean={() => {}} />);
-    await act(async () => { view.update(<LinearCallback identity={identity} deps={setup.value} search="" clean={() => {}} />); }); await settle();
+    const take = once(search);
+    const view = await mount(<LinearCallback identity={identity} deps={setup.value} take={take} />);
+    await act(async () => { view.update(<LinearCallback identity={identity} deps={setup.value} take={take} />); }); await settle();
     expect(owner.count("linearCallback")).toBe(1);
+  });
+
+  it("never sends the code again when page data is refreshed and the callback page mounts anew", async () => {
+    let sent = 0;
+    const owner = fakeOwner({ status: base }, { linearCallback: async () => { sent += 1; throw new SetupApiError(502, "linear_refused", "Linear did not accept the sign-in. Connect Linear again."); } });
+    const take = once(search);
+    const first = await mount(<LinearCallback identity={identity} deps={deps(owner.api).value} take={take} />);
+    expect(text(first)).toContain("did not accept");
+    renderers.splice(renderers.indexOf(first), 1);
+    act(() => first.unmount());
+    const second = await mount(<LinearCallback identity={identity} deps={deps(owner.api).value} take={take} />);
+    expect(sent).toBe(1);
+    expect(text(second)).toContain("already used");
+    // an address without a query is left alone; another page's query is never treated as Linear's
+    const plain = address("");
+    expect(plain.take()).toBe("");
+    expect(plain.replaced).toEqual([]);
+    expect(callbackOnce(() => ({ pathname: "/setup", search: "?code=x" }), () => {})()).toBe("");
   });
 
   it("asks nothing of the factory when Linear was refused or returned no code", async () => {
     for (const query of ["?error=access_denied&state=s", "?state=s", "", "?code=c"]) {
       const owner = fakeOwner({ status: base });
-      const view = await mount(<LinearCallback identity={identity} deps={deps(owner.api).value} search={query} clean={() => {}} />);
+      const view = await mount(<LinearCallback identity={identity} deps={deps(owner.api).value} take={once(query)} />);
       expect(owner.calls, query).toEqual([]);
       expect(text(view), query).toContain("Linear was not connected");
     }
@@ -317,16 +370,16 @@ describe("Linear callback page", () => {
 
   it("shows a stale or unauthorized callback plainly and offers the way back", async () => {
     const stale = fakeOwner({ status: base }, { linearCallback: async () => { throw new SetupApiError(403, "stale_callback", "This Linear link expired or was not started here. Connect Linear again."); } });
-    const view = await mount(<LinearCallback identity={identity} deps={deps(stale.api).value} search={search} clean={() => {}} />);
+    const view = await mount(<LinearCallback identity={identity} deps={deps(stale.api).value} take={once(search)} />);
     expect(text(view)).toContain("expired or was not started here");
     expect(view.root.findAllByType("a").some((a) => a.props.href === "/setup")).toBe(true);
     const signedOut = fakeOwner({ status: base }, { linearCallback: async () => { throw new FactoryUnreachable(); } });
-    expect(text(await mount(<LinearCallback identity={identity} deps={deps(signedOut.api).value} search={search} clean={() => {}} />))).toContain("sign in to your factory");
+    expect(text(await mount(<LinearCallback identity={identity} deps={deps(signedOut.api).value} take={once(search)} />))).toContain("sign in to your factory");
   });
 
   it("never posts the code when the person has no ready factory", async () => {
     const owner = fakeOwner({ status: base });
-    const view = await mount(<LinearCallback identity={identity} deps={deps(owner.api, { overview: async () => ({ ...fixtureOverview, factories: [], live: [] }) }).value} search={search} clean={() => {}} />);
+    const view = await mount(<LinearCallback identity={identity} deps={deps(owner.api, { overview: async () => ({ ...fixtureOverview, factories: [], live: [] }) }).value} take={once(search)} />);
     expect(owner.calls).toEqual([]);
     expect(text(view)).toContain("not ready");
   });

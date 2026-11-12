@@ -112,7 +112,7 @@ describe("owner Setup", () => {
     const record = readFileSync(join(dir, "factory-setup.json"), "utf8");
     expect(record).not.toContain(CANARY_GITHUB);
     expect(record).toContain("ada-dev");
-    expect((await setup.status(identity())).github).toEqual({ state: "connected", login: "ada-dev", noreplyEmail: "4242+ada-dev@users.noreply.github.com", expiresAt: clock + 28_800_000 });
+    expect((await setup.status(identity())).github).toEqual({ state: "connected", login: "ada-dev", id: 4242, noreplyEmail: "4242+ada-dev@users.noreply.github.com", expiresAt: clock + 28_800_000 });
   });
 
   it("slows down when GitHub says so, reports a denial and an expired code, and refuses a poll nobody started", async () => {
@@ -219,7 +219,7 @@ describe("owner Setup", () => {
     expect(choices.repositories).toEqual([{ fullName: "example-org/docs", private: false }, { fullName: "example-org/widgets", private: true }]);
     expect(choices.teams).toEqual([{ key: "ENG", name: "Engineering" }]);
     expect(choices.proposed).toEqual({ gitName: "Ada Example", gitEmail: "4242+ada-dev@users.noreply.github.com" });
-    const good = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.test" };
+    const good = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.test", accounts: { github: 4242, linear: "lin-user-1" } };
     await expect(setup.saveSettings(identity(), { ...good, repositories: ["example-org/secret"] })).rejects.toMatchObject({ code: "repository_not_available" });
     await expect(setup.saveSettings(identity(), { ...good, repositories: [] })).rejects.toMatchObject({ code: "invalid_repositories" });
     await expect(setup.saveSettings(identity(), { ...good, linearTeam: "OPS" })).rejects.toMatchObject({ code: "invalid_team" });
@@ -232,7 +232,7 @@ describe("owner Setup", () => {
     await connectGithub();
     await (await connectLinear()).done();
     expect((await setup.status(identity())).next).toBe("settings");
-    await setup.saveSettings(identity(), { repositories: ["example-org/docs"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.test" });
+    await setup.saveSettings(identity(), { repositories: ["example-org/docs"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.test", accounts: { github: 4242, linear: "lin-user-1" } });
     expect(await setup.status(identity())).toMatchObject({ ready: false, next: "claude", claude: { state: "not_signed_in" } });
     expect(JSON.parse(readFileSync(join(dir, "factory-setup.json"), "utf8")).ready).toBe(false);
     claude = true;
@@ -247,11 +247,11 @@ describe("owner Setup", () => {
     await connectGithub();
     claude = true;
     expect((await setup.status(identity())).next).toBe("settings");
-    await setup.saveSettings(identity(), { repositories: ["example-org/docs"], gitName: "Ada Example", gitEmail: "ada@example.test" });
+    await setup.saveSettings(identity(), { repositories: ["example-org/docs"], gitName: "Ada Example", gitEmail: "ada@example.test", accounts: { github: 4242, linear: null } });
     expect(await setup.status(identity())).toMatchObject({ ready: true, linear: { state: "not_used" }, settings: { linearTeam: null } });
   });
 
-  const good = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.test" };
+  const good = { repositories: ["example-org/widgets"], linearTeam: "ENG", gitName: "Ada Example", gitEmail: "ada@example.test", accounts: { github: 4242, linear: "lin-user-1" } };
   async function completeAsAda() {
     await connectGithub();
     await (await connectLinear()).done();
@@ -265,16 +265,19 @@ describe("owner Setup", () => {
     // the same account connecting again keeps its choices
     up.resetPolls();
     await connectGithub();
-    expect(await setup.status(identity())).toMatchObject({ ready: true, settings: good });
+    const { accounts: _accounts, ...saved } = good;
+    expect(await setup.status(identity())).toMatchObject({ ready: true, settings: saved });
     // another account has none: the repositories and identity were chosen for the first
     up.resetPolls();
     up.state.githubUser = { login: "grace-dev", id: 9999, name: "Grace Example", email: null };
     up.state.repositories = [{ full_name: "other-org/tools", private: false }];
     await connectGithub();
     const after = await setup.status(identity());
-    expect(after).toMatchObject({ ready: false, settings: null, next: "settings", github: { login: "grace-dev" } });
+    expect(after).toMatchObject({ ready: false, settings: null, next: "settings", github: { login: "grace-dev", id: 9999 } });
     expect(JSON.parse(readFileSync(join(dir, "factory-setup.json"), "utf8")).ready).toBe(false);
-    await expect(setup.saveSettings(identity(), good)).rejects.toMatchObject({ code: "repository_not_available" });
+    // a second tab still showing the first account cannot save its choices under the new one
+    await expect(setup.saveSettings(identity(), good)).rejects.toMatchObject({ status: 409, code: "account_changed" });
+    await expect(setup.saveSettings(identity(), { ...good, accounts: { github: 9999, linear: "lin-user-1" } })).rejects.toMatchObject({ code: "repository_not_available" });
     expect((await setup.choices(identity())).proposed.gitName).toBe("Grace Example");
   });
 
@@ -287,7 +290,43 @@ describe("owner Setup", () => {
     expect(await setup.status(identity())).toMatchObject({ ready: true });
     up.state.linearUser = { id: "lin-user-2", name: "Grace Example" };
     await (await connectLinear()).done();
-    expect(await setup.status(identity())).toMatchObject({ ready: false, settings: null, next: "settings", linear: { name: "Grace Example" } });
+    expect(await setup.status(identity())).toMatchObject({ ready: false, settings: null, next: "settings", linear: { name: "Grace Example", id: "lin-user-2" } });
+    await expect(setup.saveSettings(identity(), good)).rejects.toMatchObject({ code: "account_changed" });
+    await expect(setup.saveSettings(identity(), { ...good, accounts: { github: 4242, linear: null } })).rejects.toMatchObject({ code: "account_changed" });
+    await expect(setup.saveSettings(identity(), { ...good, accounts: undefined })).rejects.toMatchObject({ status: 400, code: "invalid_accounts" });
+    expect(await setup.saveSettings(identity(), { ...good, accounts: { github: 4242, linear: "lin-user-2" } })).toMatchObject({ linearTeam: "ENG" });
+  });
+
+  it("reports saved repositories the GitHub App no longer reaches, and is not ready until the choices are saved again", async () => {
+    await completeAsAda();
+    up.state.repositories = [{ full_name: "example-org/docs", private: false }];
+    // the list is read again at most every minute
+    expect((await setup.status(identity())).ready).toBe(true);
+    clock += 61_000;
+    const status = await setup.status(identity());
+    expect(status).toMatchObject({ ready: false, next: "settings", unreachableRepositories: ["example-org/widgets"], settings: { repositories: ["example-org/widgets"] } });
+    expect(record().ready).toBe(false);
+    // GitHub not answering keeps the last answer: it neither clears nor invents a lost repository
+    const original = up.fetcher;
+    const down = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: (who) => f.auth.setupApps(who), claudeSignedIn: async () => true, fetch: (async (input: string | URL | Request, init?: RequestInit) => String(input).startsWith(GITHUB_API) ? new Response("{}", { status: 502 }) : original(input, init)) as typeof fetch, now: () => clock });
+    expect(await down.status(identity())).toMatchObject({ ready: true, unreachableRepositories: [] });
+    expect((await setup.status(identity())).unreachableRepositories).toEqual(["example-org/widgets"]);
+    await setup.saveSettings(identity(), { ...good, repositories: ["example-org/docs"] });
+    expect(await setup.status(identity())).toMatchObject({ ready: true, unreachableRepositories: [] });
+  });
+
+  it("removes the previous owner's credentials and record when the factory changes owner", async () => {
+    await completeAsAda();
+    writeFileSync(secrets, `${readFileSync(secrets, "utf8")}OTHER_SETTING=kept\n`);
+    // the factory is redeployed for another owner: the hub confirms her, and the state folder is the same
+    const grace = { person: "grace@example.test", token: "fixture-identity", expires: Number.MAX_SAFE_INTEGER };
+    const hers = new FactorySetup({ stateDir: dir, secretsPath: secrets, hubOrigin: f.options.hubOrigin, apps: async () => ({ githubClientId: "Iv1.fixture-github", linearClientId: "fixture-linear-client" }), claudeSignedIn: async () => true, fetch: up.fetcher, now: () => clock });
+    expect(await hers.status(grace)).toMatchObject({ ready: false, github: { state: "not_connected" }, linear: { state: "not_connected" }, settings: null });
+    const file = readFileSync(secrets, "utf8");
+    for (const name of ["GH_TOKEN", "LINEAR_ACCESS_TOKEN", "LINEAR_REFRESH_TOKEN"]) expect(file).not.toContain(`${name}=`);
+    expect(file).toContain("OTHER_SETTING=kept\n");
+    expect(record()).toMatchObject({ owner: "grace@example.test", ready: false });
+    expect(record().linear).toBeUndefined();
   });
 
   it("reports and persists one answer when a status races a Linear renewal, and loses neither the renewal nor a settings write", async () => {

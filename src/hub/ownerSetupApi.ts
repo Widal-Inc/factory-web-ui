@@ -2,7 +2,7 @@
 // Every secret the person enters or receives (a Claude code, a Linear code) goes here and nowhere else:
 // never to the hub, never into a log, a URL the app keeps or browser storage. The transport is the
 // verified direct one: credentialed, uncached, no redirects, and only the registered owner origin.
-import type { GithubDevicePoll, GithubDeviceStart, LinearStart, SetupChoices, SetupSettings, SetupStatus } from "../../shared/factory-setup.ts";
+import type { GithubDevicePoll, GithubDeviceStart, LinearStart, SetupChoices, SetupSave, SetupSettings, SetupStatus } from "../../shared/factory-setup.ts";
 import type { UsageLoginFollowed, UsageLoginPrompt } from "../../shared/usage-login.ts";
 import { directTransport } from "./directTransport.ts";
 
@@ -32,9 +32,11 @@ function status(value: unknown): SetupStatus {
   const repositories = settings ? (Array.isArray(settings["repositories"]) ? settings["repositories"].map(str) : unsupported()) : [];
   return {
     version: 1,
-    github: { state: oneOf(github["state"], ["connected", "expired", "not_connected", "unavailable"] as const), ...(github["login"] !== undefined ? { login: str(github["login"]) } : {}), ...(github["noreplyEmail"] !== undefined ? { noreplyEmail: str(github["noreplyEmail"]) } : {}), ...(github["expiresAt"] !== undefined ? { expiresAt: num(github["expiresAt"]) } : {}), ...(github["reason"] !== undefined ? { reason: str(github["reason"]) } : {}) },
-    linear: { state: oneOf(linear["state"], ["connected", "expired", "not_connected", "not_used", "unavailable"] as const), ...(linear["name"] !== undefined ? { name: str(linear["name"]) } : {}), ...(linear["expiresAt"] !== undefined ? { expiresAt: num(linear["expiresAt"]) } : {}), ...(linear["reason"] !== undefined ? { reason: str(linear["reason"]) } : {}) },
+    github: { state: oneOf(github["state"], ["connected", "expired", "not_connected", "unavailable"] as const), ...(github["login"] !== undefined ? { login: str(github["login"]) } : {}), ...(github["id"] !== undefined ? { id: num(github["id"]) } : {}), ...(github["noreplyEmail"] !== undefined ? { noreplyEmail: str(github["noreplyEmail"]) } : {}), ...(github["expiresAt"] !== undefined ? { expiresAt: num(github["expiresAt"]) } : {}), ...(github["reason"] !== undefined ? { reason: str(github["reason"]) } : {}) },
+    linear: { state: oneOf(linear["state"], ["connected", "expired", "not_connected", "not_used", "unavailable"] as const), ...(linear["name"] !== undefined ? { name: str(linear["name"]) } : {}), ...(linear["id"] !== undefined ? { id: str(linear["id"]) } : {}), ...(linear["expiresAt"] !== undefined ? { expiresAt: num(linear["expiresAt"]) } : {}), ...(linear["reason"] !== undefined ? { reason: str(linear["reason"]) } : {}) },
     settings: settings ? { repositories, linearTeam: settings["linearTeam"] === null ? null : str(settings["linearTeam"]), gitName: str(settings["gitName"]), gitEmail: str(settings["gitEmail"]) } : null,
+    // absent from a factory older than this page: nothing reported unreachable
+    unreachableRepositories: body["unreachableRepositories"] === undefined ? [] : Array.isArray(body["unreachableRepositories"]) ? body["unreachableRepositories"].map(str) : unsupported(),
     claude: { state: oneOf(obj(body["claude"])["state"], ["signed_in", "not_signed_in", "unavailable"] as const) },
     ready: bool(body["ready"]), next,
   };
@@ -74,7 +76,8 @@ export interface OwnerSetupApi {
   linearStart(): Promise<LinearStart>;
   linearCallback(code: string, state: string): Promise<{ name: string }>;
   linearDisconnect(): Promise<void>;
-  saveSettings(settings: SetupSettings): Promise<SetupSettings>;
+  /** The choices and the accounts the page showed: the factory refuses them for any other account. */
+  saveSettings(settings: SetupSave): Promise<SetupSettings>;
   claudeStart(replace: boolean): Promise<UsageLoginFollowed>;
   claudePrompt(login: string, signal?: AbortSignal): Promise<UsageLoginPrompt>;
   claudeCode(login: string, code: string): Promise<void>;
