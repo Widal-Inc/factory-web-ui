@@ -106,7 +106,7 @@ describe("independent bridge successor ownership", () => {
     if (mismatch === "newer") await expect(internals.prepare(runtime)).rejects.toMatchObject({ action: "bridge_conflict" });
     else await expect(internals.prepare(runtime)).rejects.toThrow(mismatch === "pid" ? "Bridge process verification failed" : "Setup cancelled");
     remote.present = false; remote.bundle = "bundle-ready";
-    await expect(internals.prepare(runtime)).rejects.toThrow("This PC's own Ovis is not running");
+    await expect(internals.prepare(runtime)).rejects.toThrow("This PC's own Widal Factory is not running");
   });
 
   it("retains the independent owner when a compatible successor reports a different PID", async () => {
@@ -123,7 +123,7 @@ describe("independent bridge successor ownership", () => {
     }));
     await expect(internals.prepare(runtime)).rejects.toThrow("Bridge process verification failed");
     remote.present = false; remote.bundle = "bundle-ready";
-    await expect(internals.prepare(runtime)).rejects.toThrow("This PC's own Ovis is not running");
+    await expect(internals.prepare(runtime)).rejects.toThrow("This PC's own Widal Factory is not running");
     expect(commands.some(script => script.includes("nohup") || script.includes("mkdir"))).toBe(false);
   });
 
@@ -143,7 +143,7 @@ describe("independent bridge successor ownership", () => {
     verify.mockRejectedValueOnce(new Error("temporary SSH forward failure"));
     await expect(internals.prepare(runtime)).rejects.toThrow("temporary SSH forward failure");
     remote.present = false; remote.bundle = bundle;
-    await expect(internals.prepare(runtime)).rejects.toThrow("This PC's own Ovis is not running");
+    await expect(internals.prepare(runtime)).rejects.toThrow("This PC's own Widal Factory is not running");
     expect(commands.some(script => script.includes("nohup") || script.includes("mkdir"))).toBe(false);
   });
 

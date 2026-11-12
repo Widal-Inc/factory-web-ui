@@ -12,9 +12,11 @@ const WASM = Buffer.concat([Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x0
 // source into an owned fixture rather than replacing the checkout's built client.
 async function fixture(check: (serve: (path: string, encoding?: string | null) => Promise<Response>) => Promise<void>) {
   const root = mkdtempSync(join(tmpdir(), "herdr-static-encoding-"));
-  mkdirSync(join(root, "server")); mkdirSync(join(root, "dist", "assets"), { recursive: true });
+  mkdirSync(join(root, "server")); mkdirSync(join(root, "shared")); mkdirSync(join(root, "dist", "assets"), { recursive: true });
   const body = 'console.log("synthetic static file");\n';
   writeFileSync(join(root, "server", "static.ts"), readFileSync(join(import.meta.dir, "static.ts")));
+  // static.ts reads the product name from the shared brand config
+  for (const name of ["brand.ts", "brand.json"]) writeFileSync(join(root, "shared", name), readFileSync(join(import.meta.dir, "..", "shared", name)));
   writeFileSync(join(root, "dist", "index.html"), "<html>fixture shell</html>");
   writeFileSync(join(root, "dist", "sw.js"), body);
   writeFileSync(join(root, "dist", "assets", "legacy.js"), body);
