@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "../shared/brand.ts";
 import { brandIndex, brandManifest, brandWorker, renderBrandMetadata } from "./brand-metadata.ts";
+import { renderAll } from "./generate-themes.ts";
 
 const root = join(import.meta.dir, "..");
 const other = { ...BRAND, name: 'Example & <Lab> "Tools"', shortName: "Example", theme: "amber", logo: "/brand/example.svg", icon: "/example-192.png", largeIcon: "/example-512.png", maskableIcon: "/example-maskable.png", badge: "/example-badge.png", favicon: "/example-favicon.png", appleTouchIcon: "/example-touch.png" };
@@ -26,4 +27,13 @@ it("switches static identity from a second config and escapes HTML", () => {
   expect(worker).toContain(JSON.stringify(other.name));
   expect(worker).toContain("const example = 'user content';");
   expect(() => brandWorker("", other)).toThrow("exactly one");
+});
+
+it("selects the brand's theme block for static browser and install colours", () => {
+  const output = renderAll(root, other.theme);
+  const manifest = JSON.parse(output.find(({ path }) => path === "public/manifest.webmanifest")!.content);
+  expect(manifest.theme_color).toBe("#181613");
+  expect(manifest.background_color).toBe("#12100e");
+  expect(output.find(({ path }) => path === "index.html")!.content).toContain('name="theme-color" content="#181613"');
+  expect(() => renderAll(root, "unknown-brand-theme")).toThrow();
 });

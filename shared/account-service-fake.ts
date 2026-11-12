@@ -1,4 +1,3 @@
-import { BRAND } from "./brand.ts";
 /**
  * The account service API (docs/account.md, "Account service API") in memory, for tests of the PC
  * and the apps. Not a service: no provider behind sign-in, no push, no persistence. `signInAs` says who
@@ -25,7 +24,7 @@ export const ACCOUNT_REQUESTS_PER_WINDOW = 600;
 export const DEVICE_CODE_TTL_S = 900;
 export const DEVICE_POLL_S = 5;
 /** What every push ring says; which device or PC it is about, the app learns from its PCs. */
-export const ACCOUNT_RING = { pane_id: null, title: `${BRAND.name}`, body: `Your ${BRAND.name} account has news`, tag: "ovis-account" } as const;
+export const ACCOUNT_RING = { pane_id: null, title: "Ovis", body: "Your Ovis account has news", tag: "ovis-account" } as const;
 
 export interface FakeRing { account: string; endpoint: string; payload: typeof ACCOUNT_RING }
 export const SIGNIN_CODE_TTL_MS = 60_000;

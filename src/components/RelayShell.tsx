@@ -1,4 +1,3 @@
-import { BRAND } from "../../shared/brand.ts";
 import "./RelayShell.css";
 
 import { useState } from "react";
@@ -162,7 +161,7 @@ export function RelayShell({ state, pcStatus, onCheckPcs, scoped, iosTab, onPair
   return (
     <main className="relay-shell-screen" data-relay-state={stateName} {...(account ? { "data-account-state": account.kind } : {})}>
       <div className={signInFirst || state.kind === "compare" ? "relay-shell account-centered" : "relay-shell"}>
-        <img src={BRAND.icon} alt="" width="44" height="44" className="relay-shell-mark" />
+        <img src="/icons/icon-192.png?v=sheep1" alt="" width="44" height="44" className="relay-shell-mark" />
         {account?.kind === "signed-in" && <AccountPcs view={account} {...(pcStatus ? { status: pcStatus } : {})} {...(onCheckPcs ? { onCheck: onCheckPcs } : {})} {...(onJoin ? { onJoin } : {})} {...(onSignOut ? { onSignOut } : {})} {...(onLeave ? { onLeave } : {})} />}
         {account?.kind === "signing-in" && (
           <>

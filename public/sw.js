@@ -192,7 +192,7 @@ async function relayResourceResponse(event, target) {
   const { request } = event;
   const scope = new URL(self.registration.scope).pathname;
   if (!(await askedByThisPc(event, scope))) {
-    return new Response(`Open this file from ${BRAND.name}.`, { status: 403, headers: { "cache-control": "no-store" } });
+    return new Response("Open this file from Ovis.", { status: 403, headers: { "cache-control": "no-store" } });
   }
   const windows = await self.clients.matchAll({ type: "window" });
   for (const client of windows) {
@@ -261,7 +261,7 @@ async function relayResourceResponse(event, target) {
     });
     if (answer) return answer;
   }
-  return new Response(`Open this PC in ${BRAND.name} to load its files.`, { status: 503, headers: { "cache-control": "no-store" } });
+  return new Response("Open this PC in Ovis to load its files.", { status: 503, headers: { "cache-control": "no-store" } });
 }
 
 self.addEventListener("fetch", (event) => {

@@ -952,7 +952,7 @@ export function createPushService(options: PushServiceOptions): PushService {
       // its own tag per enrollment: a second delivery of the same event replaces the first instead of adding to it
       const others = [...store().values()].filter((subscription) => subscription.device_id !== event.device_id
         && !(subscription.browser_keys ?? []).some((key) => origin.includes(key)));
-      await broadcast({ pane_id: null, title: `${BRAND.name}`, body: `New device paired: ${event.label}`, tag: `herdr-device-paired-${event.event_id}` }, "high", others);
+      await broadcast({ pane_id: null, title: "Ovis", body: `New device paired: ${event.label}`, tag: `herdr-device-paired-${event.event_id}` }, "high", others);
     },
 
     seed(panes, machineId = "local", machineName, serverId) {

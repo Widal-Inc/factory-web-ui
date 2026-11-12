@@ -1,4 +1,5 @@
 /** The real telemetry UI and local API, with a fixture-only transport. Run after `bun run build`. */
+import { brandedExpected } from "./brand-test-helpers.ts";
 import "./test-herdr.ts"; // a herdr session of its own: the server never reads the user's
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -222,4 +223,3 @@ if (import.meta.main) {
   try { await checkTelemetrySettings(browser); }
   finally { await browser.close(); }
 }
-import { brandedExpected } from "./brand-test-helpers.ts";

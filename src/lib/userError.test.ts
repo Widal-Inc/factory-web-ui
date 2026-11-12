@@ -1,4 +1,6 @@
 import { brandedExpected } from "../../scripts/brand-test-helpers.ts";
+import { OWN_UPDATE_OFFER } from "../../shared/machines.ts";
+import { BRAND } from "../../shared/brand.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { ApiError, fetchSession } from "./api.ts";
 import { withChatReadDeadline } from "./chatReadDeadline.ts";
@@ -85,6 +87,12 @@ describe("saysHerdrAway", () => {
 });
 
 describe("machineErrorText", () => {
+  it("brands the legacy offer prefix while preserving the discriminator and remote detail", () => {
+    const original = `${OWN_UPDATE_OFFER} v0.4.1: project Ovis research`;
+    expect(machineErrorText(original, (key) => key)).toBe(`This PC runs its own ${BRAND.name} v0.4.1: project Ovis research`);
+    expect(OWN_UPDATE_OFFER).toBe("This PC runs its own Ovis");
+    expect(machineErrorText("Project Ovis research", (key) => key)).toBe("Project Ovis research");
+  });
   const inKorean = (key: string) => translate("ko", key);
 
   it("shows the server's sentences for an unusable PC answer in the UI language", () => {

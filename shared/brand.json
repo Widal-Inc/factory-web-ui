@@ -3,7 +3,7 @@
   "shortName": "Factory",
   "description": "Your factory's agents, conversations and terminals in one web app.",
   "theme": "codex",
-  "logo": "/brand/mark.svg",
+  "logo": "/brand/mark.svg?v=factory1",
   "iconSource": "public/brand/mark.svg",
   "icon": "/icons/icon-192.png?v=factory1",
   "largeIcon": "/icons/icon-512.png?v=factory1",

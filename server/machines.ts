@@ -151,7 +151,7 @@ const INSTALL_FROM_CARD = `This PC needs ${BRAND.name} installed again over SSH,
 export const OWN_UPDATES_AT_ONCE = 4;
 /** a setup job's phases once it has ended */
 const TERMINAL = new Set<SetupJob["phase"]>(["connected", "failed", "cancelled"]);
-const RELAY_PC_UPDATES = `A PC added through the relay runs its own ${BRAND.name}, which updates itself: use Update on its card.`;
+const RELAY_PC_UPDATES = "A PC added through the relay runs its own Ovis, which updates itself: use Update on its card.";
 const JOBS_FULL = "Finish or cancel the current connection jobs first";
 /** connection jobs (setups and bridge updates) that may run at once */
 const SETUP_JOBS_AT_ONCE = 4;

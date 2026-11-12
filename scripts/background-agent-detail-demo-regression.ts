@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { brandedExpected } from "./brand-test-helpers.ts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -494,4 +495,3 @@ try {
   if (evidence) writeFileSync(join(evidence, "background-agent-detail-summary.json"), JSON.stringify({ script: "scripts/background-agent-detail-demo-regression.ts", ok: results.every((result) => result.ok), results, measured: { fontSizes, selection, geometry, focusTrace, keyTrace } }, null, 2) + "\n");
   console.log(`PASS ${results.length} checks`);
 } finally { rmSync(app, { recursive: true, force: true }); }
-import { brandedExpected } from "./brand-test-helpers.ts";

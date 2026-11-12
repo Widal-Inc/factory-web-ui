@@ -1,4 +1,3 @@
-import { BRAND } from "../shared/brand.ts";
 /**
  * An install from before 0.4.16 could keep its state in two dirs: a fresh 0.4.14 or 0.4.15 install
  * kept it under the new name (ovis) until its next restart, its first update included, which took
@@ -333,7 +332,7 @@ function mergeDevices(active: string, sibling: string, base: MergeRecord | null,
       // the base of the next merge is what the other dir still holds of what both held: the devices
       // both hold now, and those of the last base it still holds although this dir revoked them
       const known = new Set([...merged.devices.map((device) => device.id), ...bases.other ?? []]);
-      const blocked = risk === null ? null : `${reason}. An upstream release before 0.4.16 starting on ${sibling} would ${risk}. Fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
+      const blocked = risk === null ? null : `${reason}. An Ovis release before 0.4.16 starting on ${sibling} would ${risk}. Fix its permissions, then restart the server. External access without a token or trusted Tailscale login remains blocked.`;
       return { blocked, ids: (theirs?.devices ?? []).map((device) => device.id).filter((id) => known.has(id)), changed: added, gated: merged.gate_closed_at !== null };
     }
   }
@@ -577,7 +576,7 @@ function merge(active: string, sibling: string, now: Date, stamp: string): strin
   const preferences = mergePreferences(active, sibling, base, stamp);
   const push = mergePush(active, sibling, base, stamp);
   if (devices.changed > 0 || push !== null && push.taken > 0) {
-    console.log(`${BRAND.name} took over ${devices.changed} paired device(s) and ${push?.taken ?? 0} push subscription(s) from ${sibling} into ${active}; replaced files are kept in ${join(active, BACKUPS)}`);
+    console.log(`Ovis took over ${devices.changed} paired device(s) and ${push?.taken ?? 0} push subscription(s) from ${sibling} into ${active}; replaced files are kept in ${join(active, BACKUPS)}`);
   }
   const record: MergeRecord = {
     version: 1,

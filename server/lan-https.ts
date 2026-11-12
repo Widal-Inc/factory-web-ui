@@ -1,4 +1,3 @@
-import { BRAND } from "../shared/brand.ts";
 /**
  * An opt-in HTTPS listener for clients on the same network (#1525): a phone on the PC's Wi-Fi reaches
  * it directly instead of through a tunnel, without the token or a device cookie crossing the LAN in
@@ -107,7 +106,7 @@ const VALID_DAYS = 825;
 export function selfSignedCertificate(addresses: readonly string[], now = new Date()): { cert: string; key: string } {
   const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const ecdsaSha256 = seq(oid("1.2.840.10045.4.3.2"));
-  const name = seq(set(seq(oid("2.5.4.3"), tlv(0x0c, Buffer.from(`${BRAND.name} LAN`)))));
+  const name = seq(set(seq(oid("2.5.4.3"), tlv(0x0c, Buffer.from("Ovis LAN")))));
   // positive, and minimal in DER: no leading zero byte for a parser to refuse
   const serial = randomBytes(16);
   serial[0] = (serial[0]! & 0x7f) | 0x40;

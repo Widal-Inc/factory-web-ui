@@ -277,12 +277,12 @@ export function renderManifest(css: string, json: string, theme = resolveTheme(p
   return text;
 }
 
-export function renderAll(root: string): { path: string; content: string }[] {
+export function renderAll(root: string, defaultId: string = DEFAULT_ID): { path: string; content: string }[] {
   const at = (file: string): string => join(root, file);
   const css = readFileSync(at(SOURCE), "utf8");
   const blocks = parseThemeBlocks(css);
   const amber = resolveAmber(blocks);
-  const fallback = resolveTheme(blocks, DEFAULT_ID);
+  const fallback = resolveTheme(blocks, defaultId);
   return [
     { path: OUTPUTS.module, content: renderModule(css, blocks, amber) },
     { path: OUTPUTS.design, content: renderDesign(css, readFileSync(at(OUTPUTS.design), "utf8"), amber) },

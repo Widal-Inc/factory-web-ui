@@ -1,4 +1,3 @@
-import { BRAND } from "../shared/brand.ts";
 /**
  * Settings → Connect a device → PCs on your Tailscale: other PCs of this PC's own Tailscale login whose Ovis
  * already lets this PC drive it, each added through the relay with one tap. Adding one asks that PC, over the
@@ -199,7 +198,7 @@ export class TailnetPcs {
   }
 }
 
-const OUTDATED = `That PC runs an older ${BRAND.name}. Update it to 0.5 to add it here in one tap.`;
+const OUTDATED = "That PC runs an older Ovis. Update it to 0.5 to add it here in one tap.";
 
 export class TailnetPcError extends Error {
   constructor(readonly failure: "not_found" | "not_owner" | "already_added" | "relay_off" | "relay_offline" | "code_unavailable" | "outdated" | "unreachable" | "no_code" | "mismatch", message: string) { super(message); }

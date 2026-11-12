@@ -1,4 +1,3 @@
-import { BRAND } from "../../shared/brand.ts";
 import { importPublicKey, importSecretKey, openDaemonSecureChannel } from "../../shared/relay-e2ee.ts";
 import type { Transport } from "../../shared/relay-e2ee.ts";
 import type { MuxClock } from "../../shared/relay-mux-engine.ts";
@@ -227,7 +226,7 @@ export class RelayLink {
         this.options.onPassRefused?.();
         // a relay moved back to grace or off lets the PC in without a pass: look again now and then
         this.cancelRetry = this.clock.setTimeout(() => { if (this.passRefused && !this.control) { this.passRefused = false; this.openControl(); } }, PASS_REFUSED_RETRY_MS);
-        this.options.onState("error", `The ${BRAND.name} relay needs a signed-in account (${event.reason || "relay pass required"}).`, "pass_required");
+        this.options.onState("error", `The Ovis relay needs a signed-in account (${event.reason || "relay pass required"}).`, "pass_required");
         return;
       }
       if (!this.stopped) this.retry();
