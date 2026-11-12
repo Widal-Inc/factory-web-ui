@@ -18,6 +18,19 @@ beforeEach(() => {
 });
 afterEach(() => mock.restore());
 
+it("rejects cross-site repository controls outside authenticated factory context", async () => {
+  for (const route of ["diff/files", "diff/file", "diff/refs", "git/log", "git/branches", "git/show", "pr", "pr/log", "pr/merge"]) {
+    const path = `/api/workspace/${route}`;
+    const request = new Request(`https://ada.factory.example.test${path}`, {
+      method: route === "pr/merge" ? "POST" : "GET",
+      headers: { "sec-fetch-site": "cross-site", origin: "https://factory.example.test" },
+    });
+    const response = await handleWorkspaceRequest(request, new URL(request.url), path, { timeout() {} }, () => {}, async () => ({ id: "m1" }) as PendingMessage, () => ({ order_epoch: "e", moved_seq: 1 }));
+    expect(response?.status, route).toBe(403);
+    expect(await response?.json()).toMatchObject({ error: { code: "cross_site" } });
+  }
+});
+
 async function post(path: string, body: unknown): Promise<Response> {
   const request = new Request(`http://127.0.0.1${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const queue = async (): Promise<PendingMessage> => { await Promise.resolve(); calls.push("queue"); return { id: "m1" } as PendingMessage; };

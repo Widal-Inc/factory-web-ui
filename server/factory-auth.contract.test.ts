@@ -69,6 +69,46 @@ describe("the factory gate before every route", () => {
   });
 });
 
+it("admits configured cross-site hub repository controls only for a signed current owner", async () => {
+  const f = factoryFixture();
+  const stateDir = mkdtempSync(join(tmpdir(), "factory-repository-"));
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, sidecar: false, machines: false, factoryAuth: f.auth });
+  const ctx = { ...app.context, requestIP: () => ({ address: "10.1.2.4" }), timeout: () => {}, upgrade: () => false };
+  const routes = ["diff/files", "diff/file", "diff/refs", "git/log", "git/branches", "git/show", "pr", "pr/log", "pr/merge"];
+  const ask = async (route: string, origin: string | null = f.options.hubOrigin, signed = true) => {
+    const merging = route === "pr/merge";
+    const request = f.request(`/api/workspace/${route}`, {
+      method: merging ? "POST" : "GET",
+      headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", ...(origin === null ? {} : { origin }) },
+      ...(merging ? { body: JSON.stringify({ number: 1, head_oid: "a".repeat(40), base_ref: "main", method: "merge" }) } : {}),
+    });
+    if (origin === null) request.headers.delete("origin");
+    if (!signed) request.headers.delete("x-amzn-oidc-data");
+    return (await handleRequest(request, ctx))!;
+  };
+  try {
+    for (const route of routes) {
+      const allowed = await ask(route);
+      // Reaching route validation proves that all three guards admit the owner;
+      // no git/gh command runs, since this request deliberately names no directory.
+      expect(allowed.status, route).toBe(400);
+      expect(await allowed.json()).toMatchObject({ error: { code: "missing_directory" } });
+      expect(allowed.headers.get("access-control-allow-origin")).toBe(f.options.hubOrigin);
+      for (const origin of [null, "null", "https://unrelated.example.test", `${f.options.hubOrigin}.unrelated.test`]) {
+        const denied = await ask(route, origin);
+        expect(denied.status, `${route} ${origin}`).toBe(403);
+        await denied.body?.cancel();
+      }
+      expect((await ask(route, f.options.hubOrigin, false)).status, route).toBe(401);
+    }
+    f.setMe({ person: f.options.owner, role: "admin", factories: [] });
+    for (const route of routes) expect((await ask(route)).status, route).toBe(403);
+  } finally {
+    app.stop();
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
 it("serves owner files to the configured hub with browser metadata, preserving file isolation", async () => {
   const f = factoryFixture();
   const stateDir = mkdtempSync(join(tmpdir(), "factory-files-"));

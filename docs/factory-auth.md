@@ -85,6 +85,11 @@ Arbitrary OPTIONS requests and any other unsigned traffic are refused. The brows
 correlator, server clock and file `content-range` headers in addition to standard response headers.
 The range header lets text previews verify their bounded read and detect empty files.
 
+Repository changes, history and pull-request controls also accept cross-site requests from an
+explicit configured hub or factory Origin after signed identity and current ownership checks.
+An absent, opaque or unrelated Origin does not bypass their cross-site guard. Standalone
+servers retain that guard without trusting any hub origin supplied by the request.
+
 HTTP bodies, including SSE and media, recheck ownership before delivering chunks. WebSockets
 recheck before every incoming frame and outgoing frame. Admission preserves incoming order;
 output waits in a bounded queue. Removal, expiry or lookup failure closes the socket with code
@@ -92,6 +97,8 @@ output waits in a bounded queue. Removal, expiry or lookup failure closes the so
 also closes inactive connections; it never supplies cached authorization to active traffic.
 Delayed terminal input rechecks at its turn, and the identity context follows queued sends to
 their RPC writes. A reconnect starts from a new signed upgrade and cannot revive old input.
+If disconnect or revocation finishes while terminal creation is pending, the completed attachment
+is released when no client still claims it. A concurrent client keeps its shared attachment.
 
 Audit records contain only time, factory, verified actor (or `unknown` for an unverified
 refusal), action category and outcome. They contain no request bodies, query strings, prompts,

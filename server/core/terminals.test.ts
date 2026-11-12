@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it, jest, mock, setSystemTime, spyOn } from "bun:test";
 import { OUTPUT_HARD_BYTES, OUTPUT_HIGH_BYTES, OUTPUT_JOIN_BYTES_PER_SECOND, OUTPUT_STALL_MS, ReplayBuffer } from "../output-window.ts";
-import { connectionData, send } from "./connections.ts";
+import { connectionData, createConnections, send, type Client } from "./connections.ts";
+import { factoryFixture } from "../factory-auth.fake.ts";
+import { factorySocket } from "./factory-socket.ts";
 import { observing } from "./connections.fake.ts";
 import type { PaneAttachment } from "./terminal-process.ts";
 import * as terminalProcess from "./terminal-process.ts";
@@ -19,6 +21,67 @@ beforeEach(() => {
 const { createTerminalRegistry } = await import("./terminals.ts");
 
 afterEach(() => mock.restore());
+
+for (const ending of ["disconnect", "revocation"] as const) for (const shared of [false, true]) {
+  it(`releases a deferred attachment after ${ending}, preserving a concurrent joiner: ${shared}`, async () => {
+    const f = factoryFixture();
+    const started = Promise.withResolvers<void>();
+    const ready = Promise.withResolvers<void>();
+    const kill = mock(() => {});
+    attachment = {
+      kind: "pty", ready: true, cols: 80, rows: 24, clients: new Set(), grids: new Map(), stalled: new Map(), replay: new ReplayBuffer(1024),
+      process: { exited: Promise.resolve(), pause() {}, resume() {}, resize() {}, winch() {}, kill, write() {} } as unknown as Extract<PaneAttachment, { kind: "pty" }>["process"],
+    };
+    spyOn(terminalProcess, "createSpawnAttachment").mockImplementation(({ attachments }) => ({
+      spawnAttachment: async (pane: string) => { started.resolve(); await ready.promise; attachments.set(pane, attachment); return attachment; },
+    }));
+    const clients = new Set<Client>();
+    const registry = createTerminalRegistry({
+      options: {}, clients, stopped: () => false, terminalAttach: async () => true,
+      holdFor: 0, heldRetry: 0, retryFor: 0, relookupFor: 0,
+      holdPending() {}, holdPendingPane() {}, attached() {}, inputReady() {}, end() {},
+    });
+    const connections = createConnections({ clients, present: new Set(), pending: { close() {} } as never, detachClaimed: registry.detachClaimed, dropClaims: registry.dropClaims });
+    const raw: Client = {
+      data: connectionData({ factoryIdentity: await f.auth.identity(f.token()) }), readyState: WebSocket.OPEN,
+      getBufferedAmount: () => 0, send: () => 1, close() {},
+    };
+    const frame = { type: "attach", pane_id: "p", cols: 80, rows: 24, keep_size: true } as const;
+    const socket = factorySocket({
+      open: (client) => { clients.add(client); },
+      message: (client) => registry.terminalFrames.attach(client, frame),
+      close: (client) => connections.end(client, "closed"), drain() {},
+    }, f.auth);
+    let joining: Promise<void> | undefined;
+    try {
+      await socket.open(raw);
+      const attaching = socket.message(raw, "attach");
+      await started.promise;
+      if (shared) {
+        const other: Client = { ...raw, data: connectionData({}) };
+        clients.add(other);
+        joining = registry.terminalFrames.attach(other, frame);
+      }
+      if (ending === "disconnect") socket.close(raw, 1000, "closed during creation");
+      else {
+        f.setMe({}, 403);
+        await expect(raw.data.factoryAuthorize!()).rejects.toThrow();
+      }
+      ready.resolve();
+      await attaching;
+      await joining;
+      expect(raw.data.attached.size).toBe(0);
+      expect(registry.attachments.has("p")).toBe(shared);
+      expect(kill).toHaveBeenCalledTimes(shared ? 0 : 1);
+      expect(attachment.clients.size).toBe(shared ? 1 : 0);
+    } finally {
+      ready.resolve();
+      socket.close(raw, 1000, "test cleanup");
+      registry.closeAttachment("p");
+      registry.conversations.stop();
+    }
+  });
+}
 
 async function join({ readOnly = false, ready, recovering, times = 1, receiptResumeId, verifyResume, replayPrefix, retained = "retained screen" }: { readOnly?: boolean; ready: boolean; recovering?: boolean; times?: number; receiptResumeId?: string; verifyResume?: (id: string | undefined) => void; replayPrefix?: string; retained?: string }): Promise<ServerMessage[]> {
   const frames: ServerMessage[] = [];
