@@ -8,6 +8,8 @@
  *   orphans every subscribed device, so a malformed file is an error, never a rotation.
  * - push-subscriptions.json: survives restarts, so a reboot does not unsubscribe phones.
  *   A 404/410 from a push service means the device dropped it; the record is deleted.
+ * - push-keys.json: legacy imported subscriptions keep the VAPID pair they were made for.
+ *   Read for compatibility only; new subscriptions use vapid.json.
  * - push-retired.json: the endpoint is also remembered, as a hash
  *   (`RETIRED_LIMIT`), so a restart does not forget it: a browser can keep handing over a subscription its push
  *   service retired, and registering it again would only fail the next push, so it is refused as
@@ -97,6 +99,7 @@ const RETIRED_LIMIT = 1000;
 /** The delivery records are bounded the same way, and kept for as long since their last write. */
 const DELIVERY_LIMIT = RETIRED_LIMIT;
 const DELIVERY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+type VapidKeys = { publicKey: string; privateKey: string };
 
 /** How long an alert waits for the pane to change first, and the turn a finish is worth telling. */
 export interface AlertTiming {
@@ -365,7 +368,9 @@ export function createPushService(options: PushServiceOptions): PushService {
   const subscriptionsPath = join(options.stateDir, "push-subscriptions.json");
   const subject = options.subject ?? process.env["OVIS_PUSH_SUBJECT"] ?? DEFAULT_SUBJECT;
 
-  let vapid: { publicKey: string; privateKey: string } | null = null;
+  let vapid: VapidKeys | null = null;
+  /** Legacy endpoint spelling -> the VAPID pair its push service expects. */
+  let extraKeys: Map<string, VapidKeys> | null = null;
   let subscriptions: Map<string, PushSubscriptionRecord> | null = null;
   /** the file still lists a subscription dropped in memory only (a retirement whose write failed): the next goodbye writes it */
   let stale = false;
@@ -398,7 +403,7 @@ export function createPushService(options: PushServiceOptions): PushService {
   let deliveries: Map<string, DeliveryRecord> | null = null;
 
   /** Created on first need: a server nobody subscribes to never writes a key. */
-  function keys(): { publicKey: string; privateKey: string } {
+  function keys(): VapidKeys {
     if (vapid) return vapid;
     const stored = readJson(vapidPath) as { publicKey?: unknown; privateKey?: unknown } | undefined;
     if (stored === undefined) {
@@ -412,6 +417,25 @@ export function createPushService(options: PushServiceOptions): PushService {
       throw new Error(`${vapidPath} is malformed; restore it or delete it (every device then re-subscribes)`);
     }
     return vapid;
+  }
+
+  /** Retained imports still need their original signing key; the public key stays the primary one. */
+  function keysFor(endpoint: string): VapidKeys {
+    if (extraKeys === null) {
+      extraKeys = new Map();
+      const path = join(options.stateDir, "push-keys.json");
+      try {
+        const stored = readJson(path) as { keys?: unknown } | undefined;
+        for (const entry of Array.isArray(stored?.keys) ? stored.keys as unknown[] : []) {
+          const { publicKey, privateKey, endpoints } = (entry ?? {}) as { publicKey?: unknown; privateKey?: unknown; endpoints?: unknown };
+          if (typeof publicKey !== "string" || typeof privateKey !== "string" || !Array.isArray(endpoints)) continue;
+          for (const at of endpoints) if (typeof at === "string") extraKeys.set(at, { publicKey, privateKey });
+        }
+      } catch (error) {
+        console.error(`Cannot read ${path} (${(error as NodeJS.ErrnoException).code ?? "not JSON"}); subscriptions taken over from another state dir get no alerts until their devices subscribe again`);
+      }
+    }
+    return extraKeys.get(endpoint) ?? keys();
   }
 
   function store(): Map<string, PushSubscriptionRecord> {
@@ -596,7 +620,7 @@ export function createPushService(options: PushServiceOptions): PushService {
     // what the push goes to, taken now: by the time the answer comes the endpoint may be
     // registered again with other keys, and that subscription is not told
     const identity = identityOf(subscription);
-    const { publicKey, privateKey } = keys();
+    const { publicKey, privateKey } = keysFor(subscription.endpoint);
     const details = webpush.generateRequestDetails(subscription, JSON.stringify(message), {
       vapidDetails: { subject, publicKey, privateKey },
       TTL: PUSH_TTL_SECONDS,

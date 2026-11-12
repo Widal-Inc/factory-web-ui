@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
+import webpush from "web-push";
 
 import { paneAlertsMuted, type AlertPrefs } from "../shared/notify-policy.ts";
 import { paneStorageId } from "../shared/machines.ts";
@@ -147,6 +148,43 @@ describe("stored subscription ownership compatibility", () => {
 });
 
 describe("push state", () => {
+  it("signs retained imported subscriptions with their saved VAPID pair across restarts", async () => {
+    const endpoint = `${fake.subscription.endpoint}#imported`;
+    const imported = webpush.generateVAPIDKeys();
+    const keysPath = join(stateDir, "push-keys.json");
+    const saved = JSON.stringify({ keys: [{ ...imported, endpoints: [endpoint] }] });
+    writeFileSync(keysPath, saved);
+    writeFileSync(join(stateDir, "push-subscriptions.json"), JSON.stringify([
+      { ...fake.subscription, endpoint, device_id: null },
+      { ...fake.subscription, device_id: null },
+    ]));
+    const primary = createPushService({ loopbackHttp: true, stateDir }).publicKey();
+    expect(primary).not.toBe(imported.publicKey);
+    for (let restart = 0; restart < 2; restart++) {
+      const push = createPushService({ loopbackHttp: true, stateDir });
+      expect(await push.sendTest(endpoint)).toEqual({ ok: true });
+      expect(fake.received.at(-1)).toMatchObject({ vapidKey: imported.publicKey, vapidValid: true });
+      // The endpoint's original spelling selects its key; a different spelling still uses the primary pair.
+      expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
+      expect(fake.received.at(-1)).toMatchObject({ vapidKey: primary, vapidValid: true });
+      expect(push.publicKey()).toBe(primary);
+    }
+    expect(readFileSync(keysPath, "utf8")).toBe(saved);
+  });
+
+  it("keeps primary-key subscriptions working when the legacy key file cannot be parsed", async () => {
+    const path = join(stateDir, "push-keys.json");
+    writeFileSync(path, "{broken");
+    const push = subscribed();
+    const quiet = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await push.sendTest(fake.subscription.endpoint)).toEqual({ ok: true });
+      expect(fake.received[0]).toMatchObject({ vapidKey: push.publicKey(), vapidValid: true });
+      expect(quiet.mock.calls.some(([line]) => String(line).includes("push-keys.json"))).toBe(true);
+    } finally { quiet.mockRestore(); }
+    expect(readFileSync(path, "utf8")).toBe("{broken");
+  });
+
   it("keeps one owner-only VAPID key pair across restarts", () => {
     const key = createPushService({ loopbackHttp: true, stateDir }).publicKey();
     expect(Buffer.from(key, "base64url").length).toBe(65);
