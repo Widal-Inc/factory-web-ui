@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HerdrError, herdrRpc } from "./herdr/client.ts";
+import { withFactoryAuthority } from "./factory-context.ts";
+import { factoryFixture } from "./factory-auth.fake.ts";
 
 // A stand-in herdr on a Unix socket: it records what was written and answers each line.
 let dir = "";
@@ -47,4 +49,15 @@ it("writes the request when the guard still holds", async () => {
   await herdrRpc("pane.send_keys", { pane_id: "p", keys: ["Enter"] }, path, 2_000, () => true);
   expect(written).toHaveLength(1);
   expect(JSON.parse(written[0]!)).toMatchObject({ method: "pane.send_keys", params: { pane_id: "p", keys: ["Enter"] } });
+});
+
+it("asks current factory ownership after connecting, before delayed input is written", async () => {
+  const { path, written } = standIn();
+  const f = factoryFixture();
+  const identity = await f.auth.identity(f.token());
+  await f.auth.checkOwner(identity);
+  const call = withFactoryAuthority(() => f.auth.checkOwner(identity), () => herdrRpc("pane.send_keys", { pane_id: "p", keys: ["Enter"] }, path, 2_000));
+  f.setMe({}, 403);
+  await expect(call).rejects.toMatchObject({ code: "cancelled" });
+  expect(written).toEqual([]);
 });

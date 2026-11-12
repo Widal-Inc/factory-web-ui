@@ -4,6 +4,7 @@ import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HerdrError, herdrRpc, socketAddress } from "./client.ts";
+import { withFactoryAuthority } from "../factory-context.ts";
 
 /** A real peer: no replacement for Bun.connect or the client's write/drain callbacks. */
 async function peer(accept: (socket: Socket) => void) {
@@ -90,6 +91,33 @@ it("cuts a request short, never completing it, when the sender loses the right t
     expect(received.length).toBeLessThan(frame);
     expect(received.includes(10)).toBe(false);
     expect(fixture.connections()).toBe(1);
+  } finally { await fixture.close(); }
+});
+
+it("checks live factory authority again before completing a partially written request", async () => {
+  const chunks: Buffer[] = [];
+  const started = Promise.withResolvers<void>();
+  const ended = Promise.withResolvers<void>();
+  const fixture = await peer((socket) => {
+    socket.pause();
+    socket.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+    socket.on("end", () => ended.resolve());
+    void started.promise.then(() => socket.resume());
+  });
+  try {
+    let owner = true;
+    let checks = 0;
+    const check = async () => { checks++; if (!owner) throw new Error("Factory access refused"); };
+    const call = withFactoryAuthority(check, () => herdrRpc("fixture.write", { text: "x".repeat(8 * 1024 * 1024) }, fixture.path, 2_000, () => {
+      owner = false;
+      started.resolve();
+      return true;
+    }));
+    await expect(call).rejects.toMatchObject({ code: "socket_error" });
+    await ended.promise;
+    expect(checks).toBeGreaterThan(1);
+    expect(Buffer.concat(chunks).length).toBeGreaterThan(0);
+    expect(Buffer.concat(chunks).includes(10)).toBe(false);
   } finally { await fixture.close(); }
 });
 

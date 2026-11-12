@@ -2,6 +2,7 @@ import { INSTALL_ID, noInstalledNotes, noUpdateNotes, readInstalledNotes, readUp
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { isJsonObject, jsonResponse, setRequestRoute } from "./http.ts";
+import { factoryOriginAllowed } from "./factory-context.ts";
 
 export interface UpdateService {
   status(): UpdateStatus;
@@ -83,6 +84,8 @@ export function connectUpdater(channel?: SupervisorChannel): UpdateService {
  * Sec-Fetch-Site also rejects browser CSRF.
  */
 export function updateRequestAllowed(request: Request): boolean {
+  const factory = factoryOriginAllowed(request);
+  if (factory !== undefined) return factory && request.headers.get("x-herdr-update") === "1" && !new URL(request.url).search;
   const site = request.headers.get("sec-fetch-site");
   const origin = request.headers.get("origin");
   const url = new URL(request.url);

@@ -66,6 +66,22 @@ it("answers queued typing with an id only once herdr typed it, and a connection 
   }
 });
 
+it("rechecks factory ownership when queued terminal input gets its turn", async () => {
+  const h = lane();
+  let owner = true;
+  h.phone.data.factoryAuthorize = async () => { if (!owner) throw new Error("Factory access refused"); };
+  const key = h.inputFrames.keys(h.phone, { type: "keys", pane_id: "w:p1", keys: ["left"] });
+  await h.keyStarted;
+  h.inputFrames.input(h.phone, { type: "input", pane_id: "w:p1", text: "never replay this", id: 8 });
+  const barrier = h.inputFrames.keys(h.other, { type: "keys", pane_id: "w:p1", keys: ["right"] });
+  owner = false;
+  h.answer();
+  await key;
+  await barrier;
+  expect(h.typed).toEqual(["keys left", "keys right"]);
+  expect(h.results()).toEqual([{ type: "input-result", id: 8, pane_id: "w:p1", ok: false, code: "input_failed" }]);
+});
+
 it("answers typing written straight to the pty at once, a refusal with its code, and an input without an id not at all", () => {
   const live = lane();
   live.inputFrames.input(live.phone, { type: "input", pane_id: "w:p1", text: "a", id: 1 });

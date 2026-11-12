@@ -1,3 +1,4 @@
+import { withFactoryAuthority } from "../factory-context.ts";
 /**
  * Messages a connection sends to wait for the agent: queued for its next turn, or held for the
  * sender's Send now. Each carries a lease on the pane's terminal and on the sender's authority,
@@ -601,7 +602,14 @@ export function createPendingDelivery({ options, clients, attachments, sight, se
    * needs no colors.
    */
 
-  async function dispatchPendingText(owner: Client, paneId: string, text: string, lease: PendingLease, identity: PendingIdentity,
+  const dispatchPendingText = (...args: Parameters<typeof dispatchPendingTextAuthorized>): Promise<SubmitReply> => {
+    const [owner] = args;
+    return withFactoryAuthority(owner.data.factoryAuthorize, async () => {
+      await owner.data.factoryAuthorize?.();
+      return dispatchPendingTextAuthorized(...args);
+    });
+  };
+  async function dispatchPendingTextAuthorized(owner: Client, paneId: string, text: string, lease: PendingLease, identity: PendingIdentity,
     automatic: boolean, arrivedAt: number, committing: (working: boolean, restarting?: boolean) => void = () => {}, interruptWorkingCodex = false,
     requestId = 0, agentOnly = false, queued = false): Promise<SubmitReply> {
     let wrote = false;

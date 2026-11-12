@@ -4,6 +4,7 @@
  */
 import type { ClientMessage } from "../../shared/protocol.ts";
 import { sessionSnapshot } from "../herdr/client.ts";
+import { withoutFactoryAuthority } from "../factory-context.ts";
 import { PromptMonitor, type PromptReader } from "../prompt-monitor.ts";
 import { type Client, connectionOf, send } from "./connections.ts";
 
@@ -50,7 +51,7 @@ export function createPromptWatch({ clients, read }: { clients: Set<Client>; rea
         // a pane others already watch was read before: this watcher is told what they were, as its first read
         const current = monitor.current(message.pane_id);
         if (current !== undefined) send(client, { type: "prompt-changed", pane_id: message.pane_id, signature: current });
-        else monitor.watch(message.pane_id);
+        else withoutFactoryAuthority(() => monitor.watch(message.pane_id));
       },
     },
     drop(client: Client): void {

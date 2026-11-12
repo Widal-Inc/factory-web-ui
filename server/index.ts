@@ -1,3 +1,4 @@
+import { type FactoryAuth, factoryAuthFromEnv } from "./factory-auth.ts";
 import type { SshCandidatesOptions } from "./ssh-candidates.ts";
 import "./adopt-legacy-env.ts";
 import { createCore, type SocketData } from "./core/index.ts";
@@ -230,12 +231,16 @@ export function createServer(
     shellAgents?: ShellAgentLocator;
     /** what GET /api/agent-catalog finds installed; unset, the agents' binaries on this server's PATH alone. The real entrypoints (this file's and remote-entry.ts) add their user's login shell's PATH, where installers put agents. */
     agentDetector?: AgentDetector;
+    /** Factory deployment uses only signed ALB identity and live registry ownership. */
+    factoryAuth?: FactoryAuth;
   } = {},
 ): ServerInstance {
   /**
    * This server's lifetime: the supervisor's boot id when it manages the server, else one made now. It is
    * /api/health's `web_ui.boot_id` and the epoch of the workspace order's counter (server/order-sequence.ts).
    */
+  const factoryAuth = options.factoryAuth ?? factoryAuthFromEnv(process.env);
+  options = { ...options, factoryAuth };
   const bootId = process.env["OVIS_BOOT_ID"] || randomUUID();
   const orderSequence = new OrderSequence(bootId);
   const hostname = options.hostname ?? process.env["HOST"] ?? "127.0.0.1";

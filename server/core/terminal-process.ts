@@ -9,6 +9,7 @@ import { HerdrError, herdrSocketPath, paneRead, paneSendText, sessionSnapshot } 
 import { CoreAttachSession } from "../herdr-core/attach-session.ts";
 import { coreConnection, HC_MOVED, hcBin, runtime } from "../herdr-core/runtime.ts";
 import { MirrorSession } from "../mirror.ts";
+import { withoutFactoryAuthority } from "../factory-context.ts";
 import { ReplayBuffer } from "../output-window.ts";
 import { PtySession, type PtySessionOptions } from "../pty/session.ts";
 import { type Client, connectionOf } from "./connections.ts";
@@ -296,7 +297,7 @@ export function createSpawnAttachment({ attachments, retiringAttachments, termin
         cols: spawnCols,
         rows: spawnRows,
         size: async () => {
-          const now = (await terminalInfoFor(paneId)).rect;
+          const now = (await withoutFactoryAuthority(() => terminalInfoFor(paneId))).rect;
           return now ? { cols: now.width, rows: now.height } : null;
         },
         // the grid follows herdr's layout: the clients adopt the new size before the screen
@@ -306,7 +307,7 @@ export function createSpawnAttachment({ attachments, retiringAttachments, termin
           attachment.rows = rows;
           broadcast(paneId, { type: "pane-geometry", pane_id: paneId, cols, rows, fixed: true });
         },
-        read: async () => (await paneRead({ paneId, source: "visible", format: "ansi" })).text,
+        read: async () => (await withoutFactoryAuthority(() => paneRead({ paneId, source: "visible", format: "ansi" }))).text,
         write: (data) => paneSendText(paneId, data),
         onData: (frame) => {
           if (attachments.get(paneId) !== attachment) return;
