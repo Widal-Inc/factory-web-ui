@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "ovis",
+      "name": "factory-web-ui",
       "dependencies": {
         "@legendapp/list": "3.3.5",
         "@lydell/node-pty": "1.1.0",

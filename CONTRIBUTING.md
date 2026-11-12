@@ -1,47 +1,37 @@
-# Contributing
+# Contributing to Widal Factory
 
-Thanks for helping. Bugs and ideas go in an [issue](https://github.com/devswha/ovis/issues/new/choose);
-security problems never do: see [SECURITY.md](SECURITY.md). For a larger change, open an issue first so
-the approach can be agreed before you build it. Small fixes can go straight to a PR.
+Report fork bugs and discuss changes in [Widal-Inc/factory-web-ui](https://github.com/Widal-Inc/factory-web-ui/issues). Security reports stay private: see [SECURITY.md](SECURITY.md). Features need the maintainers' approved scope and design before implementation. Current shared sign-in, Setup and release integration are pending; do not present planned behavior as shipped.
 
-**Features.** Open a [feature request](https://github.com/devswha/ovis/issues/new?template=feature_request.yml)
-and wait for a maintainer's yes before you write code; a feature PR without one may be closed, however
-well it is built. The app is a bridge to herdr, so a feature should either mirror something herdr's
-own TUI does, or meet a need that widely used coding-agent apps already meet (the Codex and Claude
-apps, Paseo, T3 Code and the like). A convenience none of them offers, or one that adds a new setting
-or UI concept for a narrow case, is likely to be declined: every one stays for good, to be maintained
-and tested on every release.
+This is a fork of Ovis. Preserve upstream authorship, copyright and third-party notices. We port security fixes deliberately rather than treating upstream installers, accounts or releases as this fork's services.
 
 Everything a PR is checked against is in this repository: this file, the
 [review rules](.github/REVIEW.md), the [development guide](docs/development.md),
 [DESIGN.md](DESIGN.md) and the `AGENTS.md` files ([root](AGENTS.md), [server](server/AGENTS.md),
 [src](src/AGENTS.md)), which hold the invariants that people and coding agents both follow.
 Contributions are licensed under the repository's [MIT license](LICENSE). Say in the PR when code is
-adapted from another project, with its license. Before your first PR is merged, sign the
-[Contributor License Agreement](CLA.md): the CLA Assistant bot asks on the PR, and you sign once by
-commenting the sentence it gives.
+adapted from another project, with its license. The inherited [Contributor License Agreement](CLA.md) remains legal/provenance material. Its presence does not establish that an upstream CLA bot or signing workflow is configured for this fork; maintainers determine any contribution agreement requirements.
 
 ## Set up
 
 - Linux (x64, arm64), macOS or Windows x64. Windows uses the screen mirror and needs no terminal addon; Alpine and 32-bit ARM have no addon build.
 - Bun 1.4 or newer, and herdr 0.9.0 or newer for the integration tests. Terminals in a checkout run on
-  the Rust PTY host (`cargo build --release --manifest-path crates/pty-sidecar/Cargo.toml`, or
-  `bun scripts/pty-sidecar.ts install` on a release tag); Node 18 or newer is the fallback, and the PTY
+  the Rust PTY host (`cargo build --release --manifest-path crates/pty-sidecar/Cargo.toml`);
+  Node 18 or newer is the fallback, and the PTY
   tests run on both. CI runs Bun 1.4.2, Node 22 and herdr 0.9.3, all pinned in
   [.github/actions/setup-ci/action.yml](.github/actions/setup-ci/action.yml).
 
 ```bash
-bun install
-bun run server   # API + WebSocket on :7317
+bun install --frozen-lockfile
+OVIS_TELEMETRY=0 OVIS_RUNTIME=herdr HOST=127.0.0.1 bun run server   # API + WebSocket on :7317
 bun run dev      # Vite on :5173, proxies /api and /ws
 ```
 
-Neither command updates itself; only `bun run start` and the plugin run the updater.
+Use these unmanaged source commands for the fork. Avoid `bun run start`, inherited installers and native update feeds until [distribution integration](docs/app-updates.md) is complete. Clone and build steps are in [INSTALL.md](INSTALL.md).
 
 ## Branches and pull requests
 
-- Fork, branch from `main` (`feat/…`, `fix/…`, `chore/…`, `docs/…`) and open the PR against `main`.
-  There is no `develop` branch; releases are `vX.Y.Z` tags on `main`.
+- Branch from `main` and open the PR against `main` in [Widal-Inc/factory-web-ui](https://github.com/Widal-Inc/factory-web-ui/pulls). City workers use `polecat/<bead-id>` and hand the branch to the refinery; only the refinery opens/merges their PRs.
+  There is no `develop` branch. Inherited version tags are historical; Widal release integration is pending.
 - Independent changes should use independent PRs from `main`. The only exception is a stack explicitly
   managed by a maintainer for a genuine code dependency; code conflicts and approval gates are
   scheduling constraints, not reasons to stack. See the [coordinated-work procedure](docs/development.md#coordinated-work).
@@ -88,19 +78,19 @@ running terminals: see [development](docs/development.md#checks).
 ## Terminology
 
 herdr, the browser and the agents use some of the same words. This index lists the five that matter
-for Ovis's code, with a link to the place that defines each one.
+for Widal Factory's code, with a link to the place that defines each one.
 
 | Term | What it is | Defined in |
 | --- | --- | --- |
-| **Pane** | A herdr terminal and the process in it. herdr owns its pty, scrollback and agent state; Ovis attaches to it, or mirrors it where there is no attach. | [AGENTS.md](AGENTS.md), [How it works](docs/guide.md#how-it-works) |
+| **Pane** | A herdr terminal and the process in it. herdr owns its pty, scrollback and agent state; Widal Factory attaches to it, or mirrors it where there is no attach. | [AGENTS.md](AGENTS.md), [How it works](docs/guide.md#how-it-works) |
 | **Tab** | A herdr tab: one or more panes split inside one workspace, as herdr's prefix+c makes. Not a browser tab. | [Quick start](docs/guide.md#quick-start), [Features](docs/guide.md#features) |
 | **Workspace** | A herdr workspace: a project's group of tabs and their panes, one sidebar row each. | [Quick start](docs/guide.md#quick-start) |
 | **PC** | This computer or a remote one reached over SSH, each through its own herdr socket. The sidebar groups PC → workspace → pane, and drafts, held messages, recent panes and notifications name the PC together with the pane. | [Remote PCs](docs/remote-pcs.md), [Disconnects and updates](docs/remote-pcs.md#disconnects-and-updates) |
 | **Agent session** | An agent's own conversation: its ID and history in that agent's store. A resumable session-history row can reopen it; not every row carries resume data. Not a pane, a workspace or a herdr session. | `SessionHistoryRow` in [shared/session-history.ts](shared/session-history.ts), [How it works](docs/guide.md#how-it-works) |
 
-A **browser tab** is the browser tab showing Ovis; it shows herdr tabs but is not one. A
+A **browser tab** is the browser tab showing Widal Factory; it shows herdr tabs but is not one. A
 **herdr session** is a running herdr server, picked by its socket
-([`HERDR_SOCKET`](docs/guide.md#configuration)), whose workspaces Ovis shows; it is not an agent
+([`HERDR_SOCKET`](docs/guide.md#configuration)), whose workspaces Widal Factory shows; it is not an agent
 session. The code and the docs call both a herdr session (the server's herdr instance) and an
 agent session (a coding agent's conversation history) a session, so say which one you mean when
 the context does not make it clear. The dialog that makes a workspace is
@@ -139,15 +129,11 @@ the context does not make it clear. The dialog that makes a workspace is
   and a reason, including repairs the proposal tool already applied. Every
   entry has to pass the AA contrast test on the committed hex. Then run `bun run generate:themes`;
   never edit `src/lib/themes.generated.ts` or the other generated copies.
-- **The browser demo:** the [demo](https://ovis.sh/demo/) redeploys on every
-  merge to `main`. A feature meant to show there needs an answer in `site/demo/transport.ts`; anything
-  else gets its 404.
+- **The browser demo:** inherited demo fixtures remain for isolated tests. No public Widal demo deployment is established. If a UI test uses the demo transport, implement its fixture behavior in `site/demo/transport.ts`.
 - **Changelog:** a change users notice gets a small file in [changelog.d/](changelog.d/README.md)
   with its `### Added`, `### Changed` or `### Fixed` lines; do not edit CHANGELOG.md, and do not
   bump versions. The link to your PR and your name are added at release, so you can leave them out.
 
 ## Releases
 
-Maintainers only: see [development](docs/development.md#releasing). App releases are cut by the
-Release workflow; never push a `vX.Y.Z` tag by hand, since installed updaters act on tags alone.
-Remote-PC runtime bundles are published with a `remote-vN` tag, and an app release requires the matching one.
+Widal release integration is pending: see [distribution status](docs/app-updates.md). Do not push `v*` or `remote-v*` tags, publish inherited native artifacts or invoke upstream deployment workflows to test this fork. Keep user-visible changes in `changelog.d/`; preserve the historical changelog and legal notices.

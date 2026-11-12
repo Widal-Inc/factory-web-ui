@@ -1,8 +1,10 @@
-# Ovis Design System
+# Widal Factory design reference
 
-Extracted from the shipped client (`src/styles.css`, `src/components/*`), not invented. The machine
+Inherited from the upstream client (`src/styles.css`, `src/components/*`), not invented. The machine
 copy of every token is the `:root` block in `src/styles.css`; every table below mirrors it value for
 value. When a component needs a value that is not here, add it to both first.
+
+Current tokens and UI conventions are retained while Widal branding is integrated. This document does not establish a new logo, brand config or completed Factory screens. Historical design entries below describe their original upstream implementation. Generated theme tables are unchanged.
 
 ## 1. Atmosphere & Identity
 

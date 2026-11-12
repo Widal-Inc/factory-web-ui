@@ -1,5 +1,7 @@
 # Remote PC verification — 2026-09-22
 
+Historical upstream audit/test evidence, retained with its original issue links and attribution. These results are not validation of a Widal Factory release or completed sign-in/Setup. See [fork status](fork-status.md).
+
 Verified on Linux x64 with Bun 1.4.2, Node 26.9.0, system OpenSSH, Chrome, local herdr 0.9.0 and bundled herdr 0.9.1. All terminal writes targeted test-owned workspaces; remote homes, SSH trust files, keys and state were isolated.
 
 | Check | Result |

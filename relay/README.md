@@ -1,3 +1,9 @@
+# Historical upstream reference — not Widal deployment guidance
+
+The following document is retained for upstream implementation history and compatibility. Its Ovis names, endpoints, artifacts, deployment commands, store copy and prior test results do not describe supported Widal Factory services or releases. Do not execute its publishing/install instructions for this fork. Follow [current integration status](../docs/relay.md) and the repository's source setup instead. Legal notices and authorship remain unchanged.
+
+---
+
 # Ovis relay
 
 The meeting point for a PC running Ovis and a phone or browser that cannot reach it directly, at
@@ -26,7 +32,7 @@ upgrade, and a request that is not an upgrade is `426`.
 | warm | `role=server&warm=<generation>` | the PC, at most one: a data socket opened before its client arrives |
 
 `GET /v1/pair?nameplate=<3 Crockford base32>&role=host|guest&v=1`, a WebSocket upgrade: the
-rendezvous for pairing with a typed code (`pair-room.ts`, [docs/relay.md](../docs/relay.md#who-gets-in), "Pairing with a typed code").
+rendezvous for pairing with a typed code (`pair-room.ts`, [original relay document](https://github.com/Widal-Inc/factory-web-ui/blob/bb0d0f9b234e1c59b98e3ad01060b8d3dc4bd0e9/docs/relay.md#who-gets-in), "Pairing with a typed code").
 The PC holds a nameplate (`host`, one per nameplate, else `4409`; at most 11 minutes). A host that
 adds its PC's key (`&server_id=<id>&public_key=<64 hex>`) answers a server challenge for it first
 (role `pair-host`, `connection_id` the nameplate; `4401` otherwise) and holds the nameplate only

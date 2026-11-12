@@ -1,6 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { parseMarkdown, type InlineNode, type MarkdownBlock } from "../../shared/markdown.ts";
 
 const text = (nodes: InlineNode[]): string => nodes.map((node) => node.type === "text" || node.type === "code" || node.type === "math" ? node.value
@@ -8,9 +6,22 @@ const text = (nodes: InlineNode[]): string => nodes.map((node) => node.type === 
 const shown = (blocks: MarkdownBlock[]): string => JSON.stringify(blocks);
 
 describe("HTML blocks in a markdown file", () => {
-  it("reads the README's header as centered markdown, never as tag text", () => {
-    const readme = readFileSync(join(import.meta.dir, "../../README.md"), "utf8");
-    const head = readme.slice(0, readme.indexOf("\n## "));
+  it("reads a synthetic document header as centered markdown, never as tag text", () => {
+    const head = [
+      "<p align=\"center\">",
+      "  <img src=\"assets/meadow.png\" alt=\"Meadow\" width=\"100\">",
+      "</p>",
+      "",
+      "<h1 align=\"center\">Meadow</h1>",
+      "",
+      "<p align=\"center\">",
+      "  <strong>English</strong> · <a href=\"README.ko.md\">한국어</a>",
+      "  <br>",
+      "  <a href=\"https://example.com/\">website</a> · <a href=\"docs/guide.md#start\">guide</a>",
+      "</p>",
+      "",
+      "A **sample** document.",
+    ].join("\n");
     const blocks = parseMarkdown(head, 0, true);
     expect(shown(blocks)).not.toContain("<p");
     expect(shown(blocks)).not.toContain("<a ");
@@ -18,11 +29,14 @@ describe("HTML blocks in a markdown file", () => {
     const logo = blocks.find((block) => block.type === "paragraph" && block.lines.flat().some((node) => node.type === "image"));
     expect(logo).toMatchObject({ type: "paragraph", align: "center" });
     const image = logo?.type === "paragraph" ? logo.lines.flat().find((node) => node.type === "image") : undefined;
-    expect(image).toMatchObject({ type: "image", src: "public/icons/icon-192.png", alt: "Ovis", width: 100 });
+    expect(image).toMatchObject({ type: "image", src: "assets/meadow.png", alt: "Meadow", width: 100 });
     const languages = blocks.find((block) => block.type === "paragraph" && text(block.lines.flat()).includes("English"));
     expect(languages?.type === "paragraph" && languages.lines.flat().some((node) => node.type === "file" && node.path === "README.ko.md")).toBe(true);
     const site = blocks.find((block) => block.type === "paragraph" && text(block.lines.flat()).includes("website"));
-    expect(site?.type === "paragraph" && site.lines.flat().some((node) => node.type === "link" && node.href === "https://ovis.sh/")).toBe(true);
+    expect(site?.type === "paragraph" && site.lines.flat().some((node) => node.type === "link" && node.href === "https://example.com/")).toBe(true);
+    expect(site?.type === "paragraph" && site.lines.flat().some((node) => node.type === "file" && node.path === "docs/guide.md")).toBe(true);
+    const prose = blocks.at(-1);
+    expect(prose?.type === "paragraph" && prose.lines.flat().some((node) => node.type === "strong")).toBe(true);
   });
 
   it("keeps text, drops comments and unknown tags, and reads headings, breaks, emphasis and entities", () => {

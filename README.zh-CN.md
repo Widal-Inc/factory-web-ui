@@ -1,118 +1,55 @@
-<p align="center">
-  <img src="public/icons/icon-192.png" alt="Ovis" width="100">
-</p>
+# Widal Factory
 
-<h1 align="center">Ovis</h1>
+用于管理软件工厂的 Web 应用，在 [Widal-Inc/factory-web-ui](https://github.com/Widal-Inc/factory-web-ui) 中开发。
 
-<p align="center">
-  <strong>你的编程智能体，在桌面、手机和浏览器上。</strong>
-</p>
+[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-666666?labelColor=333333" alt="MIT license"></a>
-  <a href="https://github.com/devswha/ovis/releases/latest"><img src="https://img.shields.io/github/v/release/devswha/ovis?label=release&labelColor=333333&color=666666" alt="Latest release"></a>
-  <a href="https://github.com/devswha/ovis/stargazers"><img src="https://img.shields.io/github/stars/devswha/ovis?labelColor=333333&color=666666&logo=github" alt="GitHub stars"></a>
-  <a href="https://github.com/herdrdev/herdr"><img src="https://img.shields.io/badge/herdr-0.9.0%2B-666666?labelColor=333333" alt="herdr 0.9.0+"></a>
-</p>
+当前提供 React 浏览器客户端和 Bun 桥接服务，用于访问 herdr 的工作区、智能体对话、确认卡片、文件和终端。终端和智能体状态由 herdr 管理。Factory 专用页面、统一登录和 Setup 尚待集成；克隆本仓库并不会获得已完成的托管服务。
 
-<p align="center">
-  <a href="README.md">English</a> · <strong>简体中文</strong> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a>
-  <br>
-  <a href="https://ovis.sh/">官网</a> ·
-  <a href="#install">安装</a> ·
-  <a href="https://ovis.sh/demo/">体验演示</a> ·
-  <a href="docs/guide.md#quick-start">快速入门</a> ·
-  <a href="docs/guide.md#faq">常见问题</a> ·
-  <a href="#docs">文档</a>
-</p>
+## 从源码运行
 
-在桌面应用、手机或任意浏览器上与你电脑上的编程智能体聊天，轻点一下即可回答请求。它是 [herdr](https://github.com/herdrdev/herdr) 和 [Herdr 桌面应用终端](docs/guide.md#herdr-app-terminals) 的客户端。
-
-<p align="center">
-  <a href="https://ovis.sh/demo/"><img src="docs/media/readme/hero.webp" alt="在演示中录制的 Ovis 画面：在桌面浏览器中向 Claude Code 发送后续消息后，它的这一轮逐步展开；接着桌面和手机并排出现，Codex 通过 Allow command? 卡片询问是否运行 git push origin feat/export-guard，在手机上点按 Yes 后两个屏幕上的卡片同时关闭；最后点击 release 标签页，一个 shell 窗格作为运行 git log 和 bun test 的真正终端打开。"></a>
-  <br>
-  <sub>录制自可在浏览器中运行的<a href="https://ovis.sh/demo/">演示</a>。</sub>
-</p>
-
-<a id="install"></a>
-
-## 安装
-
-**在电脑上**
-
-- **Mac：** 把 [Apple 芯片版](https://ovis.sh/Ovis-mac-arm64.dmg) 或 [Intel 版](https://ovis.sh/Ovis-mac-x64.dmg) 桌面应用拖到 **应用程序**。
-- **Windows：** 运行桌面应用 [Ovis-win-x64.exe](https://ovis.sh/Ovis-win-x64.exe)。如果 Windows 显示 **Windows 已保护你的电脑**，请选择 **更多信息** → **仍要运行**。
-- **Linux：** Debian、Ubuntu 用桌面应用 [x64](https://ovis.sh/Ovis-linux-x64.deb) 或 [arm64](https://ovis.sh/Ovis-linux-arm64.deb)（`sudo apt install ./Ovis-linux-*.deb`）；其他发行版用 AppImage [x64](https://ovis.sh/Ovis-linux-x64.AppImage) 或 [arm64](https://ovis.sh/Ovis-linux-arm64.AppImage)（`chmod +x Ovis-linux-*.AppImage`）。
-
-桌面应用无需其他安装，并使用自己的终端。若要使用你的 herdr 会话，在 Linux 或 macOS 上运行：
+需要 Git、Bun 1.4 或更高版本（CI 固定为 1.4.2），以及已运行的 herdr 0.9.0 或更高版本。Linux/macOS 的终端连接需要 Rust PTY 主机，或作为后备的 Node 18 以上版本。两者均不可用时使用屏幕镜像。Windows 使用镜像。详见[设置说明](INSTALL.md)。
 
 ```bash
-curl -fsSL https://ovis.sh/install.sh | sh
+git clone https://github.com/Widal-Inc/factory-web-ui.git
+cd factory-web-ui
+bun install --frozen-lockfile
 ```
 
-在 Windows 上，在 PowerShell 中运行：
-
-```powershell
-irm https://ovis.sh/install.ps1 | iex
-```
-
-其他安装方式和分步说明：[INSTALL.md](INSTALL.md)。
-
-**在手机上**
-
-- **iPhone：** TestFlight 公测版，见 [ovis.sh/zh/beta](https://ovis.sh/zh/beta/)。
-- **Android：** Google Play 公测版，见 [ovis.sh/zh/beta](https://ovis.sh/zh/beta/)。
-- **浏览器：** 无需应用，把页面添加到主屏幕即可。
-
-要连接手机，在 **Settings → Phone & devices** 中打开端到端加密的 **Ovis 中继**，然后扫描二维码。[工作原理 →](docs/guide.md#through-the-ovis-relay)
-
-## 能做什么
-
-- **智能体变成聊天。** Claude Code、Codex、OpenCode 等。[支持的智能体 →](docs/guide.md#supported-agents)
-- **请求和审批变成卡片。** 轻点即可回答。
-- **推送通知。** 即使应用已关闭。
-- **真正的终端，一键即达。** 手机上还有按键栏。
-- **所有工作区，一个列表。** 包括通过 SSH 添加的其他电脑。
-
-[全部功能 →](docs/guide.md#features)
-
-**限制：** 你的电脑需要开着并且能被访问（Ovis 中继、Tailscale、VPN 或 SSH 隧道）。Herdr 桌面应用的终端仅支持 Linux 和 macOS。
-
-**隐私：** 会话留在你的电脑上，没有账号。可选的中继无法读取内容（[信任模型](docs/relay.md#trust-model)）。匿名使用计数默认启用，可在 **Settings → About** 或用 `OVIS_TELEMETRY=0` 关闭（[发送哪些内容](docs/guide.md#anonymous-usage-counts)）。
-
-<a id="docs"></a>
-
-## 文档
-
-- **[用户指南](docs/guide.md)：** [快速入门](docs/guide.md#quick-start) · [支持的智能体](docs/guide.md#supported-agents) · [功能](docs/guide.md#features) · [手机](docs/guide.md#on-your-phone) · [远程电脑](docs/remote-pcs.md) · [访问与安全](docs/guide.md#access-and-safety) · [配置](docs/guide.md#configuration) · [键盘快捷键](docs/guide.md#keyboard-shortcuts)
-- **[常见问题](docs/guide.md#faq)：** herdr 自带的 TUI、Tailscale、哪些内容会离开你的电脑，以及与 collie、Happy、Paseo 等的区别。
-- **[INSTALL.md](INSTALL.md)：** 所有安装方式的分步说明，以及某一步失败时怎么办。
-- **[演示](https://ovis.sh/demo/)：** 在浏览器中用虚构会话运行的真实应用。
-- **[更新日志](CHANGELOG.md)**
-
-## 致谢
-
-本项目基于 [herdr](https://github.com/herdrdev/herdr) 构建，灵感来自 [chatmux](https://github.com/devswha/chatmux)，并使用了 [xterm.js](https://xtermjs.org)、[React](https://react.dev)、[Bun](https://bun.sh) 和 [Lucide](https://lucide.dev)。
-
-感谢所有贡献者，包括 [@Yoonwoo-Ha](https://github.com/Yoonwoo-Ha)，也感谢帮助设计图标和网站的 [@sanguneo](https://github.com/sanguneo)。
-
-## 智能体操作指南
-
-正在协助他人安装应用？请遵循 [INSTALL.md](INSTALL.md)。修改仓库时，请遵循 [CONTRIBUTING.md](CONTRIBUTING.md)、[审查规则](.github/REVIEW.md)和 [AGENTS.md](AGENTS.md)。
-
-## 开发
+在第一个终端中禁用继承的上游遥测并启动服务：
 
 ```bash
-git clone https://github.com/devswha/ovis.git
-cd ovis
-bun install
-
-bun run server      # API + WebSocket on :7317
-bun run dev         # Vite on :5173; run in a second terminal
+OVIS_TELEMETRY=0 OVIS_RUNTIME=herdr HOST=127.0.0.1 bun run server
 ```
 
-提交改动请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)，测试、媒体素材和发布流程请参阅[开发文档](docs/development.md)，界面规范请参阅 [DESIGN.md](DESIGN.md)。安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。
+在另一个终端中运行：
 
-## 许可证
+```bash
+bun run dev
+```
 
-[MIT](LICENSE)。Copyright © 2026 devswha.
+打开 `http://localhost:5173`。Vite 将 API 和 WebSocket 请求转发到 7317 端口。QA 请使用单独的 herdr 测试会话。如需使用构建后的客户端，先运行 `bun run build`，再运行相同的服务命令，并打开 `http://127.0.0.1:7317`。PowerShell 的环境变量设置见 [INSTALL.md](INSTALL.md)。
+
+## 当前范围
+
+可以阅读受支持智能体的对话、回答确认卡片、使用终端，以及查看所选电脑的文件和更改。断线后未发送的草稿会保留，发送需要用户明确操作。[远程电脑](docs/remote-pcs.md)的运行时分发仍需单独集成。
+
+界面、图标、安装程序和服务代码仍在调整。这里没有已确立的 Widal 安装地址、公开演示、原生应用下载或发布渠道。不要使用上游安装程序、账号、中继、配对或更新功能来设置此分支。详见[分发状态](docs/app-updates.md)。
+
+运行示例通过 `OVIS_TELEMETRY=0` 禁用上游遥测。这份文档不会删除相关实现，也不会添加 Widal 遥测地址。不要据此假定应用无需账号、没有任何数据离开电脑，或统一登录已经生效。请阅读[访问和数据说明](docs/guide.md#access-and-safety)。
+
+## 文档与贡献
+
+- [用户指南](docs/guide.md)、[开发与检查](docs/development.md)、[贡献指南](CONTRIBUTING.md)、[智能体说明](AGENTS.md)
+- [分支文档审计与兼容性名称](docs/fork-status.md)、[设计](DESIGN.md)、[历史更改记录](CHANGELOG.md)
+- [报告问题](https://github.com/Widal-Inc/factory-web-ui/issues)、[私下报告安全问题](SECURITY.md)
+
+## 上游来源
+
+Widal Factory 基于 [Ovis](https://github.com/devswha/ovis) 分支开发。保留上游版权、法律声明和作者记录。现有美术素材继承自上游；此文档不提供新的 Widal 标志。
+
+Built on [herdr](https://github.com/herdrdev/herdr), with inspiration from [chatmux](https://github.com/devswha/chatmux), and powered by [xterm.js](https://xtermjs.org), [React](https://react.dev), [Bun](https://bun.sh) and [Lucide](https://lucide.dev).
+
+Thanks to everyone who has contributed, including [@Yoonwoo-Ha](https://github.com/Yoonwoo-Ha), and to [@sanguneo](https://github.com/sanguneo), who helped design the icon and the website.
+
+[MIT](LICENSE). Copyright © 2026 devswha. [Third-party notices](THIRD_PARTY_NOTICES.md).

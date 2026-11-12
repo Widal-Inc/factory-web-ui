@@ -1,4 +1,8 @@
-# Ovis
+# Widal Factory
+
+This is Widal-Inc/factory-web-ui, a fork of Ovis. Follow [INSTALL.md](INSTALL.md) for the supported source workflow and [docs/fork-status.md](docs/fork-status.md) for pending integration. Shared sign-in, Setup, brand configuration and Widal distribution are not implemented by the documentation correction. Disable inherited upstream telemetry with `OVIS_TELEMETRY=0` for local runs. Do not invoke upstream installers, publish/deploy workflows, account/relay pairing or managed update paths as Widal onboarding.
+
+City workers use their assigned isolated `polecat/<bead-id>` branch and hand it to the refinery; they do not open/merge the refinery's PR or push to main. Coordinate heavy checks with the witness and record actual commands, head and skipped coverage. Preserve legal/history attribution and runtime compatibility identifiers. No shared Widal brand configuration exists on this documentation base; do not invent a logo or claim UI branding has shipped.
 
 Browser UI for the herdr terminal multiplexer: a React 19 + xterm.js client (`src/`), a Bun
 backend (`server/`) that bridges herdr's unix-socket API, and the wire contract both import
@@ -40,7 +44,7 @@ to change. Also read [server/AGENTS.md](server/AGENTS.md) and [src/AGENTS.md](sr
   a `mkdtempSync` `stateDir` and `port: 0` for every `createServer`. Never run the real
   `herdr update` in a test.
 - Screenshots and recordings come from the demo or a test session, never the user's live one.
-- An Ovis server an agent starts for someone to open (manual QA, a preview) binds to this PC's
+- A Widal Factory server an agent starts for someone to open (manual QA, a preview) binds to this PC's
   Tailscale address, not loopback: `HOST=$(tailscale ip -4) PORT=<free port> bun run server`,
   then hand over `http://<that address>:<port>`. A Tailscale-only bind stays inside the tailnet
   (`lanExposed` in `server/access.ts`); never bind `0.0.0.0` for it. Tests keep `port: 0` on
@@ -49,19 +53,7 @@ to change. Also read [server/AGENTS.md](server/AGENTS.md) and [src/AGENTS.md](sr
   device needs HTTPS (only `localhost` installs over plain http): bind it to `127.0.0.1` and let
   `tailscale serve` add the address. Moving a port that `tailscale serve` already fronts to the
   Tailscale address breaks that HTTPS address.
-- The maintainer's "herdr main" test app always serves the latest main at
-  `https://home-server.tail1e211e.ts.net:17421` (user unit `herdr-web-main.service`, which
-  follows origin/main by itself). Open it to try main instead of starting another main preview,
-  and never stop it.
-- Mac and iOS Simulator checks run on the maintainer's test MacBook Air, `ssh eamac`, which stays
-  awake for it. Never drive the MacBook Pro (`ssh macbook`, `ssh mymac`): it is the maintainer's
-  working machine, and automation there takes over their keyboard and focus. On eamac, run a PR's
-  checks in a fresh `git clone` in `/tmp` and delete it afterwards; leave its own checkout alone.
-- Native Windows checks run in the Windows 11 VM on this PC, `ssh winvm`. Never use `home-window`:
-  it is the maintainer's own PC. This runs a PR's Windows CI steps in the VM's desktop session, in a
-  fresh `%TEMP%` clone that it deletes afterwards (one such run at a time):
-  `ssh winvm "pwsh -File C:\ProgramData\winvm\Invoke-InSession.ps1 -Command '& C:\ProgramData\winvm\pr-check.ps1 -Pr <N>'"`.
-  When a run leaves state behind, `winvm reset`, then `winvm start`.
+- Upstream maintainer services, tailnet addresses, Macs and Windows VMs are not this fork's QA infrastructure. Use this city's authorized isolated test environments; do not drive someone else's machine or stop a live app. Native platform checks require their own coordinated environment.
 - On this PC `/tmp` is a small tmpfs that runs out of inodes: run `bun run check fast`, tests
   and review checkouts with `TMPDIR=$HOME/.cache/ovis-tmp/<name>` (create it first, delete it
   when done).
@@ -91,8 +83,7 @@ to change. Also read [server/AGENTS.md](server/AGENTS.md) and [src/AGENTS.md](sr
 - Everything written to git and GitHub (commits, branches, PRs, reviews, issues, changelog
   fragments) is in English.
 - Never push a `v*` tag by hand: installed updaters act on tags alone.
-- The merge pass cuts releases ([steps](docs/development.md#releasing)); any other session may
-  prepare the release PR but stops at it. When that PR raises `REMOTE_BUNDLE_VERSION`, the merge
+- Widal release integration is pending ([status](docs/development.md#releasing)); no session publishes inherited artifacts or tags as Widal releases. A release needs its own authorized workflow. If an authorized release PR raises `REMOTE_BUNDLE_VERSION`, the merge
   pass merges nothing touching `server/`, `shared/`, `bun.lock` or `patches/` from its merge until
   the Release run is done.
 - Required checks: Fast checks, Integration and browser, Native Windows install. Resolve review

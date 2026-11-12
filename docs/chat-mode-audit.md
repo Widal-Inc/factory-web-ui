@@ -1,5 +1,7 @@
 # Chat mode audit — 2026-09-22
 
+Historical upstream audit/test evidence, retained with its original issue links and attribution. These results are not validation of a Widal Factory release or completed sign-in/Setup. See [fork status](fork-status.md).
+
 Target: `herdr-web-ui`. Reference: local
 `devswha/chatmux`, `main` at `3b1f3b49216157399e3fb9666a49c942908c3e32`.
 Inspected its Codex session provider and native-session discovery. Chatmux is
