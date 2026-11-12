@@ -3,6 +3,7 @@
  * own status, background waits, plans, the machine roster and the one collector that feeds them.
  */
 import type { SshCandidatesOptions } from "../ssh-candidates.ts";
+import type { FactoryAuth } from "../factory-auth.ts";
 import { createAlertWebhook } from "../alert-webhook.ts";
 import { basename, join } from "node:path";
 import type { AgentStatus, HerdrPane, PaneContext, PlanSummary, ServerMessage, SessionSnapshot } from "../../shared/protocol.ts";
@@ -50,6 +51,7 @@ const VISIT_READ_MS = 10 * 60_000;
 
 export function createStatusHub<Owner, Lease>({ options, preferences, clients, present, pending, drainPending, holdPendingPane, paneMoved, usage, usageLogin }: {
   options: {
+    factoryAuth?: FactoryAuth;
     stateDir?: string;
     codexHome?: string;
     telemetry?: Telemetry;
@@ -89,9 +91,13 @@ export function createStatusHub<Owner, Lease>({ options, preferences, clients, p
   usage: UsageService;
   usageLogin: UsageLoginService;
 }) {
-  const alertWebhook = createAlertWebhook({ stateDir: options.stateDir ?? defaultStateDir() });
+  // Persisted destinations have no signed owner identity. Factory mode cannot authorize
+  // background delivery, including retries and test sends, so it disables both transports.
+  const deliveryEnabled = options.factoryAuth === undefined;
+  const alertWebhook = createAlertWebhook({ stateDir: options.stateDir ?? defaultStateDir(), deliveryEnabled });
   const push = createPushService({
     stateDir: options.stateDir ?? defaultStateDir(),
+    deliveryEnabled,
     webhook: alertWebhook,
     timing: options.alertTiming,
     now: options.statusNow,

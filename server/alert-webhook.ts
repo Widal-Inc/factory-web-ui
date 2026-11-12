@@ -79,6 +79,8 @@ export interface AlertWebhook {
 
 export interface AlertWebhookOptions {
   stateDir: string;
+  /** false in Factory mode: blocks every post, including tests and retries */
+  deliveryEnabled?: boolean;
   now?: () => number;
   retryDelays?: readonly number[];
   /** Telegram's API, replaced by the tests' fake */
@@ -179,6 +181,7 @@ export function buildPost(stored: StoredWebhook, alert: WebhookAlert | null, tel
 }
 
 export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
+  const deliveryEnabled = options.deliveryEnabled !== false;
   const path = join(options.stateDir, FILE);
   const now = options.now ?? Date.now;
   const retryDelays = options.retryDelays ?? DEFAULT_RETRY_DELAYS;
@@ -208,6 +211,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
   }
 
   async function post(target: StoredWebhook, alert: WebhookAlert | null): Promise<WebhookResult> {
+    if (!deliveryEnabled) return { ok: false, error: "external alerts disabled", retry: false };
     const { url, init } = buildPost(target, alert, options.telegramApi);
     try {
       // a webhook answers, it never redirects: following one would post the alert somewhere else
@@ -287,6 +291,7 @@ export function createAlertWebhook(options: AlertWebhookOptions): AlertWebhook {
     },
     generation: () => generation,
     send(alert) {
+      if (!deliveryEnabled) return;
       if (current() === null || alert.generation !== undefined && alert.generation !== generation) return;
       next = alert;
       running ??= drain().finally(() => { running = null; });
