@@ -23,7 +23,12 @@ import { REMOTE_BUNDLE_VERSION } from "../shared/machines.ts";
 import { BUILD_FILE, HUB_MANIFEST_FILE, brandAssetPaths, sourceRepository, verifyManifest, type ArtifactFile } from "./hub-artifact.ts";
 import { NAME as PTY_HOST } from "./pty-sidecar.ts";
 
-export const RELEASE_PIN_SCHEMA = "widal.web-release/1";
+export const RELEASE_PIN_SCHEMA = "widal.web-release/2";
+/**
+ * Every `tar` runs with this environment and nothing else: the builder's own (`TAR_OPTIONS`, `TAR_*` and the
+ * locale) can change the archive's bytes or drop files from it.
+ */
+const TAR_ENV: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/local/bin:/usr/bin:/bin", LC_ALL: "C" };
 export const RELEASE_PIN_FILE = "widal-web-release.json";
 export const RELEASE_INFO_FILE = "widal-release.json";
 export const RELEASE_INFO_SCHEMA = "widal.web-release-info/1";
@@ -115,10 +120,10 @@ export function normalizeModes(root: string, dir = root): void {
  */
 export function packDeterministic(stage: string, archive: string, epoch: number): void {
   if (!Number.isInteger(epoch) || epoch < 0) throw new Error("The archive time is a whole number of seconds.");
-  const version = Bun.spawnSync(["tar", "--version"]);
+  const version = Bun.spawnSync(["tar", "--version"], { env: TAR_ENV });
   if (!version.stdout.toString().includes("GNU tar")) throw new Error("A reproducible archive needs GNU tar.");
   normalizeModes(stage);
-  const result = Bun.spawnSync(["tar", "--sort=name", `--mtime=@${epoch}`, "--owner=0", "--group=0", "--numeric-owner", "--format=gnu", "--use-compress-program=gzip -n -9", "-cf", archive, "-C", stage, "."], { env: { ...process.env, LC_ALL: "C" }, stderr: "pipe" });
+  const result = Bun.spawnSync(["tar", "--sort=name", `--mtime=@${epoch}`, "--owner=0", "--group=0", "--numeric-owner", "--format=gnu", "--use-compress-program=gzip -n -9", "-cf", archive, "-C", stage, "."], { env: TAR_ENV, stderr: "pipe" });
   if (result.exitCode !== 0) throw new Error(`tar failed: ${result.stderr.toString()}`);
 }
 
@@ -170,7 +175,7 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
   const bytes = readFileSync(archive);
   if (bytes.byteLength !== release.archive.bytes || sha256(bytes) !== release.archive.sha256) return ["the archive is not the pinned bytes (size or sha256 differs)"];
 
-  const names = Bun.spawnSync(["tar", "-tzf", archive], { stderr: "pipe" });
+  const names = Bun.spawnSync(["tar", "-tzf", archive], { env: TAR_ENV, stderr: "pipe" });
   if (names.exitCode !== 0) return [`the archive cannot be read: ${names.stderr.toString().trim()}`];
   const problems: string[] = [];
   for (const entry of names.stdout.toString().split("\n").filter(Boolean)) {
@@ -180,7 +185,7 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
 
   const stage = mkdtempSync(join(process.env["TMPDIR"] ?? tmpdir(), "widal-release-verify-"));
   try {
-    const unpacked = Bun.spawnSync(["tar", "-xzf", archive, "-C", stage, "--no-same-owner"], { stderr: "pipe" });
+    const unpacked = Bun.spawnSync(["tar", "-xzf", archive, "-C", stage, "--no-same-owner"], { env: TAR_ENV, stderr: "pipe" });
     if (unpacked.exitCode !== 0) return [`the archive cannot be unpacked: ${unpacked.stderr.toString().trim()}`];
     const tree = listTree(stage);
     const inside = realpathSync(stage);
@@ -345,12 +350,12 @@ async function build(): Promise<void> {
 
     const stage = join(work, "stage");
     mkdirSync(stage);
-    const unpacked = Bun.spawnSync(["tar", "-xzf", join(work, `herdr-web-ui-${RELEASE_PLATFORM}.tgz`), "-C", stage, "--no-same-owner"], { stderr: "pipe" });
+    const unpacked = Bun.spawnSync(["tar", "-xzf", join(work, `herdr-web-ui-${RELEASE_PLATFORM}.tgz`), "-C", stage, "--no-same-owner"], { env: TAR_ENV, stderr: "pipe" });
     if (unpacked.exitCode !== 0) throw new Error(`The remote bundle cannot be unpacked: ${unpacked.stderr.toString()}`);
     // the builder copies the whole node_modules; its dot-entries are not part of a release: caches (.cache, .vite,
-    // .vite-temp) and the package manager's .bin, whose links point at absolute paths in the builder's checkout: they
-    // would dangle on a factory host and tie the archive's bytes to where it was built. Nothing at runtime runs them
-    // (the Windows bundle drops .bin for the same reason).
+    // .vite-temp) and the package manager's .bin (relative links into the packages, with this lockfile, but a
+    // package manager may write absolute ones, and a link farm of launchers is tooling, not runtime). Nothing at
+    // runtime runs them (the Windows bundle drops .bin for the same reason).
     for (const name of readdirSync(join(stage, "node_modules"))) if (name.startsWith(".")) rmSync(join(stage, "node_modules", name), { recursive: true, force: true });
     cpSync(join(root, "dist-hub"), join(stage, HUB_UI_DIR), { recursive: true });
     writeFileSync(join(stage, RELEASE_INFO_FILE), `${JSON.stringify({ schema: RELEASE_INFO_SCHEMA, commit, builtAt: builtAt.toISOString(), hubUi: HUB_UI_DIR, ownerServer: OWNER_SERVER }, null, 2)}\n`);
