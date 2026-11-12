@@ -1,3 +1,4 @@
+import { BRAND } from "../shared/brand.ts";
 import { brandedExpected } from "../scripts/brand-test-helpers.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import { createReadStream, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
@@ -323,7 +324,7 @@ describe("installing Ovis on a PC over SSH", () => {
 
   it("says the server it stopped is gone when the install then fails, and installs on a retry with nothing left to stop", async () => {
     // a server that cannot be copied (macOS): it stays stopped, as the job says
-    const pc = fixture({ descriptors: [descriptor(4242)], uncapturable: true, installer: { exit: 1, output: "Ovis: could not download the installer of v9.9.9 from github.com" } });
+    const pc = fixture({ descriptors: [descriptor(4242)], uncapturable: true, installer: { exit: 1, output: `${BRAND.name}: could not download the installer of v9.9.9 from github.com` } });
     const failed = await pc.settled(pc.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } }));
     expect(failed).toMatchObject({ phase: "failed", error_code: "installer_failed" });
     expect(failed.error).toContain("already stopped, so none runs there now");
@@ -429,7 +430,7 @@ describe("installing Ovis on a PC over SSH", () => {
     for (const how of ["failed", "cancelled"] as const) {
       const started = Promise.withResolvers<void>(), gate = Promise.withResolvers<void>();
       const pc = fixture({ descriptors: [descriptor(4242)], restoreOff: true,
-        ...(how === "failed" ? { installer: { exit: 1, output: "Ovis: could not download the installer of v9.9.9 from github.com" } } : { installerHeld: { started: () => started.resolve(), gate: gate.promise } }) });
+        ...(how === "failed" ? { installer: { exit: 1, output: `${BRAND.name}: could not download the installer of v9.9.9 from github.com` } } : { installerHeld: { started: () => started.resolve(), gate: gate.promise } }) });
       const job = pc.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } });
       if (how === "cancelled") { await started.promise; pc.installer.cancel(job.id); gate.reject(new Error("Connection cancelled")); }
       const ended = await pc.settled(job);
@@ -442,7 +443,7 @@ describe("installing Ovis on a PC over SSH", () => {
   });
 
   it("starts the server it stopped again as it was when the installer then fails", async () => {
-    const pc = fixture({ descriptors: [descriptor(4242)], installer: { exit: 1, output: "Ovis: could not download the installer of v9.9.9 from github.com" } });
+    const pc = fixture({ descriptors: [descriptor(4242)], installer: { exit: 1, output: `${BRAND.name}: could not download the installer of v9.9.9 from github.com` } });
     const job = await pc.settled(pc.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } }));
     expect(job).toMatchObject({ phase: "failed", error_code: "installer_failed" });
     expect(job.error).toContain("has been started again as it was");
@@ -498,7 +499,7 @@ describe("installing Ovis on a PC over SSH", () => {
     expect(ended.error).toContain("being installed in its place");
     expect(pc.commands.some((command) => command.includes('[ -L "$d/exe" ]'))).toBe(false);
     // started again, but it never comes up: the job says so
-    const failing = fixture({ descriptors: [descriptor(4242)], restoreFails: true, installer: { exit: 1, output: "Ovis: could not download the installer of v9.9.9 from github.com" } });
+    const failing = fixture({ descriptors: [descriptor(4242)], restoreFails: true, installer: { exit: 1, output: `${BRAND.name}: could not download the installer of v9.9.9 from github.com` } });
     const failed = await failing.settled(failing.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } }));
     expect(failed.error).toContain("starting it again as it was failed: it did not start within");
   });
@@ -537,7 +538,7 @@ describe("installing Ovis on a PC over SSH", () => {
   });
 
   it("replaces a server that can never be copied faithfully, as on macOS, and says it stays stopped when the install then fails", async () => {
-    const pc = fixture({ descriptors: [descriptor(4242)], unfaithful: true, installer: { exit: 1, output: "Ovis: could not download the installer of v9.9.9 from github.com" } });
+    const pc = fixture({ descriptors: [descriptor(4242)], unfaithful: true, installer: { exit: 1, output: `${BRAND.name}: could not download the installer of v9.9.9 from github.com` } });
     const job = await pc.settled(pc.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } }));
     expect(job).toMatchObject({ phase: "failed", error_code: "installer_failed" });
     expect(pc.commands.some((command) => command.includes("kill -TERM 4242"))).toBe(true);
@@ -574,7 +575,7 @@ describe("installing Ovis on a PC over SSH", () => {
 
   it("starts nothing beside any live server on the session's socket, a managed bridge on another port included", async () => {
     // a connection server's bridge serves this herdr session too, on its own port
-    const pc = fixture({ descriptors: [descriptor(4242), descriptor(4300, true, "e".repeat(64))], installer: { exit: 1, output: "Ovis: could not download the installer of v9.9.9 from github.com" } });
+    const pc = fixture({ descriptors: [descriptor(4242), descriptor(4300, true, "e".repeat(64))], installer: { exit: 1, output: `${BRAND.name}: could not download the installer of v9.9.9 from github.com` } });
     const job = await pc.settled(pc.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } }));
     expect(job.error).toContain("another already runs in its place");
     expect(pc.commands.some((command) => command.includes('[ -L "$d/exe" ]'))).toBe(false);
@@ -588,7 +589,7 @@ describe("installing Ovis on a PC over SSH", () => {
   });
 
   it("starts nothing beside a live server that holds the address, and says so", async () => {
-    const pc = fixture({ descriptors: [descriptor(4242)], addressTaken: true, installer: { exit: 1, output: "Ovis: could not download the installer of v9.9.9 from github.com" } });
+    const pc = fixture({ descriptors: [descriptor(4242)], addressTaken: true, installer: { exit: 1, output: `${BRAND.name}: could not download the installer of v9.9.9 from github.com` } });
     const job = await pc.settled(pc.installer.start({ target, machine_id: "pc-1", plan: { mode: "replace", pid: 4242 } }));
     expect(job.phase).toBe("failed");
     expect(job.error).toContain("another already runs in its place");
