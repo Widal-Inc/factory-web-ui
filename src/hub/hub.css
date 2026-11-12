@@ -35,3 +35,12 @@
   .hub-nav { padding: .5rem; gap: 0; }
   .hub-nav a { min-height: 44px; flex: 1; text-align: center; padding: .7rem .4rem; }
 }
+.hub-problem { color: var(--danger-text); background: var(--danger-tint); padding: .5rem .7rem; border-radius: .4rem; }
+.hub-state { color: var(--text-dim); margin: 0 0 .6rem; }
+.hub-code { font-family: var(--font-mono); font-size: 1.6rem; letter-spacing: .15em; padding: .6rem .9rem; border: 1px dashed var(--border); border-radius: .5rem; display: inline-block; user-select: all; }
+.hub-check { display: block; padding: .3rem 0; }
+.hub-setup > section, .hub-main fieldset { margin-block: 1rem; }
+.hub-main fieldset { border: 1px solid var(--border); border-radius: .5rem; padding: .6rem 1rem; }
+.hub-main input:not([type="checkbox"]), .hub-main select { padding: .5rem .6rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--bg); color: var(--text); font: inherit; max-width: 100%; }
+.hub-main label { display: inline-block; margin: .3rem 0; }
+.hub-main table caption { text-align: start; padding-bottom: .4rem; }

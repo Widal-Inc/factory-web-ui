@@ -1,20 +1,20 @@
 // Browser projection of factory hub v1 at 02c64480524283a116360aeeb81c3ef0e9ba168c.
 // Keep this independent of the hub's Node/SQLite modules. Parse at the network boundary so a
 // mismatched producer never turns missing fields into an empty queue or healthy dashboard.
-type Parser<T> = (value: unknown) => T;
+export type Parser<T> = (value: unknown) => T;
 type Parsed<S> = S extends Parser<infer T> ? T : never;
 const invalid = (): never => { throw new Error("The hub returned an unsupported response. Refresh after the app and hub are updated together."); };
-const text: Parser<string> = (v) => typeof v === "string" ? v : invalid();
-const number: Parser<number> = (v) => typeof v === "number" && Number.isFinite(v) ? v : invalid();
+export const text: Parser<string> = (v) => typeof v === "string" ? v : invalid();
+export const number: Parser<number> = (v) => typeof v === "number" && Number.isFinite(v) ? v : invalid();
 const timestamp: Parser<number> = (v) => { const at = number(v); return Number.isFinite(new Date(at).getTime()) ? at : invalid(); };
-const boolean: Parser<boolean> = (v) => typeof v === "boolean" ? v : invalid();
-function literal<const T extends string | number | null>(expected: T): Parser<T> { return (v) => v === expected ? expected : invalid(); }
-function array<T>(parse: Parser<T>): Parser<T[]> { return (v) => Array.isArray(v) ? v.map(parse) : invalid(); }
-function optional<T>(parse: Parser<T>): Parser<T | undefined> { return (v) => v === undefined ? undefined : parse(v); }
-function union<A, B>(a: Parser<A>, b: Parser<B>): Parser<A | B> {
+export const boolean: Parser<boolean> = (v) => typeof v === "boolean" ? v : invalid();
+export function literal<const T extends string | number | null>(expected: T): Parser<T> { return (v) => v === expected ? expected : invalid(); }
+export function array<T>(parse: Parser<T>): Parser<T[]> { return (v) => Array.isArray(v) ? v.map(parse) : invalid(); }
+export function optional<T>(parse: Parser<T>): Parser<T | undefined> { return (v) => v === undefined ? undefined : parse(v); }
+export function union<A, B>(a: Parser<A>, b: Parser<B>): Parser<A | B> {
   return (v) => { try { return a(v); } catch { return b(v); } };
 }
-function object<S extends Record<string, Parser<unknown>>>(shape: S): Parser<{ [K in keyof S]: Parsed<S[K]> }> {
+export function object<S extends Record<string, Parser<unknown>>>(shape: S): Parser<{ [K in keyof S]: Parsed<S[K]> }> {
   return (v) => {
     if (v === null || typeof v !== "object" || Array.isArray(v)) return invalid();
     return Object.fromEntries(Object.entries(shape).map(([key, parse]) => [key, parse((v as Record<string, unknown>)[key])])) as { [K in keyof S]: Parsed<S[K]> };
@@ -22,7 +22,7 @@ function object<S extends Record<string, Parser<unknown>>>(shape: S): Parser<{ [
 }
 const nullableNumber = union(number, literal(null));
 const role = union(literal("admin"), union(literal("engineer"), literal("viewer")));
-const unavailable = object({ state: literal("unavailable"), reason: text });
+export const unavailable = object({ state: literal("unavailable"), reason: text });
 export type Unavailable = Parsed<typeof unavailable>;
 const factory = object({ factory: text, owner: text, address: optional(text), state: union(literal("creating"), union(literal("ready"), union(literal("failed"), literal("removed")))), registeredAt: text, updatedAt: text });
 export type Factory = Parsed<typeof factory>;
@@ -55,14 +55,15 @@ export const parseItem = object({
   wait: optional(wait), blockedBy: array(object({ id: text, status: optional(text), title: optional(text) })), events: array(object({ type: text, actor: text, at: timestamp, from: optional(text), to: optional(text), comment: optional(text) })),
 });
 export type Item = Parsed<typeof parseItem>;
-export const parseAdmin = object({ version: literal(1), people: array(object({ person: text, role, addedAt: optional(text), source: union(literal("registry"), literal("log")) })), factories: array(factory), capabilities: object({ people: object({ state: literal("ready"), endpoint: text }), factories: object({ state: literal("ready"), endpoint: text }), onboarding: unavailable, identityProvider: unavailable, branding: unavailable, budgets: unavailable, telemetry: unavailable }) });
+export const parseAdmin = object({ version: literal(1), people: array(object({ person: text, role, addedAt: optional(text), source: union(literal("registry"), literal("log")) })), factories: array(factory), capabilities: object({ people: object({ state: literal("ready"), endpoint: text }), factories: object({ state: literal("ready"), endpoint: text }), onboarding: union(object({ state: literal("ready"), endpoint: text }), unavailable), identityProvider: unavailable, branding: unavailable, budgets: unavailable, telemetry: unavailable }) });
 export type Admin = Parsed<typeof parseAdmin>;
 
-export type Route = { page: "my" | "today" | "quality" | "setup" | "admin" } | { page: "item"; factory: string; id: string } | { page: "missing" };
+export type Route = { page: "my" | "today" | "quality" | "setup" | "linearCallback" | "admin" } | { page: "item"; factory: string; id: string } | { page: "missing" };
 export function routeFor(path: string): Route {
   if (path === "/" || path === "/my-factory") return { page: "my" };
   if (path === "/team") return { page: "today" };
   if (path === "/team/quality") return { page: "quality" };
+  if (path === "/linear/callback") return { page: "linearCallback" };
   if (/^\/setup(?:\/[^/]+)?$/.test(path)) return { page: "setup" };
   if (/^\/admin(?:\/[^/]+)?$/.test(path)) return { page: "admin" };
   const match = /^\/team\/items\/([^/]+)\/([^/]+)$/.exec(path);

@@ -64,8 +64,8 @@ factory, behind `directTransport` for the registered owner origin. A page holds 
 because the App reaches its server through one process-wide transport. The view gives that
 transport back when it unmounts (a page refresh unmounts it), one microtask after the App's own
 teardown, and only if it is still the view's own, so the person can open their factory again without
-reloading the page. The Setup and Admin
-onboarding slots stay empty until the reviewed onboarding services are composed.
+reloading the page. The Setup and Admin onboarding slots hold the screens described in
+[Admin onboarding and Setup](#admin-onboarding-and-setup).
 
 ## Published producer contract
 
@@ -151,15 +151,73 @@ The file viewer mobile regression also runs the checks that need no hub artifact
 it does not establish deployment sign-in, real ALB cookies, proxy configuration or cross-site cookie
 availability.
 
-The Setup and Admin onboarding slots receive the current identity. They must consume the reviewed
-onboarding services, including the browser-to-factory secret/OAuth flow. They do not create a second
-backend or new storage. `POST /api/app/my/factory` remains reserved for provisioning; the summary uses
-`GET /api/app/my/overview`. Admin currently lists people/factories and explicit unavailable capabilities.
-It performs no mutation. The separate setup flow supplies the actual controls after contract review.
+The Setup and Admin onboarding slots receive the current identity and are filled by the screens in
+[Admin onboarding and Setup](#admin-onboarding-and-setup). They create no backend and no storage of their
+own: the hub's onboarding API (the factory repository's `docs/hub-onboarding-api.md`) and the owner
+factory's Setup routes below are the only places they read or write.
 
 PR140's intermediate hub HTML pages do not replace the fork artifact or direct owner transport.
 Its removal/setup authorization fix and merge belong to its author. Do not compose that implementation
 as accepted until its security review is resolved.
+
+## Admin onboarding and Setup
+
+We decided that a person's own GitHub, Linear and Claude credentials never reach the hub, because the
+hub is shared and an administrator must not be able to act as another person. The browser therefore
+sends them straight to the person's registered owner factory, and the hub only carries the
+organization's non-secret app registration and the progress of invites.
+
+**Admin onboarding** (`AdminOnboarding.tsx`, shown on `/admin` only when the hub reports
+`capabilities.onboarding` ready) reads and writes the hub's onboarding API as it is documented
+there. In order: create the organization's GitHub App (the browser posts the hub's manifest to
+GitHub's own organization page and nowhere else, and GitHub sends the administrator back to the hub);
+check the app is installed, with a reminder to turn on Device Flow, which GitHub's manifest cannot do;
+enter the Linear app's client ID (never a secret) and see the callback address to register, or say the
+team does not use Linear; invite people with a role, or create the administrator's own factory. Only an
+engineer invite deploys a factory. The invite list follows a deployment while any invite is creating,
+shows a failure with the hub's reason, and for an invite whose email was not sent shows the one-time
+link to copy and a button to send a fresh one. Inviting stays disabled, with the reason, until GitHub
+and Linear (or "no Linear") are done, and the hub still refuses it if they are not. An unavailable or
+failing hub is shown as that, never as an empty setup.
+
+**Setup** (`SetupPage.tsx`, on `/setup`) works on the person's own registered factory, found from
+`GET /api/app/my/overview` and `ownerOrigin` like the live view. Without a ready factory it shows the
+hub's invitation progress or failure and asks for nothing. With one, it calls the owner server
+directly (`ownerSetupApi.ts`, over the same verified direct transport) and walks through:
+
+1. **GitHub**, through the organization's app with the device flow: the factory asks GitHub for a code,
+   the page shows the code and GitHub's own device page, and the factory polls GitHub at the interval
+   GitHub gives. The page never sees the token.
+2. **Linear**, as the person, with PKCE: the factory makes a single-use state and keeps the verifier; the
+   page sends the person to Linear's own authorize page, which returns to `<hub origin>/linear/callback`.
+   That page (`LinearCallback`) removes the one-time code from the address at once and posts it only to
+   the person's own factory, which exchanges it. A team that does not use Linear gets no Linear step.
+3. **Choices**: the repositories the person's own GitHub connection reaches through the app, the Linear
+   team, and the git name and email the agents commit with, proposed from the GitHub account. The factory
+   checks every choice against what the connections reach at the moment of saving, and choices belong to the
+   accounts they were made with: connecting another GitHub or Linear account asks for them again.
+4. **Claude**, with the factory's existing followed sign-in (`/api/usage/login`): the page shows a link
+   on Claude's or Anthropic's own host and takes the one-time code, which it sends to the factory only. The code is typed into an uncontrolled input,
+   read once on submit and cleared at once; it is never in React state, a draft or a retry.
+
+Each step shows what the factory reports: connected, expired (with a reconnect), unavailable, or not
+connected, and the page says "Setup is complete" only when the factory's status says GitHub, Linear (unless not
+used), the saved choices and Claude are all in place. That means the choices are saved on the factory; applying
+them to its runtime is the factory's own consumer (see [Owner Setup](factory-auth.md#owner-setup)). Nothing in Setup starts an agent: Claude's sign-in
+runs the CLI's login and nothing else. When the factory host does not answer with the person's sign-in
+(its own sign-in cookie is missing), the page offers a top-level visit to
+`<factory origin>/api/factory/setup/prime?next=setup`, which returns to a fixed hub path; no other
+return address is accepted.
+
+The owner server side, `server/factory-setup.ts` and `server/factory-setup-routes.ts`, is documented in
+[factory ingress and ownership](factory-auth.md#owner-setup). Both client modules parse every answer at
+the boundary, so a factory or hub that has drifted is shown as unsupported instead of as an empty or
+finished Setup.
+
+Not yet accepted: the real ALB and CORS path for these calls, the hub serving this artifact at
+`/linear/callback` (requested of the factory repository's integration), the Claude sign-in cookie
+(`SameSite=Strict`) across a hub and factory that must share a registrable domain, real GitHub, Linear
+and Claude accounts, and the end-to-end invite-to-first-ticket acceptance with fakecloud.
 
 ## Verification and remaining acceptance
 
@@ -168,9 +226,14 @@ owner-only rendering, unavailable/partial data, role refusals, loading, abort an
 `tsconfig.hub.json` checks only these independent modules. These checks use no real sessions or AWS.
 
 ```sh
-bun test src/hub
+bun test src/hub server/factory-setup.test.ts
 bun --bun tsc --noEmit -p tsconfig.hub.json
 ```
+
+The onboarding and Setup tests use stand-ins for the hub, the owner factory, GitHub, Linear and Claude
+with made-up canary values; they check that a canary token, device code, verifier or Claude code never
+appears in a response, a URL or the hub's requests, that a callback is used once, and that a stale or
+other person's callback is refused.
 
 `bun scripts/hub-pages-qa.ts` prepares a temporary in-memory artifact and synthetic same-origin APIs,
 then checks 1280×900 and 390×844 layouts with one browser. It exercises navigation, unavailable data,

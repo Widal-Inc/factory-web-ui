@@ -1,4 +1,6 @@
 import { type FactoryAuth, factoryAuthFromEnv } from "./factory-auth.ts";
+import { FactorySetup } from "./factory-setup.ts";
+import { defaultSecretsPath } from "./factory-setup-store.ts";
 import { BRAND } from "../shared/brand.ts";
 import type { SshCandidatesOptions } from "./ssh-candidates.ts";
 import "./adopt-legacy-env.ts";
@@ -234,6 +236,10 @@ export function createServer(
     agentDetector?: AgentDetector;
     /** Factory deployment uses only signed ALB identity and live registry ownership. */
     factoryAuth?: FactoryAuth;
+    /** where the owner's Setup writes its credentials; unset, the factory's own secrets file (WIDAL_SECRETS). Tests pass a temporary one. */
+    factorySecretsPath?: string;
+    /** a stand-in for the fetch Setup makes to GitHub and Linear; tests only */
+    factorySetupFetch?: typeof fetch;
   } = {},
 ): ServerInstance {
   /**
@@ -410,6 +416,12 @@ export function createServer(
       switchRuntime: () => { const answer = options.runtimeService!.request("herdr-core"); return answer.ok ? null : answer.message; },
       ...(options.herdrCoreInstaller ? { installer: options.herdrCoreInstaller } : {}),
     }) : null,
+    ...(factoryAuth ? { factorySetup: new FactorySetup({
+      stateDir, secretsPath: options.factorySecretsPath ?? defaultSecretsPath(), hubOrigin: factoryAuth.browserOrigin,
+      apps: (identity) => factoryAuth.setupApps(identity),
+      claudeSignedIn: async () => (await usageLogin.signedInAccounts("claude")).length > 0,
+      ...(options.factorySetupFetch ? { fetch: options.factorySetupFetch } : {}),
+    }) } : {}),
     options, relayReceiptIds: new RelayReceiptIds(), hostname, token, bridgeToken, bootId, preferences, herdrSidebar, shellAgents, agentDetector, agentOffered, agentInstaller, openCodeState, cliProxyRoutes, usageLogin, usage, usageAccounts, systemSampler, fontsDir: join(stateDir, "fonts"), voice, browserSnapshot, core, seen, piReader, orderSequence, clientConnectionLog, requestLog,
   };
 

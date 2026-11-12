@@ -59,6 +59,7 @@ export class FactoryAuth {
   readonly origin: string;
   readonly browserOrigin: string;
   private readonly hubMe: string;
+  private readonly hubSetupUrl: string;
   private readonly peers = new BlockList();
   private readonly keys = new Map<string, Promise<KeyObject>>();
   private readonly failedKeys = new Map<string, number>();
@@ -72,7 +73,9 @@ export class FactoryAuth {
     this.origin = origin(options.origin, "Factory origin", true);
     if (!/^[^\s\x00-\x1f\x7f/]{1,254}$/.test(options.owner)) throw new Error("Invalid factory owner");
     this.browserOrigin = origin(options.hubOrigin, "Hub browser origin", true);
-    this.hubMe = `${origin(options.registryOrigin, "Registry origin", false)}/api/app/me`;
+    const registry = origin(options.registryOrigin, "Registry origin", false);
+    this.hubMe = `${registry}/api/app/me`;
+    this.hubSetupUrl = `${registry}/api/app/setup`;
     const arn = ARN.exec(options.loadBalancer);
     if (!arn) throw new Error("Invalid ALB ARN");
     this.keyHost = `https://public-keys.auth.elb.${arn[2]}.amazonaws.com${arn[1] === "aws-cn" ? ".cn" : ""}`;
@@ -212,6 +215,38 @@ export class FactoryAuth {
         && factory.address === this.origin && factory.state === "ready";
     });
     if (!owns || identity.expires <= this.now()) throw new FactoryAuthError(403);
+  }
+
+  /**
+   * The public app client IDs the hub names for this person's Setup (`GET /api/app/setup`), read with their own
+   * verified identity. Setup uses these and never a client ID the browser supplies. A null is an app the
+   * organization has not registered (or, for Linear, chose not to use). Ownership is checked first.
+   */
+  async setupApps(identity: FactoryIdentity): Promise<{ githubClientId: string | null; linearClientId: string | null }> {
+    await this.checkOwner(identity);
+    let body: Record<string, unknown> | undefined;
+    try {
+      const response = await this.fetcher(this.hubSetupUrl, {
+        headers: { [ALB_IDENTITY_HEADER]: identity.token, "cache-control": "no-cache, no-store", accept: "application/json" },
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5_000),
+      });
+      if (response.status === 401 || response.status === 403) throw new FactoryAuthError(403);
+      if (!response.ok) throw new Error();
+      body = object(await response.json());
+    } catch (error) {
+      if (error instanceof FactoryAuthError) throw error;
+      throw new FactoryAuthError(503);
+    }
+    // Only an explicit null means "no such app" (for Linear: the organization does not use it). A missing key or a
+    // malformed registration is an answer that cannot be used, never a step that quietly disappears.
+    const clientId = (value: unknown): string | null => {
+      if (value === null) return null;
+      const app = object(value);
+      if (!app || typeof app["clientId"] !== "string" || !/^[A-Za-z0-9_.-]{1,200}$/.test(app["clientId"])) throw new FactoryAuthError(503);
+      return app["clientId"];
+    };
+    if (!body || body["version"] !== 1 || !("github" in body) || !("linear" in body)) throw new FactoryAuthError(503);
+    return { githubClientId: clientId(body["github"]), linearClientId: clientId(body["linear"]) };
   }
 
   audit(identity: FactoryIdentity | undefined, action: string, outcome: "allowed" | "denied" = "allowed"): void {

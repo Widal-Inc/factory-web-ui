@@ -41,4 +41,15 @@ describe("hub pages", () => {
     expect(html).toContain("This does not mean telemetry is disabled");
     expect(html).not.toContain("<form");
   });
+  it("renders the onboarding slot only when the hub says onboarding is ready, and says so when the build has none", () => {
+    const ready = { ...fixtureAdmin, capabilities: { ...fixtureAdmin.capabilities, onboarding: { state: "ready" as const, endpoint: "/api/app/admin/onboarding" } } };
+    const asAdmin = { ...identity, role: "admin" as const };
+    const withSlot = { ...slots, onboarding: () => <p>Onboarding screens</p> };
+    expect(renderToStaticMarkup(<HubPage value={{ page: "admin", data: ready }} identity={asAdmin} slots={withSlot} />)).toContain("Onboarding screens");
+    expect(renderToStaticMarkup(<HubPage value={{ page: "admin", data: ready }} identity={asAdmin} slots={slots} />)).toContain("no screens for it");
+    // an unavailable hub keeps its reason even when the build has the screens: nothing is offered that the hub cannot do
+    const html = renderToStaticMarkup(<HubPage value={{ page: "admin", data: fixtureAdmin }} identity={asAdmin} slots={withSlot} />);
+    expect(html).not.toContain("Onboarding screens");
+    expect(html).toContain("Invites and onboarding unavailable");
+  });
 });

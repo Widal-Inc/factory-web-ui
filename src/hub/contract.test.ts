@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { ownerOrigin, parseBootstrap, parseOverview, parseToday, readHub, routeFor } from "./contract.ts";
-import { fixtureBootstrap, fixtureOverview, fixtureToday } from "./fixtures.ts";
+import { ownerOrigin, parseAdmin, parseBootstrap, parseOverview, parseToday, readHub, routeFor } from "./contract.ts";
+import { fixtureAdmin, fixtureBootstrap, fixtureOverview, fixtureToday } from "./fixtures.ts";
 
 describe("hub v1 boundary", () => {
   it("rejects missing, unsupported and malformed responses instead of inventing empty data", () => {
@@ -50,5 +50,11 @@ describe("hub v1 boundary", () => {
   it("keeps only the hub's supported deep links", () => {
     expect(routeFor("/team/items/sample-factory/sample-1")).toEqual({ page: "item", factory: "sample-factory", id: "sample-1" });
     for (const path of ["/team/items/sample-factory/%2Fsecret", "/team/items/sample-factory/%zz", "/team/items/a/b/c", "/unknown", "/setup/a/b"]) expect(routeFor(path)).toEqual({ page: "missing" });
+  });
+  it("routes Linear's return page and parses a hub with onboarding ready or unavailable", () => {
+    expect(routeFor("/linear/callback")).toEqual({ page: "linearCallback" });
+    expect(routeFor("/linear/callback/extra")).toEqual({ page: "missing" });
+    expect(parseAdmin({ ...fixtureAdmin, capabilities: { ...fixtureAdmin.capabilities, onboarding: { state: "ready", endpoint: "/api/app/admin/onboarding" } } }).capabilities.onboarding).toEqual({ state: "ready", endpoint: "/api/app/admin/onboarding" });
+    expect(() => parseAdmin({ ...fixtureAdmin, capabilities: { ...fixtureAdmin.capabilities, onboarding: { state: "ready" } } })).toThrow();
   });
 });

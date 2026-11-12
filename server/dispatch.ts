@@ -68,6 +68,8 @@ import { handlePluginRequest } from "./plugin-routes.ts";
 import type { createServer } from "./index.ts";
 import type { CLIProxyRoutes } from "./cliproxy-routes.ts";
 import type { UsageLoginService } from "./usage-login.ts";
+import { handleSetupRequest, isSetupPath } from "./factory-setup-routes.ts";
+import type { FactorySetup } from "./factory-setup.ts";
 import type { UsageService } from "./usage.ts";
 import type { VoiceService } from "./voice.ts";
 
@@ -90,6 +92,8 @@ export interface RequestServices {
   readonly openCodeState: OpenCodePromptState;
   readonly cliProxyRoutes: CLIProxyRoutes;
   readonly usageLogin: UsageLoginService;
+  /** the owner factory's Setup (server/factory-setup.ts); only with the signed factory identity gate */
+  readonly factorySetup?: FactorySetup;
   readonly usage: UsageService;
   readonly usageAccounts: UsageAccountList;
   readonly systemSampler: SystemSampler | null;
@@ -318,6 +322,8 @@ async function handleAuthorizedRequest(request: Request, ctx: ServerContext, fac
   if (pathname === "/api/usage/accounts") { setRequestRoute(pathname); return ctx.services.usageAccounts.handle(request); }
   // on or off only: the server decides what is installed and where (server/statusline-install.ts)
   if (pathname === "/api/usage/statusline") { setRequestRoute(pathname); return handleStatuslineRequest(request, usage); }
+  // the owner factory's Setup: only behind the signed identity gate, which every request here has passed
+  if (isSetupPath(pathname)) { setRequestRoute("/api/factory/setup"); ctx.timeout(request, 30); return handleSetupRequest(request, pathname, ctx.services.factorySetup, factoryIdentity, ctx.services.options.factoryAuth?.browserOrigin); }
   if (pathname === "/api/usage/login") { setRequestRoute(pathname); ctx.timeout(request, 30); return usageLogin.handle(request, collector.trackPane, loginOwner); }
   // the browser's sign-in dialog: a followed login's prompt, the code its page showed, and stopping it
   if (pathname === "/api/usage/login/prompt" || pathname === "/api/usage/login/code" || pathname === "/api/usage/login/cancel") { setRequestRoute(pathname); return usageLogin.handlePrompt(request, loginOwner); }
