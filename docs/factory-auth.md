@@ -94,6 +94,18 @@ Audit records contain only time, factory, verified actor (or `unknown` for an un
 refusal), action category and outcome. They contain no request bodies, query strings, prompts,
 transcripts, identity tokens or credentials.
 
+## External notifications
+
+Factory mode disables browser push and alert webhook delivery, including test sends and
+webhook retries. Persisted destinations do not carry a signed owner identity, so the independent
+status collector cannot prove current ownership or identity expiry before delivering private
+pane titles, prompt summaries or actions. A valid browser request does not authorize later
+background delivery. This restriction applies even while the owner is signed in and survives
+server restarts; stored subscriptions and webhook settings are preserved without sending to
+them. Standalone development keeps its existing notification behavior. Enabling Factory
+notifications requires identity-bound destinations and current-owner checks at every send and
+retry; it is not part of this implementation.
+
 ## Deployment acceptance
 
 Synthetic tests establish the server boundary and revocation behavior without AWS. They do not

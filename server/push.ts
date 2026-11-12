@@ -188,6 +188,8 @@ export interface PushService {
 
 export interface PushServiceOptions {
   stateDir: string;
+  /** false in Factory mode: destinations have no identity that authorizes background delivery */
+  deliveryEnabled?: boolean;
   subject?: string;
   /**
    * The pane as herdr has it now, looked up when an alert fires: its title, and what a blocked agent
@@ -360,6 +362,7 @@ interface Scheduled {
 }
 
 export function createPushService(options: PushServiceOptions): PushService {
+  const deliveryEnabled = options.deliveryEnabled !== false;
   const vapidPath = join(options.stateDir, "vapid.json");
   const subscriptionsPath = join(options.stateDir, "push-subscriptions.json");
   const subject = options.subject ?? process.env["OVIS_PUSH_SUBJECT"] ?? DEFAULT_SUBJECT;
@@ -586,6 +589,7 @@ export function createPushService(options: PushServiceOptions): PushService {
   const iso = (at: number | null): string | null => at === null ? null : new Date(at).toISOString();
 
   async function deliver(subscription: PushSubscriptionRecord, message: PushPayload, urgency: "normal" | "high"): Promise<PushDelivery> {
+    if (!deliveryEnabled) return { ok: false, status: 403, gone: false };
     // what the push goes to, taken now: by the time the answer comes the endpoint may be
     // registered again with other keys, and that subscription is not told
     const identity = identityOf(subscription);
