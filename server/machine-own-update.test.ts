@@ -805,6 +805,8 @@ describe("a PC whose own Ovis is older than this app", () => {
   const refusals: [string, Remote, RegExp, "replace" | "restart" | null][] = [
     ["not started by its updater", { status: { ...unmanagedUpdateStatus() } }, /does not update itself: Start with bun run start/, "replace"],
     ["the desktop app's server", { status: { ...unmanagedUpdateStatus(true) } }, /updates come with the app/, null],
+    // An older remote sends this literal; deriving it from our helper would hide a wire-compatibility break.
+    ["an older desktop app's server", { status: { ...unmanagedUpdateStatus(), blocked_reason: "This server is part of the Ovis app, which updates them together: updates come with the app, not from here." } }, /updates come with the app/, null],
     ["blocked there", { status: managedOffer({ blocked_reason: "The source checkout changed. Restart the app before updating." }) }, /cannot update itself now: The source checkout changed/, null],
     ["asks for its own token", { status: null }, /OVIS_TOKEN/, null],
     ["too old to install a named revision", { status: managedOffer({ revision_bound_install: undefined }) }, /too old to take an update/, "restart"],
