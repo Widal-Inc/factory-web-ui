@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { GithubDeviceStart, SetupChoices, SetupStatus } from "../../shared/factory-setup.ts";
 import type { UsageLoginPrompt } from "../../shared/usage-login.ts";
 import { HubError, ownerOrigin, parseOverview, readHub, type Bootstrap, type Overview, type Parser } from "./contract.ts";
@@ -69,11 +69,17 @@ export function SetupPage({ identity, deps }: { identity: Bootstrap["me"]; deps:
     })();
     return () => controller.abort();
   }, [deps, attempt]);
+  // The owner client is made once per origin: a new one on every render would restart the status read.
+  const mine = load.state === "ready" ? load.overview.factories.filter((f) => f.owner.trim().toLowerCase() === identity.person.trim().toLowerCase()) : [];
+  const ready = load.state === "ready" ? mine.find((f) => f.state === "ready" && ownerOrigin(load.overview, identity.person, f.factory) !== null) : undefined;
+  const origin = load.state === "ready" && ready ? ownerOrigin(load.overview, identity.person, ready.factory) : null;
+  const api = useMemo(() => {
+    // an origin the transport refuses leaves the person with the "no usable address" message, not a blank page
+    try { return origin ? deps.owner(origin) : null; } catch { return null; }
+  }, [deps, origin]);
   if (load.state === "loading") return <p role="status">Loading Setup…</p>;
   if (load.state === "error") return <section role="alert"><p>{load.message}</p><button type="button" className="btn" onClick={() => again((n) => n + 1)}>Try again</button></section>;
-  const mine = load.overview.factories.filter((f) => f.owner.trim().toLowerCase() === identity.person.trim().toLowerCase());
-  const ready = mine.find((f) => f.state === "ready" && ownerOrigin(load.overview, identity.person, f.factory) !== null);
-  if (ready) return <OwnerSetup factory={ready.factory} api={deps.owner(ownerOrigin(load.overview, identity.person, ready.factory)!)} deps={deps} />;
+  if (ready && api) return <OwnerSetup factory={ready.factory} api={api} deps={deps} />;
   return <NoFactory invitation={load.hub?.invitation ?? null} known={mine.length > 0} reload={() => again((n) => n + 1)} />;
 }
 

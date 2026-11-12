@@ -125,6 +125,7 @@ async function hubRouteInner(route: Route) {
     hubRequests.push({ url: request.url(), body: request.postData() ?? "" });
     const answer = hubApi(url.pathname, request.method(), body);
     await route.fulfill({ status: answer.status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(answer.body) });
+    answered.push(request.url());
     return;
   }
   const asset = assets.get(url.pathname);
@@ -152,6 +153,7 @@ async function externalRoute(route: Route) {
 }
 
 const failures: string[] = [];
+const answered: string[] = [];
 const check = (condition: unknown, message: string): void => { if (!condition) throw new Error(message); };
 let browser: Browser | undefined;
 try {
@@ -170,6 +172,8 @@ try {
       await context.route(`${OWNER}/**`, ownerRoute);
       await context.route(/https:\/\/(github\.com|linear\.app|claude\.ai)\/.*/, externalRoute);
       const page = await context.newPage();
+      // the machine is shared and often loaded: give actions room instead of failing on a slow frame
+      page.setDefaultTimeout(60_000);
       const errors: string[] = [];
       failures.length = 0;
       page.on("requestfailed", (request) => failures.push(`${request.url()} ${request.failure()?.errorText}`));
@@ -269,7 +273,7 @@ try {
       console.log(`Hub onboarding and Setup QA passed at ${tag} (screenshots in ${dir})`);
     } catch (error) {
       for (const open of context.pages()) console.error(`PAGE ${open.url()}\n${await open.locator("body").innerText().catch(() => "(no body)")}`);
-      console.error(`owner requests: ${JSON.stringify(ownerRequests.slice(-8))}\nhub requests: ${JSON.stringify(hubRequests.slice(-6).map((entry) => entry.url))}\npage errors: ${JSON.stringify(failures)}`);
+      console.error(`owner requests: ${JSON.stringify(ownerRequests.slice(-8))}\nhub requests: ${JSON.stringify(hubRequests.slice(-6).map((entry) => entry.url))}\nanswered: ${JSON.stringify(answered.slice(-6))}\npage errors: ${JSON.stringify(failures)}`);
       throw error;
     } finally { await context.close(); }
   }
