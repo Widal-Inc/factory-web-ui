@@ -137,7 +137,10 @@ registration is reported as unavailable and never as "not used".
 
 Credentials are written to the factory's own secrets file (`$WIDAL_SECRETS`, else
 `$XDG_CONFIG_HOME/widal/secrets.env`, else `~/.config/widal/secrets.env`; mode 0600) as `GH_TOKEN`,
-`LINEAR_ACCESS_TOKEN` and `LINEAR_REFRESH_TOKEN`. What is not secret goes to `factory-setup.json` in the state
+`LINEAR_ACCESS_TOKEN` and `LINEAR_REFRESH_TOKEN`. Setup changes only those names' lines (`NAME=value` or
+`export NAME=value`); every other line of whoever provisioned the file (comments, other `export` lines, empty
+values, CRLF endings) is kept exactly as it is. Each write goes to a temporary file of its own beside it, is
+flushed, and is renamed over the file (a link there is replaced, never written through). What is not secret goes to `factory-setup.json` in the state
 folder: who connected, the repositories, the Linear team, the git name and email, expiry times and `ready`.
 `ready` is true only when GitHub, Linear (unless the organization does not use it), the saved choices and
 Claude's sign-in all exist; the factory starts no agent before it is true. Claude uses the existing

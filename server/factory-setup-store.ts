@@ -2,18 +2,19 @@
  * Where the owner's Setup keeps what it learned on this factory host.
  *
  * Credentials go into the factory's own secrets file (`$WIDAL_SECRETS`, else
- * `$XDG_CONFIG_HOME/widal/secrets.env`, else `~/.config/widal/secrets.env`): one NAME=value per line,
- * mode 0600, the file the factory itself reads. They never go into the state folder's JSON, a
+ * `$XDG_CONFIG_HOME/widal/secrets.env`, else `~/.config/widal/secrets.env`): NAME=value lines, mode 0600,
+ * the file the factory itself reads. Setup changes only the lines of the names it owns and keeps every other
+ * line of whoever provisioned the file exactly as it is. They never go into the state folder's JSON, a
  * response, a log line or an environment an agent inherits. Everything that is not a secret (whose
  * account, the repositories chosen, the git identity, the expiry times) goes into
  * `factory-setup.json` in the state folder, which the factory may read to see what the person chose
  * and whether Setup is complete.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { SetupSettings } from "../shared/factory-setup.ts";
-import { writePrivateState } from "./private-state.ts";
+import { writePrivateBytes, writePrivateState } from "./private-state.ts";
 
 export const SECRET_GITHUB = "GH_TOKEN";
 export const SECRET_LINEAR = "LINEAR_ACCESS_TOKEN";
@@ -25,30 +26,62 @@ export function defaultSecretsPath(env: Record<string, string | undefined> = pro
   return join(env["XDG_CONFIG_HOME"] || join(home, ".config"), "widal", "secrets.env");
 }
 
+/** A definition Setup understands: `NAME=value` or `export NAME=value`, with an optional CR before the newline. */
+const DEFINITION = /^(\s*(?:export[ \t]+)?)([A-Za-z_][A-Za-z0-9_]*)=(.*?)(\r?)$/;
+interface Definition { readonly prefix: string; readonly name: string; readonly value: string; readonly cr: string }
+
+/** The file's lines, each with its own line ending, exactly as they are. */
+const splitLines = (content: string): string[] => content.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+
+function definition(line: string): Definition | null {
+  const match = line.replace(/\n$/, "").match(DEFINITION);
+  if (!match) return null;
+  const raw = match[3]!;
+  // a value the provisioner quoted is read without its quotes, as a shell would
+  const value = raw.length >= 2 && (raw[0] === "\"" || raw[0] === "'") && raw.at(-1) === raw[0] ? raw.slice(1, -1) : raw;
+  return { prefix: match[1]!, name: match[2]!, value, cr: match[4]! };
+}
+
+/** Every definition in the file; a later one of the same name wins, as when the file is sourced. */
 export function readSecrets(path: string): Record<string, string> {
   if (!existsSync(path)) return {};
   const out: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (match) out[match[1]!] = match[2]!;
+  for (const line of splitLines(readFileSync(path, "utf8"))) {
+    const found = definition(line);
+    if (found) out[found.name] = found.value;
   }
   return out;
 }
 
-/** Merges values into the secrets file; a name in `remove` goes. Written atomically, readable by its owner only. */
+/**
+ * Sets the names in `values` (an empty value removes the name) and removes the names in `remove`. Only those
+ * names' lines change: every other line (comments, `export` lines, empty values, CRLF endings, lines Setup does
+ * not understand) is kept byte for byte. A name defined more than once keeps its first line, rewritten, and
+ * loses the rest, which would otherwise win when the file is sourced. Written with writePrivateBytes: a
+ * temporary file of its own beside it, flushed, renamed over the file (never written through a link), the
+ * folder flushed, readable by its owner only.
+ */
 export function saveSecrets(path: string, values: Record<string, string>, remove: readonly string[] = []): void {
-  const all = { ...readSecrets(path), ...values };
-  for (const name of remove) if (!(name in values)) delete all[name];
-  for (const [name, value] of Object.entries(all)) {
+  for (const [name, value] of Object.entries(values)) {
     if (!NAME.test(name)) throw new Error(`"${name}" is not a valid variable name`);
     if (/[\r\n\0]/.test(value)) throw new Error(`the value of ${name} must be one line`);
   }
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.tmp`;
-  const body = Object.entries(all).filter(([, value]) => value !== "").map(([name, value]) => `${name}=${value}\n`).join("");
-  writeFileSync(temporary, `# the factory's secrets, written by its web Setup. Keep this file private.\n${body}`, { mode: 0o600 });
-  chmodSync(temporary, 0o600);
-  renameSync(temporary, path);
+  const touched = new Set([...Object.keys(values), ...remove]);
+  const pending = new Map(Object.entries(values).filter(([, value]) => value !== ""));
+  const existing = existsSync(path) ? readFileSync(path, "utf8") : null;
+  const eol = existing?.includes("\r\n") ? "\r\n" : "\n";
+  const out: string[] = existing === null ? ["# the factory's secrets, written by its web Setup. Keep this file private.\n"] : [];
+  for (const line of existing === null ? [] : splitLines(existing)) {
+    const found = definition(line);
+    if (!found || !touched.has(found.name)) { out.push(line); continue; }
+    const value = pending.get(found.name);
+    if (value === undefined) continue; // removed, or already written on its first line
+    pending.delete(found.name);
+    out.push(`${found.prefix}${found.name}=${value}${found.cr}${line.endsWith("\n") ? "\n" : ""}`);
+  }
+  if (pending.size > 0 && out.length > 0 && !out.at(-1)!.endsWith("\n")) out.push(eol);
+  for (const [name, value] of pending) out.push(`${name}=${value}${eol}`);
+  writePrivateBytes(path, Buffer.from(out.join(""), "utf8"));
 }
 
 export interface StoredGithub {
