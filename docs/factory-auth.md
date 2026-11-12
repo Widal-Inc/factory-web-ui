@@ -78,9 +78,12 @@ host and HTTPS forwarding, an exact configured Origin, an allowlisted request me
 only `content-type`, `x-herdr-machine`, `x-herdr-update` or `x-request-id` request headers.
 The empty 204 response exposes only fixed CORS metadata, without running a route or checking
 the registry. The actual GET or mutation still needs signed identity and current ownership.
+API query strings are allowed on this metadata-only request, so correlation headers can be
+preflighted for file paths and other parameterized reads without authorizing their contents.
 Arbitrary OPTIONS requests and any other unsigned traffic are refused. The browser must use
 `credentials: "include"` for cross-origin factory HTTP calls. CORS exposes only the request
-correlator and server clock headers in addition to the standard response headers.
+correlator, server clock and file `content-range` headers in addition to standard response headers.
+The range header lets text previews verify their bounded read and detect empty files.
 
 HTTP bodies, including SSE and media, recheck ownership before delivering chunks. WebSockets
 recheck before every incoming frame and outgoing frame. Admission preserves incoming order;

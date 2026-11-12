@@ -82,6 +82,11 @@ describe("factory signed identity", () => {
     expect(await response?.text()).toBe("");
     expect(response?.headers.get("access-control-allow-origin")).toBe(f.options.hubOrigin);
     expect(f.calls).toEqual([]);
+    const filePreflight = new Request(`${f.options.origin}/api/fs/stat?path=%2Ffixture`, preflight);
+    expect(f.auth.preflight(filePreflight, "10.1.2.4")?.status).toBe(204);
+    // A preflight grants no file access, even when its metadata response succeeds.
+    const unsignedFile = new Request(filePreflight, { method: "GET" });
+    await expect(f.auth.admit(unsignedFile, "10.1.2.4")).rejects.toMatchObject({ status: 401 });
     expect(f.auth.preflight(preflight, "127.0.0.1")).toBeUndefined();
     for (const [name, value] of [["origin", "https://evil.example.test"], ["access-control-request-method", "CONNECT"], ["access-control-request-headers", "authorization"], ["x-forwarded-proto", "http"]]) {
       const request = new Request(preflight);
@@ -109,7 +114,7 @@ describe("factory signed identity", () => {
       expect(updateRequestAllowed(request)).toBe(true);
       expect(updateRequestAllowed(f.request("/api/updates/check", { method: "POST" }))).toBe(false);
       expect(sameOrigin(f.request("/api/preferences", { method: "POST", headers: { origin: "https://evil.example.test" } }))).toBe(false);
-    }, [f.options.origin, f.options.hubOrigin]);
+    }, { factory: f.options.origin, hub: f.options.hubOrigin });
   });
 
   it("stops streaming output after removal and limits CORS to the configured hub", async () => {
@@ -119,6 +124,7 @@ describe("factory signed identity", () => {
     const stream = new ReadableStream<Uint8Array>({ start(controller) { source = controller; } });
     const response = protectFactoryResponse(f.request(), new Response(stream), f.auth, () => f.auth.checkOwner(identity));
     expect(response.headers.get("access-control-allow-origin")).toBe(f.options.hubOrigin);
+    expect(response.headers.get("access-control-expose-headers")).toContain("content-range");
     expect(response.headers.get("cache-control")).toBe("no-store");
     const reader = response.body!.getReader();
     const first = reader.read();

@@ -343,6 +343,7 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
   const htmlPage = info !== null && info.kind === "text" && info.mime === "text/html";
   const pageUrl = `${url}&render=1`;
   const pageSrc = useResourceUrl(htmlPage && !source ? pageUrl : null);
+  const media = useResourceUrlState(info?.kind === "video" || info?.kind === "audio" || info?.kind === "pdf" ? url : null);
   // an image past the inline limit is only offered as a download: the body never loads it
   const image = useResourceUrlState(info?.kind === "image" && info.size <= MAX_INLINE_IMAGE_BYTES ? `${url}&revision=${encodeURIComponent(`${info.modified}:${info.size}`)}` : null);
   const imageSrc = image.url;
@@ -454,18 +455,18 @@ export function FileViewer({ path: asked, paneId, onClose, onOpen, keyboardActiv
     </div>;
     if (info === null) return null;
     // the download link's own request never replaces a body that loaded (a ranged text preview, an image)
-    if (image.error) return <p className="file-viewer-note" role="alert">{t("The file could not be opened.")}</p>;
+    if (image.error || media.error) return <p className="file-viewer-note" role="alert">{t("The file could not be opened.")}</p>;
     switch (info.kind) {
       case "image":
         return info.size > MAX_INLINE_IMAGE_BYTES
           ? <p className="file-viewer-note">{t("This image is {size}; download it to view.", { size: formatBytes(info.size) })}</p>
           : <img className="file-viewer-media" src={imageSrc ?? undefined} alt={info.name} />;
       case "video":
-        return <video ref={(node) => { mediaRef.current = node; }} className="file-viewer-media" src={url} controls playsInline preload="metadata" />;
+        return <video ref={(node) => { mediaRef.current = node; }} className="file-viewer-media" src={media.url ?? undefined} controls playsInline preload="metadata" />;
       case "audio":
-        return <audio ref={(node) => { mediaRef.current = node; }} className="file-viewer-audio" src={url} controls preload="metadata" />;
+        return <audio ref={(node) => { mediaRef.current = node; }} className="file-viewer-audio" src={media.url ?? undefined} controls preload="metadata" />;
       case "pdf":
-        return <iframe className="file-viewer-pdf" src={url} title={info.name} />;
+        return <iframe className="file-viewer-pdf" src={media.url ?? undefined} title={info.name} />;
       case "text":
         if (editing && paneId !== null) return <TextFileEditor path={info.path} paneId={paneId} name={info.name} onChanged={setEditChanged}
           onDone={(saved) => { setEditing(false); setEditChanged(false); if (saved) setSaves((count) => count + 1); }} />;

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unitHerdrOnly } from "../scripts/test-herdr.ts";
@@ -67,6 +67,63 @@ describe("the factory gate before every route", () => {
     expect(f.audits.some((event) => event.outcome === "denied")).toBe(true);
     expect(JSON.stringify(f.audits)).not.toContain("fixture-legacy-token");
   });
+});
+
+it("serves owner files to the configured hub with browser metadata, preserving file isolation", async () => {
+  const f = factoryFixture();
+  const stateDir = mkdtempSync(join(tmpdir(), "factory-files-"));
+  const file = join(stateDir, "report.html");
+  writeFileSync(file, "<!doctype html><h1>Fixture report</h1>");
+  const app = createServer({ port: 0, hostname: "127.0.0.1", stateDir, sidecar: false, machines: false, factoryAuth: f.auth });
+  const ctx = { ...app.context, requestIP: () => ({ address: "10.1.2.4" }), timeout: () => {}, upgrade: () => false };
+  const path = `/api/fs/file?path=${encodeURIComponent(file)}`;
+  const ask = async (route: string, headers: Record<string, string>, omitOrigin = false) => {
+    const request = f.request(route, { headers });
+    if (omitOrigin) request.headers.delete("origin");
+    return (await handleRequest(request, ctx))!;
+  };
+  try {
+    for (const site of ["same-site", "cross-site"]) {
+      for (const route of [path, `/api/fs/stat?path=${encodeURIComponent(file)}`, `/api/fs/favicon?root=${encodeURIComponent(stateDir)}`]) {
+        const response = await ask(route, { "sec-fetch-site": site, "sec-fetch-mode": "cors" });
+        expect(response.status, `${site} ${route}`).toBe(200);
+        expect(response.headers.get("access-control-allow-origin")).toBe(f.options.hubOrigin);
+        await response.body?.cancel();
+      }
+    }
+    // Images/audio/video issue no-cors reads without Origin; the referrer must be the hub.
+    const mediaHeaders = { "sec-fetch-site": "same-site", "sec-fetch-mode": "no-cors", referer: `${f.options.hubOrigin}/factory` };
+    const media = await ask(path, mediaHeaders, true);
+    expect(media.status).toBe(200);
+    expect(await media.text()).toContain("Fixture report");
+    for (const referer of [f.options.origin, "https://unrelated.example.test", `${f.options.hubOrigin}.unrelated.test`, "invalid", ""]) {
+      const response = await ask(path, { ...mediaHeaders, referer }, true);
+      expect(response.status, referer).toBe(403);
+      await response.body?.cancel();
+    }
+    const opaque = await ask(path, { ...mediaHeaders, origin: "null" });
+    expect(opaque.status).toBe(403);
+    await opaque.body?.cancel();
+    const unrelated = await ask(path, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", origin: "https://unrelated.example.test" });
+    expect(unrelated.status).toBe(403);
+    await unrelated.body?.cancel();
+    // An iframe navigation often omits Origin. Its allowed ancestor still comes from config.
+    const rendered = await ask(`${path}&render=1`, { "sec-fetch-site": "same-site", "sec-fetch-mode": "navigate" }, true);
+    expect(rendered.status).toBe(200);
+    const policy = rendered.headers.get("content-security-policy")!;
+    expect(policy).toContain(`frame-ancestors 'self' ${f.options.hubOrigin}`);
+    expect(policy).toContain("sandbox allow-scripts");
+    expect(policy).toContain("default-src 'none'");
+    expect(policy).not.toContain("allow-same-origin");
+    expect(await rendered.text()).toContain("Fixture report");
+    const unsigned = f.request(path, { headers: mediaHeaders });
+    unsigned.headers.delete("x-amzn-oidc-data");
+    expect((await handleRequest(unsigned, ctx))?.status).toBe(401);
+    f.setMe({ person: f.options.owner, role: "admin", factories: [] });
+    const removed = await ask(path, mediaHeaders, true);
+    expect(removed.status).toBe(403);
+    await removed.body?.cancel();
+  } finally { app.stop(); rmSync(stateDir, { recursive: true, force: true }); }
 });
 
 it("closes a real WebSocket on removal and refuses its next upgrade", async () => {

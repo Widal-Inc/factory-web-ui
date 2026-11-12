@@ -439,6 +439,11 @@ blocks of `src/styles.css`.
 
 ### File viewer
 
+- Remote media previews follow [T3 Code's environment file links](https://github.com/pingdotgg/t3code/blob/main/docs/user/composer.md):
+  the file stays on the machine it came from, and rendered HTML cannot access the app's session.
+  Video, audio and PDF URLs resolve through the selected transport just like images and HTML.
+  The factory server admits only the configured hub after signed-owner checks, and HTML keeps
+  its opaque sandbox. This changes delivery of the existing viewer, with no copied code or pixels.
 - Edit text files (off by default, Settings → File viewer): a pencil **Edit file** button in the header
   turns the body into a text box (`.file-editor-text`, the source's mono size, never under
   `--fs-input` on a touch screen so iOS does not zoom) under one bar: what is going on on the left
