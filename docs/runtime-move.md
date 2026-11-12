@@ -105,24 +105,31 @@ user's or that anybody may write in, or another kind of file at that name, is re
 
 ## On another PC
 
-A PC connected over SSH is moved from the PC in front of you, with the same
+A PC connected over SSH or through the relay is moved from the PC in front of you, with the same
 plan, wait and stops. This server forwards that PC's own routes under the PC:
 `GET|POST|DELETE /api/machines/:id/runtime/move`, `POST .../runtime/move/stop`,
 `.../runtime/move/stop-all` and `.../runtime/move/install`, with the same requests and answers as
-here. They go with that PC's credential (an SSH PC's bridge token) and the header the move asks for; the browser's cookies and credentials never cross. They are the
-owner's alone, from this PC itself or with the token; the plan too, which names
+here. They go with that PC's credential (an SSH PC's bridge token, or this server's device on a relay
+PC) and the header the move asks for; the browser's cookies and credentials never cross. They are the
+owner's alone, from any device the owner signed in or paired to drive this PC; the plan too, which names
 every pane's folder and conversation:
 
 | Who | May move another PC, or every PC |
 |---|---|
 | The owner on this PC itself | Yes |
 | The owner with the app's token | Yes |
+| The owner's Tailscale login | Yes |
+| A device the owner paired that drives | Yes |
+| A device paired through the relay that drives (the owner's phone, another of the owner's PCs) | Yes |
+| An open LAN visitor (nothing paired, no token) | No |
+| A Portal visitor, even one given drive | No |
+| A device that only watches, paired directly or through the relay | No |
 
-Anyone else is refused at the gate (401). A change (anything but the plan's `GET`) also needs `x-herdr-update: 1`
+Anyone else is answered 403. A change (anything but the plan's `GET`) also needs `x-herdr-update: 1`
 from this app's own page.
 A query is refused here, since that PC would refuse it.
 
-On that PC, the bridge token counts
+On that PC, a Portal visitor is refused the move's routes whatever its role, and the bridge token counts
 as an owner that drives it for the move's four routes and for the
 runtime facts in `/api/health` (the full answer and `scope=bridge`): whoever holds it already drives
 every pane there. Every other gate of the move still applies. Its install's request is held open for 180 s,
@@ -141,15 +148,15 @@ guards of every PC change (`X-Herdr-Machine: 1`, the same origin) and the owner'
 with `x-herdr-update: 1` and no query.
 
 **The badge**: `GET /api/machines` and the `machines` event carry `runtime_move` on each connected
-SSH PC: `{ serving, offered, reason, status }`, read from that PC's own
+SSH or relay PC: `{ serving, offered, reason, status }`, read from that PC's own
 `GET /api/runtime/move` when it connects, then every minute, every 5 s while its move waits or runs
 (each read has that PC build its whole plan), and at once after a start, cancel or stop sent from here.
 `serving: "herdr"` with `offered` is the "not moved yet" badge (`offered` with
 `reason: "no_herdr_core"` installs herdr-core first). `status` is its move's progress, as every
-roster may carry it: the state, a running move's step and count, and for a
+roster (a watching device's too) may carry it: the state, a running move's step and count, and for a
 move that could not finish only how many agents it left. Its reasons name folders and agents' words,
-so they stay in the plan answer, which only the owner reads. It is `null` when the PC cannot
-tell (a Widal Factory without the route, one that does not take this server's credential there, or one with no
+so they stay in the plan answer, which only a driving device reads. It is `null` when the PC cannot
+tell (an Widal Factory without the route, one that does not take this server's credential there, or one with no
 runtime to switch), and absent while it is not connected; a read that fails for a moment (herdr away, a
 timeout) keeps the badge it had.
 
