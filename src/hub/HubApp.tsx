@@ -8,7 +8,7 @@ import "./hub.css";
 export interface HubSlots {
   brand: { name: string; logo: string };
   ownerView?: (connection: { factory: string; origin: string }) => ReactNode;
-  setup?: (identity: Bootstrap["me"]) => ReactNode;
+  setup?: (identity: Bootstrap["me"], view: "setup" | "linearCallback") => ReactNode;
   onboarding?: (identity: Bootstrap["me"]) => ReactNode;
 }
 type Load<T> = { state: "loading" } | { state: "ready"; data: T } | { state: "error"; message: string; status?: number };
@@ -61,13 +61,13 @@ export function HubApp(slots: HubSlots) {
     <nav className="hub-nav" aria-label="Main navigation">
       <Nav href="/my-factory" active={route.page === "my"}>My Factory</Nav>
       <Nav href="/team" active={["today", "quality", "item"].includes(route.page)}>Team</Nav>
-      <Nav href="/setup" active={route.page === "setup"}>Setup</Nav>
+      <Nav href="/setup" active={route.page === "setup" || route.page === "linearCallback"}>Setup</Nav>
       {boot?.me.role === "admin" && <Nav href="/admin" active={route.page === "admin"}>Admin</Nav>}
     </nav>
     <main id="hub-main" className="hub-main" tabIndex={-1}>
       {bootstrap.state === "loading" || page.state === "loading" ? <p role="status">Loading your factory…</p> : bootstrap.state === "error" ? <section role="alert"><h1>{bootstrap.status === 401 ? "Sign in again" : bootstrap.status === 403 ? "Access unavailable" : "Could not load the app"}</h1><p>{bootstrap.message}</p>{bootstrap.status === 401 ? <a className="btn" href={window.location.pathname}>Reload and sign in</a> : <button className="btn" onClick={() => retry((n) => n + 1)}>Try again</button>}</section> : page.state === "ready" && boot && <>
         {boot.beads.state === "unavailable" && <Notice title="Work data unavailable">{boot.beads.reason}</Notice>}
-        {page.data ? <HubPage value={page.data} identity={boot.me} slots={slots} /> : route.page === "setup" ? <><h1>Setup</h1>{slots.setup?.(boot.me) ?? <Notice title="Setup unavailable">The setup service is not connected yet. Your credentials have not been requested or saved.</Notice>}</> : <><h1>Page not found</h1><a href="/my-factory">Back to My Factory</a></>}
+        {page.data ? <HubPage value={page.data} identity={boot.me} slots={slots} /> : route.page === "setup" || route.page === "linearCallback" ? <><h1>{route.page === "setup" ? "Setup" : "Connecting Linear"}</h1>{slots.setup?.(boot.me, route.page) ?? <Notice title="Setup unavailable">The setup service is not connected yet. Your credentials have not been requested or saved.</Notice>}</> : <><h1>Page not found</h1><a href="/my-factory">Back to My Factory</a></>}
         <button className="btn hub-refresh" onClick={() => retry((n) => n + 1)}>Refresh page data</button>
       </>}
     </main>
@@ -142,7 +142,7 @@ function TeamItem({ data }: { data: Item }) {
 function AdminPage({ data, identity, slots }: { data: Admin; identity: Bootstrap["me"]; slots: HubSlots }) {
   return <><h1>Admin</h1><section className="hub-panel"><h2>People</h2><ul>{data.people.map((p) => <li key={p.person}>{p.person} · {p.role}</li>)}</ul></section>
     <section className="hub-panel"><h2>Registered factories</h2><ul>{data.factories.map((f) => <li key={f.factory}>{f.factory} · {f.owner} · {f.state}</li>)}</ul><p>Registration does not grant access to another person's sessions.</p></section>
-    {slots.onboarding?.(identity) ?? <Notice title="Invites and onboarding unavailable">{data.capabilities.onboarding.reason}</Notice>}
+    {data.capabilities.onboarding.state === "ready" ? slots.onboarding?.(identity) ?? <Notice title="Invites and onboarding unavailable">The hub offers onboarding, but this app build has no screens for it. Update the app.</Notice> : <Notice title="Invites and onboarding unavailable">{data.capabilities.onboarding.reason}</Notice>}
     <Notice title="Company sign-in unavailable">{data.capabilities.identityProvider.reason}</Notice>
     <Notice title="Branding controls unavailable">{data.capabilities.branding.reason}</Notice>
     <Notice title="Budget controls unavailable">{data.capabilities.budgets.reason}</Notice>

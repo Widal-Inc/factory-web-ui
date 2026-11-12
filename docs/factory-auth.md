@@ -94,6 +94,37 @@ Audit records contain only time, factory, verified actor (or `unknown` for an un
 refusal), action category and outcome. They contain no request bodies, query strings, prompts,
 transcripts, identity tokens or credentials.
 
+## Owner Setup
+
+Behind the same gate, `/api/factory/setup/*` lets the registered owner connect their own accounts on this
+factory. It answers 404 on a server without the factory gate, so a standalone server never collects a
+person's GitHub or Linear connection. The browser calls it directly (the hub never relays it) and no
+response carries a token, a refresh token, a PKCE verifier, a device code or a Claude code.
+
+| Request | Purpose |
+| --- | --- |
+| `GET /api/factory/setup` | status: GitHub, Linear, saved choices, Claude, `ready`, the next step |
+| `POST /github/start`, `/github/poll`, `/github/disconnect` | GitHub device flow with the organization's app |
+| `POST /linear/start`, `/linear/callback`, `/linear/disconnect` | Linear with PKCE; the callback takes `{code,state}` |
+| `GET /choices`, `PUT /settings` | reachable repositories and teams; the saved repositories, team, git name and email |
+| `GET /prime?next=setup` or `my-factory` | a top-level visit that sets the factory host's sign-in, then returns to a fixed hub path |
+
+The client IDs of the organization's GitHub App and Linear app come from the hub's `GET /api/app/setup`,
+read with the person's own verified identity (the same lookup origin as ownership); the browser never
+supplies a client ID, a redirect address or an upstream host, and every upstream address is fixed in the
+server. A device code or PKCE verifier lives in memory only, belongs to one person, is single use and
+expires after ten minutes. A GitHub user token cannot be refreshed here, because refreshing needs the app's
+client secret, which stays on the hub: when its lifetime ends the status says expired and the person
+connects again. A Linear token is renewed with its refresh token and says expired when that fails.
+
+Credentials are written to the factory's own secrets file (`$WIDAL_SECRETS`, else
+`$XDG_CONFIG_HOME/widal/secrets.env`, else `~/.config/widal/secrets.env`; mode 0600) as `GH_TOKEN`,
+`LINEAR_ACCESS_TOKEN` and `LINEAR_REFRESH_TOKEN`. What is not secret goes to `factory-setup.json` in the state
+folder: who connected, the repositories, the Linear team, the git name and email, expiry times and `ready`.
+`ready` is true only when GitHub, Linear (unless the organization does not use it), the saved choices and
+Claude's sign-in all exist; the factory starts no agent before it is true. Claude uses the existing
+followed sign-in, `/api/usage/login`.
+
 ## External notifications
 
 Factory mode disables browser push and alert webhook delivery, including test sends and
