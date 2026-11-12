@@ -114,6 +114,10 @@ describe("browser lane", () => {
     expect(rows(text)).toEqual([
       { script: "scripts/demo-build.ts", seconds: expect.any(Number), code: 0 },
       { script: "scripts/ui-regression.ts", seconds: expect.any(Number), code: 0 },
+      { script: "scripts/terminal-input-regression.ts", seconds: expect.any(Number), code: 0 },
+      { script: "scripts/terminal-safari-ime-regression.ts", seconds: expect.any(Number), code: 0 },
+      { script: "scripts/terminal-ipad-ime-regression.ts", seconds: expect.any(Number), code: 0 },
+      { script: "scripts/terminal-linux-ime-regression.ts", seconds: expect.any(Number), code: 0 },
       { script: "scripts/ui-contexts-regression.ts", seconds: expect.any(Number), code: 0 },
       { script: "scripts/ui-contexts-layout-regression.ts", seconds: expect.any(Number), code: 0 },
       { script: "scripts/machine-events-browser-regression.ts", seconds: expect.any(Number), code: 0 },
