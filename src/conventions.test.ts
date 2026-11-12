@@ -120,8 +120,9 @@ describe("DESIGN.md", () => {
 const ICON_VERSIONS: Record<string, { sha256: string; cacheName: string }> = {
   ram1: { sha256: "ed82342db3ec3ed2151ddd2d0d77805233e9251758e29972b4f09aa95602041e", cacheName: "herdr-web-ui-v4-ram" },
   sheep1: { sha256: "cda4de69ca5e795f995a0abfb7a52fb3036785f39448aeba002d9171c8bbb2b7", cacheName: "ovis-v4-sheep" },
+  factory1: { sha256: "1be3c33c0f1fda4d0218bdac652292bf4f5fb7e48e468b30ac706e482aeaa702", cacheName: "ovis-v4-factory" },
 };
-const CURRENT_ICONS = "sheep1";
+const CURRENT_ICONS = "factory1";
 
 /** The icon images: dotfiles and other strays in public/icons (a Finder .DS_Store) are not icons. */
 function iconFiles(): string[] {
@@ -138,7 +139,7 @@ function iconHash(): string {
 describe("icon cache", () => {
   const sw = read("public/sw.js");
   const cacheName = /const CACHE_NAME = "([^"]+)"/.exec(sw)?.[1];
-  const sources = ["index.html", "public/manifest.webmanifest", "public/sw.js", ...scan("src/**/*.{ts,tsx}").filter((file) => !file.endsWith(".test.ts"))];
+  const sources = ["index.html", "public/manifest.webmanifest", "public/sw.js", "shared/brand.json", ...scan("src/**/*.{ts,tsx}").filter((file) => !file.endsWith(".test.ts"))];
   /**
    * Every quoted URL of a file in iconFiles(), with its query (`?v=…`, or "" when it has none). The
    * bare URLs in public/sw.js are its precache list, which the new CACHE_NAME already refreshes.
@@ -151,7 +152,8 @@ describe("icon cache", () => {
 
   it("gives every icon URL the same ?v= query, the current one", () => {
     expect(queries.filter((entry) => entry.file === "index.html").length).toBeGreaterThanOrEqual(3);
-    expect(queries.some((entry) => entry.file.startsWith("src/"))).toBe(true);
+    // the src/ files that show an icon take its address from the brand config
+    expect(queries.some((entry) => entry.file === "shared/brand.json")).toBe(true);
     fail(queries.filter((entry) => entry.query !== CURRENT_ICONS).map((entry) => `${entry.file}: ${entry.url}${entry.query ? `?v=${entry.query}` : " (no ?v=)"}`),
       `Every icon URL carries ?v=${CURRENT_ICONS} (CURRENT_ICONS in src/conventions.test.ts): index.html, public/manifest.webmanifest, public/sw.js and the src/ files that show an icon (src/App.tsx, src/components/AccessGate.tsx, src/lib/notifications.ts and any new one). Bump them all together.`);
   });

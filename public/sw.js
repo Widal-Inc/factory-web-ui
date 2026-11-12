@@ -28,7 +28,7 @@
 // list: any file is copied forward, as before.
 // A retired cache's own shell keeps its entry script and stylesheet here too: a page that started
 // from that shell offline and has not asked for them yet still boots, then offers a reload.
-const CACHE_NAME = "ovis-v4-sheep";
+const CACHE_NAME = "ovis-v4-factory";
 const BRAND = {"name":"Widal Factory","icon":"/icons/icon-192.png?v=factory1","badge":"/icons/badge-96.png?v=factory1"};
 const BUILD = "";
 const BUILD_FILES = null;
