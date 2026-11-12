@@ -68,6 +68,8 @@
     "scripts/omp-question-compat.ts",
     "scripts/hub-artifact.ts",
     "scripts/hub-artifact.test.ts",
+    "scripts/release-bundle.ts",
+    "scripts/release-bundle.test.ts",
     "scripts/vite-shared.ts",
     "vite.hub.config.ts"
   ],

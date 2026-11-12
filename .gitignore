@@ -14,6 +14,9 @@ evidence/
 
 remote-bundles/
 
+# the Widal web release and its pin, built by scripts/release-bundle.ts (docs/release-bundle.md)
+release-bundles/
+
 # the release's Rust PTY host, installed by scripts/pty-sidecar.ts
 /bin/
 /pty-sidecar/
