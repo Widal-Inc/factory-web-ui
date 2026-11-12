@@ -265,7 +265,11 @@ try {
   // Read back Chromium's actual clipboard from the secure loopback page. The copy itself
   // runs on an ordinary HTTP hostname, where navigator.clipboard genuinely does not exist.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: secureOrigin });
-  const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+  const clipboard = async () => {
+    // Chromium can return an empty clipboard to a background tab even with permission.
+    await page.bringToFront();
+    return page.evaluate(() => navigator.clipboard.readText());
+  };
   const code = "printf 'clipboard ✓'";
   add(message("assistant", `\`\`\`sh\n${code}\n\`\`\``, "final_answer"), 9);
   persist();
@@ -286,6 +290,7 @@ try {
   assert.equal(await insecureLog.getByRole("button", { name: "Copied", exact: true }).evaluate((node) => node === document.activeElement), true, "fallback restores the triggering button's focus");
   // the copy fallback's own field is appended to the body; the composer's measurement textarea is readonly for good
   assert.equal(await insecure.locator("body > textarea[readonly]").count(), 0);
+  await insecure.bringToFront();
   await insecureLog.getByRole("button", { name: "Copy code", exact: true }).focus();
   await insecureLog.getByRole("button", { name: "Copy code", exact: true }).click();
   await insecureLog.getByRole("button", { name: "Code copied", exact: true }).waitFor();
@@ -303,6 +308,7 @@ try {
   await page.getByRole("button", { name: "Copy code", exact: true }).click();
   await page.getByRole("button", { name: "Code copied", exact: true }).waitFor();
   assert.equal(await clipboard(), code);
+  await insecure.bringToFront();
   await insecure.evaluate(() => { document.execCommand = () => false; });
   await insecureLog.getByRole("button", { name: "Copy as markdown", exact: true }).first().waitFor();
   await messageCopy.focus();
