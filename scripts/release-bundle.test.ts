@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { BUILD_FILE, HUB_MANIFEST_FILE, buildManifest } from "./hub-artifact.ts";
-import { HUB_UI_DIR, OWNER_SERVER, RELEASE_INFO_FILE, RELEASE_INFO_SCHEMA, archiveName, buildPin, bunProblem, checkoutProblem, packDeterministic, pinProblem, releaseEnv, verifyRelease, type ReleasePin } from "./release-bundle.ts";
+import { HUB_UI_DIR, OWNER_SERVER, RELEASE_INFO_FILE, RELEASE_INFO_SCHEMA, archiveName, buildPin, bunProblem, checkoutProblem, packDeterministic, pinProblem, releaseEnv, releaseVersion, verifyRelease, type ReleasePin } from "./release-bundle.ts";
 import { NAME as PTY_HOST } from "./pty-sidecar.ts";
 
 const commit = "a".repeat(40);
@@ -232,6 +232,68 @@ describe("checkoutProblem", () => {
     const ignored = checkout();
     put(ignored, "server/.env", "SECRET=example\n");
     expect(checkoutProblem(ignored)).toContain("server/.env");
+  });
+});
+
+describe("releaseVersion", () => {
+  const git = (cwd: string, ...args: string[]): string => {
+    const result = Bun.spawnSync(["git", "-c", "user.name=Example", "-c", "user.email=example@example.test", "-c", "commit.gpgsign=false", ...args], { cwd, stderr: "pipe" });
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    return result.stdout.toString().trim();
+  };
+  const commitFile = (root: string, name: string): string => {
+    put(root, name, `${name}\n`);
+    git(root, "add", ".");
+    git(root, "commit", "-q", "-m", name);
+    return git(root, "rev-parse", "HEAD");
+  };
+
+  test("two releases from main never share a number, and a later one is higher, merges included", () => {
+    const root = join(temp, "history");
+    mkdirSync(root);
+    git(root, "init", "-q", "-b", "main");
+    const releases: { commit: string; version: string }[] = [];
+    const release = (commit: string) => releases.push({ commit, version: releaseVersion(root) });
+    release(commitFile(root, "one.txt"));
+    release(commitFile(root, "two.txt"));
+    git(root, "checkout", "-q", "-b", "polecat/example");
+    commitFile(root, "branch-a.txt");
+    commitFile(root, "branch-b.txt");
+    git(root, "checkout", "-q", "main");
+    release(commitFile(root, "three.txt"));
+    git(root, "merge", "-q", "--no-ff", "-m", "merge", "polecat/example");
+    release(git(root, "rev-parse", "HEAD"));
+    release(commitFile(root, "four.txt"));
+    expect(new Set(releases.map((r) => r.commit)).size).toBe(releases.length);
+    expect(new Set(releases.map((r) => r.version)).size).toBe(releases.length);
+    const numbers = releases.map((r) => Number(r.version));
+    expect(numbers).toEqual([...numbers].sort((a, b) => a - b));
+    // the number is the commit's own, whatever the builder does afterwards in its checkout
+    git(root, "checkout", "-q", "--detach", releases[1]!.commit);
+    expect(releaseVersion(root)).toBe(releases[1]!.version);
+    // and so is the archive's name
+    expect(archiveName(releases[0]!.version, releases[0]!.commit)).not.toBe(archiveName(releases[1]!.version, releases[1]!.commit));
+  });
+
+  test("a shallow clone, which holds part of the history, is refused instead of numbered", () => {
+    const root = join(temp, "origin");
+    mkdirSync(root);
+    git(root, "init", "-q", "-b", "main");
+    commitFile(root, "one.txt");
+    commitFile(root, "two.txt");
+    commitFile(root, "three.txt");
+    const shallow = join(temp, "shallow");
+    git(temp, "clone", "-q", "--depth", "1", `file://${root}`, shallow);
+    expect(() => releaseVersion(shallow)).toThrow("shallow");
+    expect(releaseVersion(root)).toBe("3");
+    const whole = join(temp, "whole");
+    git(temp, "clone", "-q", `file://${root}`, whole);
+    expect(releaseVersion(whole)).toBe("3");
+  });
+
+  test("a number is a plain count: no zero, no sign, no letters", () => {
+    expect(archiveName("2524", commit)).toBe(`widal-web-2524-${"a".repeat(12)}-linux-x64.tgz`);
+    for (const bad of ["0", "043", "-1", "1.5", "v1", ""]) expect(() => archiveName(bad, commit), bad).toThrow();
   });
 });
 

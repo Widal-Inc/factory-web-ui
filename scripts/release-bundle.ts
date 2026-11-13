@@ -47,7 +47,10 @@ const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes)
 
 export interface ReleasePin {
   schema: typeof RELEASE_PIN_SCHEMA;
-  /** The bundle protocol version the factory install passes as `--factory-release-version`; `bundle.json` carries the same. */
+  /**
+   * The release number the factory install passes as `--factory-release-version`; `bundle.json` carries the same.
+   * It is the number of commits in the history of the released commit (`releaseVersion`), so every release has its own.
+   */
   version: string;
   platform: typeof RELEASE_PLATFORM;
   source: { repository: string; commit: string; builtAt: string };
@@ -58,7 +61,7 @@ export interface ReleasePin {
 }
 
 export function archiveName(version: string, commit: string): string {
-  if (!/^[0-9]+$/.test(version) || !COMMIT.test(commit)) throw new Error("A release archive is named by its numeric bundle version and its full commit id.");
+  if (!/^[1-9][0-9]*$/.test(version) || !COMMIT.test(commit)) throw new Error("A release archive is named by its numeric bundle version and its full commit id.");
   return `widal-web-${version}-${commit.slice(0, 12)}-${RELEASE_PLATFORM}.tgz`;
 }
 
@@ -82,7 +85,7 @@ export function pinProblem(value: unknown): string | undefined {
   const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
   if (!isObject(value)) return "it is not a JSON object";
   if (value.schema !== RELEASE_PIN_SCHEMA) return `its schema is not ${RELEASE_PIN_SCHEMA}`;
-  if (typeof value.version !== "string" || !/^[0-9]+$/.test(value.version)) return "its version is not a numeric bundle version";
+  if (typeof value.version !== "string" || !/^[1-9][0-9]*$/.test(value.version)) return "its version is not a release number";
   if (value.platform !== RELEASE_PLATFORM) return `its platform is not ${RELEASE_PLATFORM}`;
   const source = value.source;
   if (!isObject(source) || typeof source.repository !== "string" || source.repository === "" || typeof source.commit !== "string" || !COMMIT.test(source.commit) || typeof source.builtAt !== "string" || Number.isNaN(Date.parse(source.builtAt))) return "its source is not {repository, commit, builtAt}";
@@ -243,6 +246,24 @@ export function verifyRelease(archive: string, pin: unknown): string[] {
 
 // ---- build -----------------------------------------------------------------------------------------------
 
+/**
+ * The number of this release: how many commits the history of HEAD holds. A commit has more ancestors than any of
+ * its own ancestors, and main's commits form one chain (each merge descends from the one before), so two releases
+ * built from main never share a number and a later one is always higher. The count is of the whole history, so a
+ * shallow clone, which holds only part of it, is refused rather than given a number that is not this commit's.
+ */
+export function releaseVersion(root: string): string {
+  const gitIn = (...args: string[]): string => {
+    const result = Bun.spawnSync(["git", ...args], { cwd: root, stderr: "pipe" });
+    if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString().trim()}`);
+    return result.stdout.toString().trim();
+  };
+  if (gitIn("rev-parse", "--is-shallow-repository") !== "false") throw new Error("A release is numbered by the commits in its history, and this checkout is shallow: fetch the whole history first (git fetch --unshallow).");
+  const count = gitIn("rev-list", "--count", "HEAD");
+  if (!/^[1-9][0-9]*$/.test(count)) throw new Error(`The commit count ${JSON.stringify(count)} is not a release number.`);
+  return count;
+}
+
 /** What the build copies or bundles from the checkout: the remote bundle copies these folders whole, and Vite copies public/. */
 const BUILD_READS = ["server", "shared", "integrations", "public", "src", "scripts", "hub-app", "index.html", "vite.config.ts", "vite.hub.config.ts"] as const;
 /** Vite reads `.env`, `.env.local`, `.env.<mode>` and `.env.<mode>.local` from the root, so the root's are inputs too. */
@@ -318,6 +339,7 @@ async function build(): Promise<void> {
   const unclean = checkoutProblem(root);
   if (unclean !== null) throw new Error(unclean);
   const commit = git("rev-parse", "HEAD");
+  const version = releaseVersion(root);
   const epoch = Number(git("show", "-s", "--format=%ct", "HEAD"));
   const builtAt = new Date(epoch * 1000);
   // the Rust PTY host, when the builder names one: its bytes are recorded in the pin by sha256
@@ -360,8 +382,13 @@ async function build(): Promise<void> {
     cpSync(join(root, "dist-hub"), join(stage, HUB_UI_DIR), { recursive: true });
     writeFileSync(join(stage, RELEASE_INFO_FILE), `${JSON.stringify({ schema: RELEASE_INFO_SCHEMA, commit, builtAt: builtAt.toISOString(), hubUi: HUB_UI_DIR, ownerServer: OWNER_SERVER }, null, 2)}\n`);
 
-    const bundle = JSON.parse(readFileSync(join(stage, "bundle.json"), "utf8")) as { version: string; platform: string; bun: string; pty_sidecar?: boolean };
+    const bundle = JSON.parse(readFileSync(join(stage, "bundle.json"), "utf8")) as { version: string; platform: string; bun: string; pty_sidecar?: boolean; remote_bundle_version?: string };
     if (bundle.version !== REMOTE_BUNDLE_VERSION || bundle.platform !== RELEASE_PLATFORM) throw new Error("The remote bundle is not the version and platform this release names.");
+    // the remote bundle's own version is the bridge protocol the machines compare and stays what the server was built with
+    // (`remote_bundle_version`); the release is numbered by its history, so a newer commit never reuses an older release's number
+    bundle.remote_bundle_version = bundle.version;
+    bundle.version = version;
+    writeFileSync(join(stage, "bundle.json"), JSON.stringify(bundle));
     const bundledBun = Bun.spawnSync([join(stage, "bin", "bun"), "--version"], { env: {}, stderr: "pipe" });
     const wrongBun = bunProblem(pinnedBun, bundle.bun, bundledBun.stdout.toString().trim());
     if (wrongBun !== null) throw new Error(wrongBun);
@@ -369,7 +396,7 @@ async function build(): Promise<void> {
     const bundledHostSha256 = existsSync(hostInArchive) ? sha256(new Uint8Array(readFileSync(hostInArchive))) : null;
     if (bundledHostSha256 !== ptyHostSha256 || (bundle.pty_sidecar === true) !== (ptyHostSha256 !== null)) throw new Error("The PTY host in the bundle is not the one HERDR_BUNDLE_PTY_SIDECAR names.");
 
-    const file = archiveName(REMOTE_BUNDLE_VERSION, commit);
+    const file = archiveName(version, commit);
     mkdirSync(output, { recursive: true });
     const temporary = join(output, `${file}.tmp`);
     // nothing is left under the archive's name, or a pin beside it, unless the archive verifies
@@ -383,7 +410,7 @@ async function build(): Promise<void> {
     renameSync(temporary, join(output, file));
 
     const pin = buildPin({
-      version: REMOTE_BUNDLE_VERSION,
+      version,
       repository: sourceRepository(packageJson.repository.url),
       commit,
       builtAt,

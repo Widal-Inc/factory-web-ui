@@ -16,7 +16,7 @@ installs at `/opt/widal`, plus the hub UI and a small record of what it was buil
 
 | Path | What it is | Who uses it |
 | --- | --- | --- |
-| `bundle.json` | `version` (the remote bundle version, `REMOTE_BUNDLE_VERSION`), `platform: linux-x64`, the Bun version | the factory install checks version and platform against its pin |
+| `bundle.json` | `version` (the release number, see [The release number](#the-release-number)), `remote_bundle_version` (`REMOTE_BUNDLE_VERSION`, the bridge protocol the server was built with), `platform: linux-x64`, the Bun version | the factory install checks version and platform against its pin |
 | `bin/bun`, `bin/node`, `bin/herdr` | the runtimes, pinned by checksum in `scripts/build-remote-bundle.ts` | every factory host |
 | `server/index.ts`, `shared/`, `integrations/`, `dist/`, `node_modules/` | the owner server and the personal client it serves | every factory host runs `bin/bun server/index.ts` behind the load balancer |
 | `hub-ui/` | the hub UI artifact: `index.html`, hashed `assets/`, brand images, notices, `build.json` and `widal-ui.json` ([format](hub-pages.md#the-hub-ui-artifact)) | the hub, started with `--ui-dir <where hub-ui/ is unpacked>` |
@@ -38,10 +38,10 @@ without them.
 ```json
 {
   "schema": "widal.web-release/2",
-  "version": "43",
+  "version": "<commit count>",
   "platform": "linux-x64",
   "source": { "repository": "Widal-Inc/factory-web-ui", "commit": "<40 hex>", "builtAt": "<commit time>" },
-  "archive": { "file": "widal-web-43-<commit12>-linux-x64.tgz", "bytes": 0, "sha256": "<64 hex>" },
+  "archive": { "file": "widal-web-<commit count>-<commit12>-linux-x64.tgz", "bytes": 0, "sha256": "<64 hex>" },
   "hubUi": { "path": "hub-ui", "manifest": "hub-ui/widal-ui.json", "revision": "<the same commit>", "manifestSha256": "<64 hex>", "files": 0 },
   "ownerServer": { "entry": "server/index.ts", "runtime": "bin/bun", "healthPath": "/api/health", "bun": "1.4.2", "rustPtyHost": false, "ptyHostSha256": null }
 }
@@ -52,9 +52,20 @@ such field) is refused, and a reader of `/1` is never handed a `/2` pin. `ownerS
 (`rustPtyHost: true`), and `null` when it has none. `verify` compares the archive's host with it.
 
 The install passes `version` as `--factory-release-version` and `archive.sha256` as
-`--factory-release-sha256`, and reads the archive named by `archive.file`. `version` is the bundle protocol version the
-factory checks against `bundle.json`; the commit and the digest are what tell two releases of the same version apart.
+`--factory-release-sha256`, and reads the archive named by `archive.file`. `version` is the release number the
+factory checks against `bundle.json`; the commit and the digest still say exactly which build it is.
 The hub UI's own revision (`GET /api/app/bootstrap` reports it as `ui.revision`) is always the pinned commit.
+
+### The release number
+
+Every release has its own `version`, and a later release has a higher one: it is the number of commits in the history
+of the released commit (`git rev-list --count HEAD`). A commit has more ancestors than any of its ancestors, and main's
+commits form one chain (each merge descends from the one before), so two releases built from main never share a number.
+We chose this over `REMOTE_BUNDLE_VERSION` because that constant is the bridge protocol remote PCs compare, raised by
+hand when the protocol changes; two different releases were both numbered 43 because nobody had raised it. The
+protocol version is still in the archive, as `remote_bundle_version` in `bundle.json` (the server inside reports it
+unchanged). The count needs the whole history, so the build refuses a shallow clone; a release built from a branch that
+is not main's chain can share a number with another branch's commit, so release from main.
 
 ## Building it
 
@@ -104,4 +115,4 @@ The manifest checks are the same ones the factory hub's own reader applies
 It builds and checks an archive. It publishes nothing, pushes no tag and creates no release; publication is its own
 authorized step ([distribution status](development.md#releasing)). It does not install anything: placing `hub-ui/` on the hub, running the
 owner server on every factory host behind the load balancer, and the fake cloud proof on what the install ships belong to the factory
-repository. Bumping `REMOTE_BUNDLE_VERSION` is a separate release change.
+repository. Bumping `REMOTE_BUNDLE_VERSION` (the bridge protocol) is a separate change and no longer numbers the release.
