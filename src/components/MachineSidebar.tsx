@@ -22,9 +22,10 @@ import { sidebarAgents } from "../lib/sidebarAgents.ts";
 import { useEdgeFades } from "../lib/useEdgeFades.ts";
 import "./Machines.css";
 import "./SidebarSections.css";
-import { useT } from "../lib/i18n.ts";
+import { useT, type Translate } from "../lib/i18n.ts";
 import { useSettings } from "../lib/settings.ts";
 import { useAnnouncedText } from "../lib/useAnnouncedText.ts";
+import { inFactory } from "../lib/factoryMode.ts";
 import { machineErrorText, saysHerdrAway } from "../lib/userError.ts";
 import { canHideMachine, HIDDEN_MACHINES_MAX, setHiddenMachines, useHiddenMachines, withMachineHidden } from "../lib/hiddenMachines.ts";
 
@@ -39,6 +40,18 @@ export const STATE_WORD: Readonly<Record<MachineState, string>> = {
   disconnected: "Disconnected",
   error: "Connection error",
 };
+
+/**
+ * The words under a PC's name when it has an error, and the step to take. In a factory the server's words name
+ * the socket it tried and the step is on a host its owner cannot reach, so the one line says what the owner can do
+ * and no more (lib/factoryMode.ts). On a PC of the person's own, the server's words stay and a herdr that is
+ * away adds the step to take on that PC, not in this browser.
+ */
+export function machineStateLine(machine: Pick<Machine, "kind" | "error">, noticed: boolean, t: Translate, factory: boolean): { words: string | null; next: string | null } {
+  if (!machine.error) return { words: null, next: null };
+  if (factory && machine.kind === "local") return { words: t("Your factory is not answering right now. It reports this itself; wait a minute, then reload the page."), next: null };
+  return { words: machineErrorText(machine.error, t), next: !noticed && machine.kind === "local" && saysHerdrAway(machine.error) ? t("Start herdr on this PC, or check HERDR_SOCKET.") : null };
+}
 
 /** `activity`: App's live counters per PC and finishes looked at here; both sidebar lists draw from it.
  *  `machines` are the PCs this device shows (Settings → Devices and PCs chooses them) */
@@ -313,7 +326,7 @@ function MachineGroup({ machine, headerless = false, canHide, onHide, ...props }
   const stateWord = useAnnouncedText(noticed ? null : t(STATE_WORD[machine.state]));
   // the Host's herdr is away (the server's words name the socket it tried): the step to take is on
   // that PC, not in this browser, so it follows the words
-  const nextStep = !noticed && machine.kind === "local" && machine.error !== null && saysHerdrAway(machine.error) ? t("Start herdr on this PC, or check HERDR_SOCKET.") : null;
+  const { words: errorWords, next: nextStep } = machineStateLine(machine, noticed, t, inFactory());
   // one request at a time: a double-clicked Disconnect/Connect can otherwise race and leave this
   // UI's idea of the state opposite the server's until the next refetch
   const [busy, setBusy] = useState(false);
@@ -423,9 +436,9 @@ function MachineGroup({ machine, headerless = false, canHide, onHide, ...props }
     </header>}
     {/* connected is the norm and says nothing new; every other state is spelled out */}
     {noticed && <MachineActionNotice machine={machine} onSetup={props.onSetup} />}
-    <p className={`machine-state is-${machine.state}${online || stateWord === null ? " visually-hidden" : ""}`} role="status" title={noticed || machine.error === null ? undefined : machineErrorText(machine.error, t)}>
+    <p className={`machine-state is-${machine.state}${online || stateWord === null ? " visually-hidden" : ""}`} role="status" title={noticed || errorWords === null ? undefined : errorWords}>
       <span className="machine-state-word">{stateWord}</span>
-      {!noticed && machine.error && <span className="machine-state-detail">{machineErrorText(machine.error, t)}</span>}
+      {!noticed && errorWords !== null && <span className="machine-state-detail">{errorWords}</span>}
       {nextStep !== null && <span className="machine-state-next">{nextStep}</span>}
     </p>
     {/* a herdr-core machine's server runs on this PC, which cannot read that machine's load (server/system-stats.ts) */}

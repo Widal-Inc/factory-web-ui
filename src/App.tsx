@@ -25,6 +25,7 @@ import { usePreferencesSync } from "./lib/preferencesSync.ts";
 import { setTabLabelLearning, settleTabLabels, subscribeTabLabels } from "./lib/tabLabels.ts";
 import { TabStrip } from "./components/TabStrip.tsx";
 import { SettingsDialog } from "./components/SettingsDialog.tsx";
+import { inFactory } from "./lib/factoryMode.ts";
 import { loadedOnSettingsEntry } from "./lib/settingsHistory.ts";
 import { useSettingsDialog } from "./lib/useSettingsDialog.ts";
 import { usePhoneSheetBack } from "./lib/sheetHistory.ts";
@@ -902,7 +903,10 @@ export function App() {
             ? !targetHerdr && <span className="pill pill-offline">{t("herdr offline")}</span>
             : localFreshness === "unknown"
               ? <span className="pill pill-stale" title={health ? (health.herdr.runtime === "herdr-core" ? t("The last health check failed. Last seen: herdr-core {version} · protocol {protocol}", { version: health.herdr.version, protocol: health.herdr.protocol }) : t("The last health check failed. Last seen: herdr {version} · protocol {protocol}", { version: health.herdr.version, protocol: health.herdr.protocol })) : t("The health check failed")}>{t("Status unknown")}</span>
-              : localFreshness === "unavailable" && (health?.herdr.runtime === "herdr-core"
+              : localFreshness === "unavailable" && (inFactory()
+                // a factory's owner cannot start herdr or name its socket: the words are what they can do (lib/factoryMode.ts)
+                ? <span className="pill pill-offline" title={t("Your factory is not answering right now. It reports this itself; wait a minute, then reload the page.")}>{t("Factory not answering")}</span>
+                : health?.herdr.runtime === "herdr-core"
                 ? <span className="pill pill-offline" title={t("Open the Herdr app on this PC, or check HC_SESSION and HC_SOCKET.")}>{t("herdr-core unavailable")}</span>
                 : <span className="pill pill-offline" title={t("Start herdr on this PC, or check HERDR_SOCKET.")}>{t("herdr unavailable")}</span>)}
           <span className="header-more">

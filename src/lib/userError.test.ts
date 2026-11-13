@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { ApiError, fetchSession } from "./api.ts";
 import { withChatReadDeadline } from "./chatReadDeadline.ts";
 import { setCurrentLanguage, translate } from "./i18n.ts";
+import { nativeTransport, setTransport } from "./transport.ts";
 import { RemoteResponseInvalid, RemoteResponseTooLarge } from "../../server/remote-json.ts";
 import { machineErrorText, saysHerdrAway, userErrorMessage, userFailure } from "./userError.ts";
 
@@ -173,5 +174,34 @@ describe("userFailure", () => {
     setCurrentLanguage("ko");
     expect(userFailure(api(500, "disk full")).cause).toBe(translate("ko", "PC disk is full"));
     expect(userFailure(api(500, "disk full")).cause).not.toBe("PC disk is full");
+  });
+});
+
+describe("failures in a factory", () => {
+  afterEach(() => setTransport(nativeTransport));
+  const factory = () => setTransport({ ...nativeTransport, kind: "custom" });
+  const statuses = [401, 404, 409, 408, 500, 418];
+  // what a factory's owner cannot reach: a PC, Ovis, a token, a state folder, herdr, a socket or a variable
+  const desktop = /\bPC\b|Ovis|access token|state folder|herdr|HERDR|socket|restart/i;
+
+  it("says wait, reload or try again, and names nothing on the factory's host", () => {
+    factory();
+    const words = [
+      ...statuses.map((status) => userErrorMessage(api(status, "")).message),
+      userErrorMessage(new ApiError("/api/x", 500, "", "preferences_unwritable")).message,
+      userErrorMessage(new TypeError("Failed to fetch")).message,
+      ...statuses.flatMap((status) => { const failure = userFailure(api(status, "")); return [failure.cause ?? "", failure.advice ?? ""]; }),
+      userFailure(api(500, "ENOSPC: no space left on device")).cause ?? "",
+      userFailure(api(500, "EACCES: permission denied")).cause ?? "",
+    ];
+    for (const text of words) expect(text, text).not.toMatch(desktop);
+    expect(userErrorMessage(api(401, "")).message).toBe("Your factory sign-in has ended. Reload the page to sign in again.");
+    expect(userErrorMessage(api(500, "")).message).toBe("Your factory could not do that. Try again in a minute; if it keeps failing, the factory reports it.");
+    expect(userFailure(api(500, "ENOSPC")).cause).toBe("The factory's disk is full");
+    expect(userFailure(api(500, "")).advice).toBe("Try again in a minute; if it keeps failing, the factory reports it.");
+  });
+
+  it("keeps the PC words outside a factory", () => {
+    expect(userErrorMessage(api(500, "")).message).toMatch(/on the PC/);
   });
 });

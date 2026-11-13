@@ -154,6 +154,18 @@ describe("owner Setup", () => {
     expect((await setup.status(identity())).linear).toEqual({ state: "not_used" });
   });
 
+  it("tells the owner what they can do when the hub does not answer, and names nothing they cannot reach", async () => {
+    f.setSetup({ version: 1, factories: [], invitation: null, github: { clientId: "Iv1.fixture-github" }, linear: "linear" });
+    const status = await setup.status(identity());
+    const error = await setup.startGithub(identity()).then(() => null, (cause: unknown) => cause as Error);
+    const words = [status.github.state === "unavailable" ? status.github.reason : "", status.linear.state === "unavailable" ? status.linear.reason : "", error?.message ?? ""];
+    for (const text of words) {
+      expect(text).toContain("Wait a minute, then try again");
+      expect(text).toContain("the factory reports it");
+      expect(text).not.toMatch(/\bhub\b|socket|HERDR|https?:|\.sock/i);
+    }
+  });
+
   it("connects Linear with PKCE, returning to the hub, and uses the state once", async () => {
     const { url, done } = await connectLinear();
     const link = new URL(url);
