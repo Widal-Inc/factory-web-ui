@@ -90,7 +90,7 @@ export class FactorySetup {
   /** The hub's client IDs; an answer that cannot be used is a plain, retryable failure, never a missing app. */
   private async appsFor(who: FactoryIdentity): Promise<{ githubClientId: string | null; linearClientId: string | null }> {
     try { return await this.options.apps(who); } catch (error) {
-      if (error instanceof FactoryAuthError && error.status === 503) throw new SetupError(503, "hub_unavailable", "The hub's Setup answer could not be used. Try again.");
+      if (error instanceof FactoryAuthError && error.status === 503) throw new SetupError(503, "hub_unavailable", "Setup is not answering right now. Wait a minute, then try again; if it keeps failing, the factory reports it.");
       throw error;
     }
   }
@@ -106,7 +106,7 @@ export class FactorySetup {
     try {
       return await this.fetcher(url, { ...init, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
     } catch {
-      throw new SetupError(502, "upstream_unreachable", "The service could not be reached from this factory. Try again.");
+      throw new SetupError(502, "upstream_unreachable", "GitHub or Linear did not answer from your factory. Wait a minute, then try again; if it keeps failing, the factory reports it.");
     }
   }
 
@@ -233,7 +233,7 @@ export class FactorySetup {
   private githubState(stored: StoredSetup | null, secrets: Record<string, string>, hubKnown: boolean): SetupGithub {
     const github = stored?.github;
     if (!github || !secrets[SECRET_GITHUB]) {
-      return hubKnown ? { state: "not_connected" } : { state: "unavailable", reason: "The hub did not answer Setup. Try again." };
+      return hubKnown ? { state: "not_connected" } : { state: "unavailable", reason: "Setup is not answering right now. Wait a minute, then try again; if it keeps failing, the factory reports it." };
     }
     const noreplyEmail = `${github.id}+${github.login}@users.noreply.github.com`;
     const expiry = github.expiresAt !== undefined ? { expiresAt: github.expiresAt } : {};
@@ -242,7 +242,7 @@ export class FactorySetup {
   }
 
   private linearState(stored: StoredSetup | null, secrets: Record<string, string>, apps: { linearClientId: string | null } | null): SetupLinear {
-    if (apps === null) return { state: "unavailable", reason: "The hub did not answer Setup. Try again." };
+    if (apps === null) return { state: "unavailable", reason: "Setup is not answering right now. Wait a minute, then try again; if it keeps failing, the factory reports it." };
     if (apps.linearClientId === null) return { state: "not_used" };
     const linear = stored?.linear;
     if (!linear || !secrets[SECRET_LINEAR]) return { state: "not_connected" };

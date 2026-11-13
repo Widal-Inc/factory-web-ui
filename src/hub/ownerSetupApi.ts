@@ -16,7 +16,7 @@ export class SetupApiError extends Error {
 
 type Obj = Record<string, unknown>;
 const obj = (value: unknown): Obj => typeof value === "object" && value !== null && !Array.isArray(value) ? value as Obj : unsupported();
-const unsupported = (): never => { throw new SetupApiError(502, "unsupported", "Your factory sent an unsupported answer. Update the app and the factory together."); };
+const unsupported = (): never => { throw new SetupApiError(502, "unsupported", "Your factory sent an answer this page does not understand. The factory reports it; try again later."); };
 const str = (value: unknown): string => typeof value === "string" ? value : unsupported();
 const bool = (value: unknown): boolean => typeof value === "boolean" ? value : unsupported();
 const num = (value: unknown): number => typeof value === "number" && Number.isFinite(value) ? value : unsupported();

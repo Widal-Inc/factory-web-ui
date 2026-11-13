@@ -282,7 +282,7 @@ function ClaudeStep({ value, api, deps, onChange }: { value: SetupStatus; api: O
   }
   const signedIn = value.claude.state === "signed_in";
   const link = claudeSignInLink(prompt?.url ?? null);
-  const label = signedIn ? "Signed in." : value.claude.state === "unavailable" ? "This factory cannot say whether Claude is signed in." : "Not signed in.";
+  const label = signedIn ? "Signed in." : value.claude.state === "unavailable" ? "This factory cannot say yet whether Claude is signed in. Wait a minute, then reload the page; the factory reports it." : "Not signed in.";
   return <Step n={value.linear.state === "not_used" ? 3 : 4} title="Sign in to Claude" state={label}>
     {login ? <div role="status"><p>{link ? <>Open <a href={link} target="_blank" rel="noreferrer">Claude's sign-in page</a>, approve, then paste the code it shows here.</> : "Waiting for the sign-in page address…"}</p>
       {prompt?.user_code && <p className="hub-code" aria-label="Claude code">{prompt.user_code}</p>}

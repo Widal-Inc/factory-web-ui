@@ -1,6 +1,7 @@
 import { brandTemplate } from "../../shared/brand.ts";
 import { OWN_UPDATE_OFFER } from "../../shared/machines.ts";
 import { ApiError } from "./api.ts";
+import { inFactory } from "./factoryMode.ts";
 import { t, type Translate } from "./i18n.ts";
 
 export interface UserError {
@@ -33,14 +34,14 @@ const NETWORK_FAILURE = /failed to fetch|networkerror|network request failed|loa
 
 /** A cause the server's own words name outright, whatever the status: the words become the sentence. */
 const NAMED_CAUSES: ReadonlyArray<[RegExp, () => string]> = [
-  [/\bENOSPC\b|disk full|no space left/i, () => t("PC disk is full")],
-  [/\bEACCES\b|\bEPERM\b|permission denied/i, () => t("No permission on the PC")],
+  [/\bENOSPC\b|disk full|no space left/i, () => inFactory() ? t("The factory's disk is full") : t("PC disk is full")],
+  [/\bEACCES\b|\bEPERM\b|permission denied/i, () => inFactory() ? t("No permission on the factory") : t("No permission on the PC")],
 ];
 
 /** A failure the server names by a code of its own, whatever the status: the sentence is the next step on the PC. */
 const SENTENCE_BY_CODE: Readonly<Record<string, () => string>> = {
   // server/preferences.ts: its state folder refused the write, so no browser can save a shared setting
-  preferences_unwritable: () => t("The server cannot save settings: check that its state folder is writable."),
+  preferences_unwritable: () => inFactory() ? t("The factory cannot save settings right now. Try again in a minute; if it keeps failing, the factory reports it.") : t("The server cannot save settings: check that its state folder is writable."),
 };
 
 /** The server's own words when herdr itself is away (server/herdr/client.ts names the socket it tried). */
@@ -60,9 +61,51 @@ function kindOf(cause: unknown): FailureKind {
   return "unknown";
 }
 
+/**
+ * Server words that name what a factory's owner cannot reach: herdr or its socket, a path on the host,
+ * an environment variable or "this PC". In a factory these never reach the page as a failure's detail.
+ */
+const HOST_WORDS = [/\bherdr\b|\bsocket\b|\bthis PC\b|(?:^|[\s'"(=:])(?:~|\.{0,2})\/[\w.-]+\//i, /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/];
+
 function ownWords(cause: unknown): string {
   return cause instanceof ApiError ? cause.detail : cause instanceof Error ? cause.message : String(cause);
 }
+
+/** The words a failure shows as its detail: in a factory, none that name something on its host. */
+function shownWords(words: string): string {
+  return inFactory() && HOST_WORDS.some((pattern) => pattern.test(words)) ? "" : words;
+}
+
+/** A factory's owner can reload and wait, nothing on its host: these say so (see lib/factoryMode.ts). */
+const FACTORY_SENTENCE: Record<FailureKind, () => string> = {
+  "signed-out": () => t("Your factory sign-in has ended. Reload the page to sign in again."),
+  gone: () => t("That item no longer exists on your factory. Refresh and try again."),
+  changed: () => t("It changed on your factory while you were acting. Check it and try again."),
+  slow: () => t("Your factory took too long to answer. Try again."),
+  unreachable: () => t("Can't reach your factory. Check your connection, then try again."),
+  refused: () => t("Your factory could not do that. Try again in a minute; if it keeps failing, the factory reports it."),
+  unknown: () => t("Something went wrong. Try again."),
+};
+
+const FACTORY_CAUSE: Record<FailureKind, (() => string) | null> = {
+  "signed-out": () => t("Your factory sign-in has ended"),
+  gone: () => t("It no longer exists on the factory"),
+  changed: () => t("It changed on the factory"),
+  slow: () => t("The factory took too long"),
+  unreachable: () => t("Can't reach the factory"),
+  refused: null,
+  unknown: null,
+};
+
+const FACTORY_ADVICE: Record<FailureKind, (() => string) | null> = {
+  "signed-out": () => t("Reload the page to sign in again."),
+  gone: () => t("Refresh and try again."),
+  changed: () => t("Check it and try again."),
+  slow: null,
+  unreachable: () => t("Check your connection, then try again."),
+  refused: () => t("Try again in a minute; if it keeps failing, the factory reports it."),
+  unknown: null,
+};
 
 const SENTENCE: Record<FailureKind, () => string> = {
   "signed-out": () => t("This browser is not signed in to this PC any more. Sign in again with the access token."),
@@ -97,8 +140,8 @@ const ADVICE: Record<FailureKind, (() => string) | null> = {
 /** A plain sentence for a failure, with what the server or the browser said kept beside it. */
 export function userErrorMessage(cause: unknown): UserError {
   const coded = cause instanceof ApiError && cause.code !== null && Object.hasOwn(SENTENCE_BY_CODE, cause.code) ? SENTENCE_BY_CODE[cause.code] : undefined;
-  const message = coded?.() ?? SENTENCE[kindOf(cause)]();
-  const original = ownWords(cause);
+  const message = coded?.() ?? (inFactory() ? FACTORY_SENTENCE : SENTENCE)[kindOf(cause)]();
+  const original = shownWords(ownWords(cause));
   return { message, detail: original.trim() === "" || original === message ? null : original };
 }
 
@@ -131,7 +174,7 @@ export function userFailure(cause: unknown): UserFailure {
   const kind = kindOf(cause);
   const original = ownWords(cause).trim();
   const named = NAMED_CAUSES.find(([pattern]) => pattern.test(original))?.[1];
-  return { kind, cause: named?.() ?? CAUSE[kind]?.() ?? null, advice: ADVICE[kind]?.() ?? null, detail: original === "" ? null : original };
+  return { kind, cause: named?.() ?? (inFactory() ? FACTORY_CAUSE : CAUSE)[kind]?.() ?? null, advice: (inFactory() ? FACTORY_ADVICE : ADVICE)[kind]?.() ?? null, detail: shownWords(original) || null };
 }
 
 /** Whether Try again is the control beside the line: no cause is known, or the PC was only slow. */

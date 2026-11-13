@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { OWN_UPDATE_OFFER, type Machine, type RemoteOvis } from "../../shared/machines.ts";
-import { manageActions, ownOvisAction, ownUpdateFailure } from "./MachineSidebar.tsx";
+import { machineStateLine, manageActions, ownOvisAction, ownUpdateFailure } from "./MachineSidebar.tsx";
 
 const offer = (updatable: boolean): RemoteOvis => ({ version: "0.4.16", latest_version: updatable ? "0.4.18" : null, updatable, reason: updatable ? null : "it cannot", address: "pc.invalid:4000", url: null });
 const pc = (patch: Partial<Pick<Machine, "remote_ovis" | "action_required" | "error">>) => ({ remote_ovis: null, action_required: null, error: null, ...patch });
@@ -66,5 +66,23 @@ describe("Manage PC's menu", () => {
     // hiding the PC drops its row, and with it the guard on the request still running
     expect(waiting(ssh(), true)).toEqual(["rename", "toggle", "hide", "remove"]);
     expect(waiting(ssh({ kind: "hc", target: undefined }), true)).toEqual(["hide"]);
+  });
+});
+
+describe("a PC's error line", () => {
+  const away = "cannot reach herdr at /home/widal/.config/herdr/herdr.sock: Failed to connect";
+  const same = (words: string) => words;
+
+  it("keeps the server's words and the step on the PC for a PC of the person's own", () => {
+    expect(machineStateLine({ kind: "local", error: away }, false, same, false)).toEqual({ words: away, next: "Start herdr on this PC, or check HERDR_SOCKET." });
+    expect(machineStateLine({ kind: "local", error: null }, false, same, false)).toEqual({ words: null, next: null });
+  });
+
+  it("tells a factory's owner what they can do, and names no socket, variable or PC", () => {
+    const line = machineStateLine({ kind: "local", error: away }, false, same, true);
+    expect(line).toEqual({ words: "Your factory is not answering right now. It reports this itself; wait a minute, then reload the page.", next: null });
+    expect(JSON.stringify(line)).not.toMatch(/herdr|HERDR_SOCKET|\.sock|\/home\/|\bPC\b/);
+    expect(machineStateLine({ kind: "local", error: "Failed to connect" }, false, same, true).words).toBe(line.words);
+    expect(machineStateLine({ kind: "local", error: null }, false, same, true)).toEqual({ words: null, next: null });
   });
 });
