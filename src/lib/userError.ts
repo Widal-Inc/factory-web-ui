@@ -61,8 +61,19 @@ function kindOf(cause: unknown): FailureKind {
   return "unknown";
 }
 
+/**
+ * Server words that name what a factory's owner cannot reach: herdr or its socket, a path on the host,
+ * an environment variable or "this PC". In a factory these never reach the page as a failure's detail.
+ */
+const HOST_WORDS = [/\bherdr\b|\bsocket\b|\bthis PC\b|(?:^|[\s'"(=:])(?:~|\.{0,2})\/[\w.-]+\//i, /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/];
+
 function ownWords(cause: unknown): string {
   return cause instanceof ApiError ? cause.detail : cause instanceof Error ? cause.message : String(cause);
+}
+
+/** The words a failure shows as its detail: in a factory, none that name something on its host. */
+function shownWords(words: string): string {
+  return inFactory() && HOST_WORDS.some((pattern) => pattern.test(words)) ? "" : words;
 }
 
 /** A factory's owner can reload and wait, nothing on its host: these say so (see lib/factoryMode.ts). */
@@ -130,7 +141,7 @@ const ADVICE: Record<FailureKind, (() => string) | null> = {
 export function userErrorMessage(cause: unknown): UserError {
   const coded = cause instanceof ApiError && cause.code !== null && Object.hasOwn(SENTENCE_BY_CODE, cause.code) ? SENTENCE_BY_CODE[cause.code] : undefined;
   const message = coded?.() ?? (inFactory() ? FACTORY_SENTENCE : SENTENCE)[kindOf(cause)]();
-  const original = ownWords(cause);
+  const original = shownWords(ownWords(cause));
   return { message, detail: original.trim() === "" || original === message ? null : original };
 }
 
@@ -163,7 +174,7 @@ export function userFailure(cause: unknown): UserFailure {
   const kind = kindOf(cause);
   const original = ownWords(cause).trim();
   const named = NAMED_CAUSES.find(([pattern]) => pattern.test(original))?.[1];
-  return { kind, cause: named?.() ?? (inFactory() ? FACTORY_CAUSE : CAUSE)[kind]?.() ?? null, advice: (inFactory() ? FACTORY_ADVICE : ADVICE)[kind]?.() ?? null, detail: original === "" ? null : original };
+  return { kind, cause: named?.() ?? (inFactory() ? FACTORY_CAUSE : CAUSE)[kind]?.() ?? null, advice: (inFactory() ? FACTORY_ADVICE : ADVICE)[kind]?.() ?? null, detail: shownWords(original) || null };
 }
 
 /** Whether Try again is the control beside the line: no cause is known, or the PC was only slow. */

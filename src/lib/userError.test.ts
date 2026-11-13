@@ -201,7 +201,24 @@ describe("failures in a factory", () => {
     expect(userFailure(api(500, "")).advice).toBe("Try again in a minute; if it keeps failing, the factory reports it.");
   });
 
+  it("shows no server words that name herdr, its socket, a host path or a variable", () => {
+    factory();
+    const away = api(502, "cannot reach herdr at /home/someone/.config/herdr/herdr.sock: Failed to connect");
+    expect(userErrorMessage(away)).toEqual({ message: "Your factory could not do that. Try again in a minute; if it keeps failing, the factory reports it.", detail: null });
+    expect(userFailure(away).detail).toBeNull();
+    for (const words of ["EACCES: permission denied, open '/state/preferences.json.7.tmp'", "set HERDR_SOCKET first", "Restart herdr there", "Start it on this PC", "no such file: ~/notes/x"]) {
+      expect(userErrorMessage(api(500, words)).detail, words).toBeNull();
+      expect(userFailure(api(500, words)).detail, words).toBeNull();
+    }
+    // the cause is still named from the words it hides
+    expect(userFailure(api(500, "ENOSPC: no space left on device, write '/var/lib/x'")).cause).toBe("The factory's disk is full");
+    // words that name nothing on the host stay, as outside a factory
+    expect(userErrorMessage(api(400, "label too long")).detail).toBe("label too long");
+    expect(userFailure(api(409, "hub_unavailable")).detail).toBe("hub_unavailable");
+  });
+
   it("keeps the PC words outside a factory", () => {
     expect(userErrorMessage(api(500, "")).message).toMatch(/on the PC/);
+    expect(userErrorMessage(api(502, "cannot reach herdr at /tmp/h.sock")).detail).toBe("cannot reach herdr at /tmp/h.sock");
   });
 });
