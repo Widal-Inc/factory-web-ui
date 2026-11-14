@@ -58,8 +58,29 @@ function pathOf(file: string, name: string): string | null {
   return name.startsWith(".") ? posix.normalize(posix.join(posix.dirname(file), name)) : null;
 }
 
+/** A string escape as the parser reads it: `\u{…}`, `\uXXXX`, `\xXX`, an octal escape, a line continuation, or any character kept as itself (`\c` is "c"). */
+const ESCAPE = new RegExp("\\\\(?:u\\{([0-9a-fA-F]+)\\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|([0-7]{1,3})|\\r\\n|[\\n\\r\\u2028\\u2029]|([\\s\\S]))", "g");
+
+/**
+ * Whether a source can name a module inside server/core. Parsing every source file costs about a
+ * minute of CPU, so a file that cannot is skipped. A name that reaches the core has the folder as one
+ * of its path segments, so `/core` is in it once its escapes are decoded (an alias or `..` still
+ * leaves the `/core` before the file); a file without `/core` has nothing to find.
+ */
+function mayNameCore(text: string): boolean {
+  const decoded = text.includes("\\")
+    ? text.replace(ESCAPE, (_, braced?: string, short?: string, hex?: string, octal?: string, other?: string) => {
+      if (other !== undefined) return other;
+      const code = Number.parseInt(braced ?? short ?? hex ?? octal ?? "", braced !== undefined || short !== undefined || hex !== undefined ? 16 : 8);
+      return Number.isNaN(code) ? "" : code <= 0x10ffff ? String.fromCodePoint(code) : "";
+    })
+    : text;
+  return decoded.includes("/core");
+}
+
 /** Where a file outside server/core names a module inside it other than its index, as `file:line: name`. */
 function reachesIntoCore(file: string, text: string): string[] {
+  if (!mayNameCore(text)) return [];
   return moduleNames(file, text).flatMap(({ name, line, partial }) => {
     const path = pathOf(file, name);
     const inside = path !== null && (path === "server/core" || path.startsWith("server/core/")) && (partial || !INDEX.has(path));
@@ -119,6 +140,21 @@ describe("the core's boundary", () => {
     ];
     for (const source of reaching) expect({ source, found: reachesIntoCore("server/fixture.ts", source).length }).toEqual({ source, found: 1 });
     expect(reachesIntoCore("scripts/fixture.ts", "import { send } from \"../server/core/connections.ts\";")).toEqual(["scripts/fixture.ts:1: ../server/core/connections.ts"]);
+  });
+
+  it("does not let a module name's escapes hide the core from the text prefilter", () => {
+    const escaped = [
+      "import { createSocket } from \"./c\\u006fre/socket.ts\";",
+      "import { createSocket } from \"./c\\u{6f}re/socket.ts\";",
+      "import { createSocket } from \"./c\\x6fre/socket.ts\";",
+      "import { createSocket } from \"./c\\157re/socket.ts\";",
+      "import { createSocket } from \".\\u002fcore/socket.ts\";",
+      "import { createSocket } from \"./\\core/socket.ts\";",
+      "import { createSocket } from \"./co\\\nre/socket.ts\";",
+      "const socket = await import(`./c\\u006fre/${name}.ts`);",
+    ];
+    for (const source of escaped) expect({ source, found: reachesIntoCore("server/fixture.ts", source).length }).toEqual({ source, found: 1 });
+    expect(mayNameCore("const score = 1;")).toBe(false);
   });
 
   it("lets the index, other folders and mere mentions pass", () => {
