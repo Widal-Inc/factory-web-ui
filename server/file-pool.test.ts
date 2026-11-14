@@ -71,9 +71,12 @@ describe("file threads", () => {
     setUp({ workers: 1, waiting: 1, deadlineMs: 200 });
     const hold = gate();
     await expect(fileTask(held({ op: "info", path: file }, hold.buffer))).rejects.toBeInstanceOf(FileBusyError);
+    // the thread may start late (on a loaded machine, past this deadline): it is in its held call only once it says so
+    await hold.ran();
     // the call has not returned: a task after it waits for its thread, never gets it, and is refused in turn
     await expect(fileTask({ op: "info", path: file })).rejects.toBeInstanceOf(FileBusyError);
     expect(filePoolSize()).toEqual({ threads: 1, idle: 0, waiting: 0 });
+    // the thread is already running, so only its answer and this task's own run remain inside the deadline, not its start
     const next = fileTask<FileInfo | null>({ op: "info", path: file });
     hold.release();
     expect(await next).toMatchObject({ size: 5 });
