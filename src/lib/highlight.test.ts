@@ -169,13 +169,18 @@ describe("SYNC_HIGHLIGHT_LIMIT", () => {
   ])("keeps %s of %j well under a frame's budget", (language, unit) => {
     const code = unit.repeat(Math.ceil(SYNC_HIGHLIGHT_LIMIT / unit.length)).slice(0, SYNC_HIGHLIGHT_LIMIT);
     highlightRuns(code, language);
-    // the fastest of a few runs: a garbage collection or a busy runner delays one run, never all
-    const runs = Array.from({ length: 5 }, () => {
-      const start = performance.now();
+    // the fastest run, sampled until one fits the budget (at most 40 samples), by the CPU time the run
+    // used: a busy runner that deschedules the process for a time slice makes a 2-10 ms tokenization
+    // last 70-500 ms on the wall clock, and waiting does not use the CPU. A tokenizer that rescans to
+    // the end is over the budget on every run, so it still fails.
+    let fastest = Infinity;
+    for (let run = 0; run < 40 && fastest >= 50; run++) {
+      const start = process.cpuUsage();
       highlightRuns(code, language);
-      return performance.now() - start;
-    });
-    expect(Math.min(...runs)).toBeLessThan(50);
+      const used = process.cpuUsage(start);
+      fastest = Math.min(fastest, (used.user + used.system) / 1000);
+    }
+    expect(fastest).toBeLessThan(50);
   });
 });
 
