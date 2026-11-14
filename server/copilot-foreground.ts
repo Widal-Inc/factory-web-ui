@@ -65,32 +65,46 @@ function tcpEntries(pid: number): TcpEntry[] {
     }));
 }
 
-function owner(pid: number): Owner {
+interface Identity { birth: string; inodes: Set<string> }
+
+/** What names the process without the TCP table: it is the user's, its start, an opted-in launch, the sockets it holds. */
+function identity(pid: number): Identity {
   if (!Number.isSafeInteger(pid) || pid < 1 || statSync(`/proc/${pid}`).uid !== process.getuid?.()) throw new Unavailable("process_unproved");
   const birth = readProcessBirth(pid);
   if (birth.state !== "identified") throw new Unavailable("process_unproved");
   const argv = boundedFile(`/proc/${pid}/cmdline`, MAX_MESSAGE).split("\0");
   const delimiter = argv.indexOf("--");
   if (!argv.slice(0, delimiter < 0 ? undefined : delimiter).includes("--ui-server")) throw new Unavailable("not_opted_in");
-  const inodes = socketInodes(pid);
-  const listening = tcpEntries(pid).filter((entry) => entry.state === "0A" && inodes.has(entry.inode));
+  return { birth: birth.birth.value, inodes: socketInodes(pid) };
+}
+
+/** The one loopback endpoint the process listens on, from a table read after its sockets. */
+function listeningEndpoint(held: Identity, table: readonly TcpEntry[]): Endpoint {
+  const listening = table.filter((entry) => entry.state === "0A" && held.inodes.has(entry.inode));
   const endpoint = listening[0];
   if (listening.length !== 1 || !endpoint || !Object.hasOwn(LOOPBACK, endpoint.address)) throw new Unavailable("endpoint_unproved");
-  return { pid, birth: birth.birth.value, endpoint: { ...endpoint, host: LOOPBACK[endpoint.address]! } };
+  return { ...endpoint, host: LOOPBACK[endpoint.address]! };
 }
 
-function unchanged(expected: Owner): void {
-  const current = owner(expected.pid);
-  if (current.birth !== expected.birth || current.endpoint.inode !== expected.endpoint.inode
-    || current.endpoint.address !== expected.endpoint.address || current.endpoint.port !== expected.endpoint.port) {
-    throw new Unavailable("process_changed");
-  }
+function owner(pid: number): Owner {
+  const held = identity(pid);
+  return { pid, birth: held.birth, endpoint: listeningEndpoint(held, tcpEntries(pid)) };
 }
 
+function sameEndpoint(a: Endpoint, b: Endpoint): boolean {
+  return a.inode === b.inode && a.address === b.address && a.port === b.port;
+}
+
+/**
+ * The process is still the one proved (same start, same listening socket) and has accepted this connection.
+ * Reading the TCP table costs far more than the rest of the proof (tens to hundreds of ms in a container),
+ * so one table read answers both questions.
+ */
 function acceptedByOwner(expected: Owner, socket: Socket): boolean {
-  unchanged(expected);
-  const inodes = socketInodes(expected.pid);
-  return tcpEntries(expected.pid).some((entry) => entry.state === "01" && inodes.has(entry.inode)
+  const held = identity(expected.pid);
+  const table = tcpEntries(expected.pid);
+  if (held.birth !== expected.birth || !sameEndpoint(listeningEndpoint(held, table), expected.endpoint)) throw new Unavailable("process_changed");
+  return table.some((entry) => entry.state === "01" && held.inodes.has(entry.inode)
     && entry.address === expected.endpoint.address && entry.port === expected.endpoint.port
     && entry.remoteAddress === expected.endpoint.address && entry.remotePort === socket.localPort);
 }
@@ -165,7 +179,9 @@ class ForegroundClient {
   }
 
   // Ownership reads the whole network-namespace TCP table, which can take hundreds of ms on a busy
-  // host, so it is proven once on connect and once at the end of each read, not around every request.
+  // host, so it is proven (from a single table read) once on connect and once at the end of each read,
+  // not around every request. What a read returns was answered before that last proof, so nothing is
+  // used that the proof did not cover.
   private check(): void {
     if (this.failure !== null) throw this.failure;
   }
@@ -270,14 +286,18 @@ export async function readCopilotForeground(pid: number): Promise<CopilotForegro
   if (process.platform !== "linux") return { state: "unavailable", diagnostic: "unsupported_platform" };
   let client = clients.get(pid);
   try {
-    const expected = owner(pid);
-    if (client !== undefined && (client.expected.birth !== expected.birth
-      || client.expected.endpoint.inode !== expected.endpoint.inode
-      || client.expected.endpoint.address !== expected.endpoint.address || client.expected.endpoint.port !== expected.endpoint.port)) {
-      client.close(new Unavailable("process_changed"));
-      client = undefined;
+    if (client !== undefined) {
+      // A client is kept while its process has the start it was proved with and still holds the socket it
+      // was proved listening on (a socket's address and port never change). That needs no TCP table;
+      // the end of the read proves the whole endpoint again from a fresh one.
+      const held = identity(pid);
+      if (held.birth !== client.expected.birth || !held.inodes.has(client.expected.endpoint.inode)) {
+        client.close(new Unavailable("process_changed"));
+        client = undefined;
+      }
     }
     if (client === undefined) {
+      const expected = owner(pid);
       if (clients.size >= 128) throw new Unavailable("endpoint_unproved");
       client = new ForegroundClient(expected);
       clients.set(pid, client);
