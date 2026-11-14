@@ -124,6 +124,33 @@ export function minimumContrast(roles: ThemeRoles, role: Role, value = roles[rol
   }));
 }
 
+/** linear(c / 255) for every byte, so a quantized colour needs no pow() call. */
+const LINEAR_BYTE = Array.from({ length: 256 }, (_, c) => linear(c / 255));
+
+/**
+ * The repair search below asks "does every surface reach the target?" about a hundred
+ * thousand candidates per role. This answers exactly what `minimumContrast(...) >= target`
+ * does, with the same arithmetic, but parses each surface once and stops at the first
+ * surface that falls short. A candidate is rounded to bytes the way `hex()` rounds it.
+ */
+function contrastCheck(roles: ThemeRoles, role: Role, mode: Mode, target: number): (candidate: Vector) => boolean {
+  const surfaces = role.startsWith("syntax-") ? ["bg-panel", "bg-elevated"] as const : ["bg", "bg-panel", "bg-elevated", "bg-hover"] as const;
+  const grounds = surfaces.map((surface) => rgb(roles[surface]));
+  const groundLuminance = grounds.map(luminance);
+  const tinted = /^status-(working|blocked|done)$/.test(role);
+  const alpha = statusAlpha(mode);
+  const byte = (c: number): number => Math.round(Math.max(0, Math.min(255, c)));
+  return (candidate) => {
+    const r = byte(candidate[0]), g = byte(candidate[1]), b = byte(candidate[2]);
+    const a = 0.2126 * LINEAR_BYTE[r]! + 0.7152 * LINEAR_BYTE[g]! + 0.0722 * LINEAR_BYTE[b]!;
+    for (let i = 0; i < grounds.length; i++) {
+      const luminanceOfGround = tinted ? luminance(over([r, g, b], grounds[i]!, alpha)) : groundLuminance[i]!;
+      if ((Math.max(a, luminanceOfGround) + 0.05) / (Math.min(a, luminanceOfGround) + 0.05) < target) return false;
+    }
+    return true;
+  };
+}
+
 const AA_ROLES: readonly Role[] = ["text", "text-dim", "status-working", "status-blocked", "status-done",
   "syntax-function", "syntax-keyword", "syntax-string", "syntax-number", "syntax-type", "syntax-variable", "syntax-meta"];
 
@@ -139,23 +166,24 @@ export function proposeTheme(id: HerdrThemeId): { roles: ThemeRoles; moved: { ro
     if (minimumContrast(roles, role, original, mode) >= 4.5) continue;
     const [L, a, b] = lab(rgb(original));
     let repaired: string | undefined;
+    const reaches = contrastCheck(roles, role, mode, 4.6);
     for (let reduction = 0; reduction <= 50 && repaired === undefined; reduction++) {
       const scale = 1 - reduction / 1000;
       let best: number | undefined;
-      const value = (l: number): string => hex(fromLab([l, a * scale, b * scale]));
+      const colour = (l: number): Vector => fromLab([l, a * scale, b * scale]);
       for (let step = 0; step <= 10000; step++) {
         const l = step / 10000;
         if (best !== undefined && Math.abs(l - L) >= Math.abs(best - L)) continue;
-        if (minimumContrast(roles, role, value(l), mode) >= 4.6) best = l;
+        if (reaches(colour(l))) best = l;
       }
       if (best === undefined) continue;
       let passing = best, failing = L;
       for (let step = 0; step < 45; step++) {
         const mid = (passing + failing) / 2;
-        if (minimumContrast(roles, role, value(mid), mode) >= 4.6) passing = mid;
+        if (reaches(colour(mid))) passing = mid;
         else failing = mid;
       }
-      repaired = value(passing);
+      repaired = hex(colour(passing));
     }
     if (repaired === undefined) throw new Error(`${id}/${mode} ${role}: cannot reach 4.6 within 5% chroma reduction`);
     roles[role] = repaired;
