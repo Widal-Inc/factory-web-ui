@@ -27,6 +27,20 @@ describe("imports", () => {
     fail(offenders, "Imports carry explicit .ts/.tsx extensions and relative paths (AGENTS.md, Code conventions): write \"./x.ts\" or \"../shared/x.ts\", never \"./x\" or \"@shared/x\".");
   });
 
+  it("blanks comments, and with strings the bodies of strings, keeping every offset and newline", () => {
+    const space = (count: number) => " ".repeat(count);
+    expect(stripComments("a // b\nc")).toBe(`a ${space(4)}\nc`);
+    expect(stripComments("x; /* c\nd */ y")).toBe(`x; ${space(4)}\n${space(4)} y`);
+    expect(stripComments("a = 'x // y'; // c")).toBe(`a = 'x // y'; ${space(4)}`);
+    expect(stripComments("a = 'x // y'; // c", { strings: true })).toBe(`a = '${space(6)}'; ${space(4)}`);
+    // an escaped quote does not close its string, and a template literal runs over lines
+    expect(stripComments("\"it\\\"s\" z", { strings: true })).toBe(`"${space(5)}" z`);
+    expect(stripComments("`a\nb` c", { strings: true })).toBe("` \n ` c");
+    // a quote that is never closed ends with its line, and a backslash that ends the file escapes nothing
+    expect(stripComments("a 'b\nc // d", { strings: true })).toBe(`a ' \nc ${space(4)}`);
+    expect(stripComments("a '\\", { strings: true })).toBe("a ' ");
+  });
+
   it("finds the specifiers", () => {
     const found = (code: string) => [...code.matchAll(SPECIFIER)].map((match) => match[1] ?? match[2] ?? match[3]);
     expect(found("import { a } from \"./a.ts\";\nimport type {\n  B,\n} from '../b';\nimport \"./side.css\";\nconst c = await import(\"./c.tsx\");\nexport * from \"./d.ts\";"))

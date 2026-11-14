@@ -24,6 +24,8 @@ import { files, lineOf, read, stripComments } from "./source-scan.ts";
 const SLEEP = /\bBun\.sleep(?:Sync)?\s*\(|\b\w+(?:\.\w+)*\.waitForTimeout\s*\(|\bnew Promise(?:<[^>]*>)?\(\s*(?:async\s*)?(?:function\s*)?\(?\s*(\w+)\s*\)?\s*(?:=>)?\s*\{?\s*(?:window\.|globalThis\.)?setTimeout\(\s*(?:\1|\(\s*\)\s*=>\s*\{?\s*\1\s*\(\s*\)\s*;?\s*\}?)\s*,(?!\s*0\s*\))/g;
 /** A loop head bounded by a clock, a deadline or a try count (`i < 40`, `i < MAX_TRIES`, `attempt <= attempts`); a plain `i < list.length` is not. */
 const BOUND = /Date\.now\(\)|performance\.now\(\)|[Dd]eadline|\b\w+\s*<=?\s*(?:\d|[A-Z][A-Z0-9_]*\b|\w*(?:[Tt]ries|[Aa]ttempts|[Rr]etries|[Mm]ax|[Ll]imit)\w*)/;
+/** The words a sleep, a sleep helper or the import of one cannot do without (`Bun.sleep`, `waitForTimeout`, `setTimeout`, `node:timers/promises`). */
+const MENTIONS_A_WAIT = /sleep|waitForTimeout|setTimeout|timers\/promises/;
 /** `// fixed wait:` followed by the reason. */
 const MARKER = /\/\/\s*fixed wait:\s*\S/;
 
@@ -83,10 +85,14 @@ function sleepHelpers(code: string, source: string): { names: Set<string>; defin
 
 /** The fixed sleeps in one file, as `file:line: text`. */
 export function fixedSleeps(file: string, text = read(file)): string[] {
+  // Blanking comments and strings only removes matches, and every sleep, helper and import below
+  // names one of these words: most files name none and need no scan.
+  if (!MENTIONS_A_WAIT.test(text)) return [];
   const code = stripComments(text, { strings: true });
   const lines = text.split("\n");
   const found: string[] = [];
-  const helpers = sleepHelpers(code, stripComments(text));
+  // the import of a sleep is the only thing read from the strings, so a file that never names the module needs no second pass
+  const helpers = sleepHelpers(code, text.includes("timers/promises") ? stripComments(text) : "");
   const calls = helpers.names.size ? [...code.matchAll(new RegExp(`(?<![\\w.])(?:${[...helpers.names].join("|")})\\s*\\((?!\\s*0\\s*\\))`, "g"))] : [];
   const sleeps = [...code.matchAll(SLEEP)].filter((match) => !helpers.definitions.has(match.index));
   // a helper's own definition (`function sleep(`) is not a call, and `tick()` of a helper defaulting to 0 ms yields
