@@ -6,6 +6,13 @@ import { basename, dirname, join } from "node:path";
 import { buildXtermSource } from "./build-xterm.ts";
 
 const repo = join(import.meta.dir, "..");
+/**
+ * What one `buildXtermSource` emit may take. Each emit type-checks all of xterm and writes it out,
+ * about 45 to 65 CPU-seconds on a slow core: seconds on a fast runner, but past a minute on a busy
+ * shared host. A case's deadline is this many times the emits it runs, so a slow host fails on a
+ * wrong result and never on the clock.
+ */
+const EMIT_MS = 240_000;
 const made: string[] = [];
 afterEach(() => { for (const path of made.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
@@ -33,7 +40,7 @@ describe("buildXtermSource", () => {
     expect(before.content).toContain("export class UnicodeService");
     expect(buildXtermSource(root)).toBe(first);
     expect(written(first)).toEqual(before);
-  }, 60_000);
+  }, EMIT_MS);
 
   it("emits changed source into a new directory and leaves the old one as it was", () => {
     const root = checkout();
@@ -44,7 +51,7 @@ describe("buildXtermSource", () => {
     expect(second).not.toBe(first);
     expect(written(second).content).toContain("changedForTest");
     expect(written(first)).toEqual(before);
-  }, 60_000);
+  }, 2 * EMIT_MS);
 
   it("publishes nothing when a module could not be written, so the next build emits it again", () => {
     const root = checkout();
@@ -61,7 +68,7 @@ describe("buildXtermSource", () => {
     }
     expect(existsSync(cache) ? readdirSync(cache) : []).toEqual([]);
     expect(written(buildXtermSource(root)).content).toContain("export class UnicodeService");
-  }, 60_000);
+  }, 2 * EMIT_MS);
 
   // a source edited after hashing must not be published under the key of the source it replaced (#2148)
   it("compiles the source it hashed, even when the file changes while TypeScript reads", () => {
@@ -85,7 +92,7 @@ describe("buildXtermSource", () => {
     const second = buildXtermSource(root);
     expect(second).not.toBe(first);
     expect(written(second).content).toContain("changedForTest");
-  }, 60_000);
+  }, 2 * EMIT_MS);
 
   // through a symlink, imports resolved out of the hashed copy to the disk (macOS's tmpdir is one)
   it("reads none of xterm's package from the disk while compiling, even through a symlinked checkout", () => {
@@ -103,7 +110,7 @@ describe("buildXtermSource", () => {
       Object.assign(ts.sys, { readFile, fileExists });
     }
     expect(fromDisk).toEqual([]);
-  }, 60_000);
+  }, EMIT_MS);
 
   it("publishes nothing when an emitted module vanishes from the staging directory before the rename", () => {
     const root = checkout();
@@ -120,7 +127,7 @@ describe("buildXtermSource", () => {
       ts.sys.writeFile = writeFile;
     }
     expect(readdirSync(cache)).toEqual([]);
-  }, 60_000);
+  }, EMIT_MS);
 
   it("emits again when only the manifest's typings entry changes", () => {
     const root = checkout();
@@ -131,7 +138,7 @@ describe("buildXtermSource", () => {
     expect(manifest).toContain("\"types\": \"typings/xterm.d.ts\"");
     writeFileSync(join(xterm, "package.json"), manifest.replace("typings/xterm.d.ts", "typings/other.d.ts"));
     expect(buildXtermSource(root)).not.toBe(first);
-  }, 60_000);
+  }, 2 * EMIT_MS);
 
   it("removes the staging directories killed builds left behind, not one a build may still write", () => {
     const root = checkout();
@@ -153,9 +160,9 @@ describe("buildXtermSource", () => {
     const fresh = staging(dead, "Ij56Kl", 1);
     const output = buildXtermSource(root);
     expect(readdirSync(cache).sort()).toEqual([basename(output), fresh, running].sort());
-  }, 60_000);
+  }, EMIT_MS);
 
   it.skipIf(process.platform === "win32")("publishes a build other users of the checkout can read", () => {
     expect(statSync(buildXtermSource(checkout())).mode & 0o777).toBe(0o755);
-  }, 60_000);
+  }, EMIT_MS);
 });
