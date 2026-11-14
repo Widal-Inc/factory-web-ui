@@ -42,11 +42,24 @@ function stripExpr(expression: ts.Expression): ts.Expression {
   return expression;
 }
 
+const FORBIDDEN_DECLARATION_NAMES = ["unrepresentable", "TERMINAL_ONLY_COMMANDS"];
+const UNICODE_ESCAPE = /\\u(?:([0-9a-fA-F]{4})|\{([0-9a-fA-F]+)\})/g;
+
 function forbiddenDeclarations(source: string, fileName?: string): string[] {
+  // Parsing every source file costs about a minute of CPU. A declaration can only bind one of the
+  // names if the name is in the text once its unicode escapes are decoded, so a file without it
+  // has nothing to find and skips the parse.
+  const text = source.includes("\\u")
+    ? source.replace(UNICODE_ESCAPE, (_, short: string | undefined, long: string | undefined) => {
+        const code = Number.parseInt(short ?? long ?? "", 16);
+        return code <= 0x10ffff ? String.fromCodePoint(code) : "";
+      })
+    : source;
+  if (!FORBIDDEN_DECLARATION_NAMES.some((name) => text.includes(name))) return [];
   const violations: string[] = [];
   const checkBinding = (name: ts.BindingName): void => {
     if (ts.isIdentifier(name)) {
-      if (name.text === "unrepresentable" || name.text === "TERMINAL_ONLY_COMMANDS") {
+      if (FORBIDDEN_DECLARATION_NAMES.includes(name.text)) {
         violations.push(name.text);
       }
     } else {
@@ -316,6 +329,10 @@ describe("agent command catalog conventions", () => {
 
   it("finds forbidden variable declarations", () => {
     expect(forbiddenDeclarations("const unrepresentable = [];")).toEqual(["unrepresentable"]);
+    // The text prefilter must not hide a name spelled with a unicode escape.
+    expect(forbiddenDeclarations("const \\u0075nrepresentable = [];")).toEqual(["unrepresentable"]);
+    expect(forbiddenDeclarations("const unrepresentabl\\u{65} = [];")).toEqual(["unrepresentable"]);
+    expect(forbiddenDeclarations("const answer = 1;")).toEqual([]);
   });
 
   it("finds forbidden names in destructured variable bindings", () => {
