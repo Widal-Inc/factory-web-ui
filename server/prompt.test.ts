@@ -6271,8 +6271,8 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
     });
   });
 
-  test("goes back between Claude's question tabs with ← only as the pane shows each tab, and stops when it does not", async () => {
-    // Claude Code 2.1.312 at 120 columns, colors kept: the active tab is drawn on a background (#2465)
+  /** Claude Code 2.1.312 at 120 columns, colors kept: the active tab is drawn on a background (#2465) */
+  function claudeTabs() {
     const panel = (state: string) => readFileSync(new URL(`./fixtures/claude-tabs-2.1.312-${state}-120.ansi`, import.meta.url), "utf8");
     // the first question once both are answered, as the review's ← ← shows it
     const states: Record<string, string> = {
@@ -6289,6 +6289,11 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
         setTimeout(() => show(pane, order[at]!), 100);
       };
     };
+    return { states, show, order, press };
+  }
+
+  test("goes back between Claude's question tabs with ← only as the pane shows each tab, and stops when it does not", async () => {
+    const { show, press } = claudeTabs();
     await withPane("claude", "blocked", "", async (pane) => {
       show(pane, "review");
       const review = (await card())!;
@@ -6304,6 +6309,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       expect(pane.sent).toEqual(["left"]);
       expect(await card()).toMatchObject({ question: "Which problems do you see?", can_step_back: true });
     });
+  });
+
+  test("steps back to the first tab with one ← per tab, each sent as the pane shows the one before", async () => {
+    const { show, press } = claudeTabs();
     await withPane("claude", "blocked", "", async (pane) => {
       show(pane, "review");
       press(pane);
@@ -6313,6 +6322,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       expect(device).toMatchObject({ title: "Device · 1 of 2", question: "Which device do you use?" });
       expect(device.can_step_back).toBeUndefined();
     });
+  });
+
+  test("looks again at a frame mid-redraw whose colors cannot be checked, before it takes the step as done", async () => {
+    const { states, show } = claudeTabs();
     // a frame mid-redraw whose colors cannot be checked says nothing about the tab: the route looks again
     await withPane("claude", "blocked", "", async (pane) => {
       show(pane, "review");
@@ -6325,6 +6338,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       expect(await answer((await card())!.id, { step_back: true })).toEqual({ status: 200, code: undefined });
       expect(pane.sent).toEqual(["left"]);
     });
+  });
+
+  test("waits for the question under the next tab too, before the second → of a move to the review", async () => {
+    const { states, show, order } = claudeTabs();
     // → lights the next tab a moment before the question under it is redrawn: that frame is no
     // finished move, so the second → waits for the question too
     await withPane("claude", "blocked", "", async (pane) => {
@@ -6349,6 +6366,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       expect(under).toEqual(["device", "symptoms"]);
       expect((await card())!.title).toBe("Review your answers");
     });
+  });
+
+  test("answers a card polled while a step was on its way once the step is done", async () => {
+    const { show } = claudeTabs();
     // a poll while a step is on its way reads the tab it moves to: that card's id still answers once
     // the step is done, so the next tap on a step is not refused (#2503 review by @jpcarranza94)
     await withPane("claude", "blocked", "", async (pane) => {
@@ -6367,6 +6388,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       expect(pane.sent).toEqual(["left", "left"]);
       expect((await card())!.question).toBe("Which device do you use?");
     });
+  });
+
+  test("refuses a card read before moves that come back to its tab", async () => {
+    const { show } = claudeTabs();
     // a card read before moves that come back to its tab is not the card now: each move is a new
     // asking, so the review read before Back and a step back to the review is refused (#2503 review)
     await withPane("claude", "blocked", "", async (pane) => {
@@ -6380,6 +6405,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       expect(await answer(before.id, { step_back: true })).toEqual({ status: 409, code: "prompt_changed" });
       expect(pane.sent).toEqual(["left", "right"]);
     });
+  });
+
+  test("keeps the card of the tab a move reached when a poll begun during it answers after it", async () => {
+    const { show } = claudeTabs();
     // a poll begun during a move and answered after it read the tab the move left: it changes nothing
     // about the asking, so the card of the tab the move reached still answers (#2503 review)
     await withPane("claude", "blocked", "", async (pane) => {
@@ -6403,6 +6432,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       pane.onSent = (sent) => { if (sent === "left") show(pane, "device"); };
       expect(await answer(reached.id, { step_back: true })).toEqual({ status: 200, code: undefined });
     });
+  });
+
+  test("sends no second ← when the pane went two tabs for one", async () => {
+    const { show, press } = claudeTabs();
     // the pane went two tabs for one ←: not the tab asked for, so no second key
     await withPane("claude", "blocked", "", async (pane) => {
       show(pane, "review");
@@ -6410,6 +6443,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
       expect(await answer((await card())!.id, { step_index: 0 })).toEqual({ status: 409, code: "prompt_changed" });
       expect(pane.sent).toEqual(["left"]);
     });
+  });
+
+  test("gives no steps, and sends no key for one, when the colors do not say which tab is shown", async () => {
+    const { states } = claudeTabs();
     // colors that do not say which tab is shown: no steps, and no key for a step
     await withPane("claude", "blocked", states.review!.replace(ANSI_RE, ""), async (pane) => {
       const review = (await card())!;
