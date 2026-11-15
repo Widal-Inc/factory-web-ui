@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import { fixedSleepCounts, fixedSleeps, sleepFiles } from "./fixed-sleeps.ts";
+import { fixedSleepCounts, fixedSleeps, scanFixedSleeps, sleepFiles } from "./fixed-sleeps.ts";
 import { fail, files, lineOf, read, repo, stripComments } from "./source-scan.ts";
 
 // Repo-wide rules from AGENTS.md that used to be prose only. Each failure says what to change;
@@ -92,8 +92,17 @@ describe("fixed sleeps", () => {
       "Remove these entries from scripts/fixed-sleeps.json: the files are gone or no longer covered. A renamed file keeps its entry under the new path, with the same count.");
   });
 
+  // The pre-filter that skips files naming no wait word (MENTIONS_A_WAIT in scripts/fixed-sleeps.ts)
+  // must never change what a file counts: every example of the two tests below is scanned with and
+  // without it. A sleep form added to SLEEP or the helper patterns needs its word in
+  // MENTIONS_A_WAIT, or its example fails here.
+  const found = (code: string) => {
+    const lines = scanFixedSleeps("example.ts", code);
+    expect(fixedSleeps("example.ts", code)).toEqual(lines);
+    return lines.length;
+  };
+
   it("tells a fixed sleep from a bounded poll", () => {
-    const found = (code: string) => fixedSleeps("example.ts", code).length;
     expect(found("await Bun.sleep(300);")).toBe(1);
     expect(found("await page.waitForTimeout(500);")).toBe(1);
     expect(found("// fixed wait: nothing may arrive in this time\nawait page.waitForTimeout(500);")).toBe(0);
@@ -115,7 +124,6 @@ describe("fixed sleeps", () => {
   });
 
   it("counts each call of a sleep helper, not its definition", () => {
-    const found = (code: string) => fixedSleeps("example.ts", code).length;
     expect(found("const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));\nawait sleep(10);\nawait sleep(20);")).toBe(2);
     expect(found("function delay(ms) { return Bun.sleep(ms); }\nawait delay(300);")).toBe(1);
     expect(found("const wait = (ms: number) => page.waitForTimeout(ms);\nawait wait(10);\nawait wait(20);")).toBe(2);
