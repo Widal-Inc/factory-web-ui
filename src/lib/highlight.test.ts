@@ -162,26 +162,33 @@ describe("extendLines", () => {
 });
 
 describe("SYNC_HIGHLIGHT_LIMIT", () => {
+  const SAMPLING_CAP_MS = 3000;
   // what is highlighted while the page draws must stay quick in the worst shapes measured: runs the
   // tokenizer rescans to the end (an unterminated string of escapes, a line of dashes in YAML)
   it.each([
     ["json", "\"\\"], ["yaml", "--"], ["css", "\"\\"], ["python", "\"\\"], ["vue", "<a "], ["markdown", "[["], ["ts", "x=/[/"],
   ])("keeps %s of %j well under a frame's budget", (language, unit) => {
     const code = unit.repeat(Math.ceil(SYNC_HIGHLIGHT_LIMIT / unit.length)).slice(0, SYNC_HIGHLIGHT_LIMIT);
+    const sampling = performance.now();
     highlightRuns(code, language);
     // the fastest run, sampled until one fits the budget (at most 40 samples), by the CPU time the run
     // used: a busy runner that deschedules the process for a time slice makes a 2-10 ms tokenization
     // last 70-500 ms on the wall clock, and waiting does not use the CPU. A tokenizer that rescans to
-    // the end is over the budget on every run, so it still fails.
+    // the end is over the budget on every run, so it still fails. Sampling stops early once the
+    // fastest of three runs is several times over the budget (more samples only cost time), and
+    // after SAMPLING_CAP_MS in all, so a real regression fails with the measured time instead of
+    // running into the test's own timeout.
     let fastest = Infinity;
     for (let run = 0; run < 40 && fastest >= 50; run++) {
       const start = process.cpuUsage();
       highlightRuns(code, language);
       const used = process.cpuUsage(start);
       fastest = Math.min(fastest, (used.user + used.system) / 1000);
+      if (run >= 2 && fastest >= 250) break;
+      if (performance.now() - sampling > SAMPLING_CAP_MS) break;
     }
     expect(fastest).toBeLessThan(50);
-  });
+  }, 15_000);
 });
 
 describe("countLines", () => {
