@@ -83,11 +83,21 @@ function sleepHelpers(code: string, source: string): { names: Set<string>; defin
   return { names, definitions, yields };
 }
 
-/** The fixed sleeps in one file, as `file:line: text`. */
+/**
+ * The fixed sleeps in one file, as `file:line: text`. Blanking comments and strings only removes
+ * matches, and every sleep, helper and import names one of the MENTIONS_A_WAIT words: most files
+ * name none and need no scan.
+ */
 export function fixedSleeps(file: string, text = read(file)): string[] {
-  // Blanking comments and strings only removes matches, and every sleep, helper and import below
-  // names one of these words: most files name none and need no scan.
-  if (!MENTIONS_A_WAIT.test(text)) return [];
+  return MENTIONS_A_WAIT.test(text) ? scanFixedSleeps(file, text) : [];
+}
+
+/**
+ * `fixedSleeps` without the MENTIONS_A_WAIT skip. The tests hold both to the same answer for every
+ * example, so that a sleep form added to SLEEP or the helper patterns without its word in
+ * MENTIONS_A_WAIT cannot go unscanned.
+ */
+export function scanFixedSleeps(file: string, text: string): string[] {
   const code = stripComments(text, { strings: true });
   const lines = text.split("\n");
   const found: string[] = [];
