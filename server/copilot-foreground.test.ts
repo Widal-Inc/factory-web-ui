@@ -10,6 +10,11 @@ const session = "12aa83d8-48bc-41f2-a498-7055c5c44b01";
 const root = mkdtempSync(join(tmpdir(), "herdr-copilot-foreground-"));
 const script = join(root, "api.js");
 let child: ReturnType<typeof Bun.spawn> | undefined;
+/**
+ * Every `answered` call may run five connect cycles of up to 2 s each on a starved host, and a hook or case gets
+ * 5 s from plain `bun test` (15 s from the checks): the ones that connect say how long they may take instead.
+ */
+const SLOW = 60_000;
 
 /** Copilot's `--ui-server` as far as Chat asks of it: a loopback listener answering `connect` and `session.getForeground`. */
 const stand = `import { createServer } from "node:net";
@@ -56,7 +61,7 @@ function countTableReads<T>(run: () => Promise<T>): Promise<{ result: T; reads: 
     if (typeof path === "string" && /\/net\/tcp$/.test(path)) reads++;
     return (real as (...args: unknown[]) => number)(path, ...rest);
   }) as typeof fs.openSync);
-  return run().then((result) => ({ result, reads }), (error) => { throw error; }).finally(() => open.mockRestore());
+  return run().then((result) => ({ result, reads })).finally(() => open.mockRestore());
 }
 
 beforeAll(async () => {
@@ -70,7 +75,7 @@ beforeAll(async () => {
     await Bun.sleep(50);
   }
   forgetCopilotForeground();
-});
+}, SLOW);
 
 afterAll(() => {
   forgetCopilotForeground();
@@ -88,7 +93,7 @@ it.skipIf(process.platform !== "linux")("proves ownership from one TCP table rea
   expect(reads).toBe(1);
   // and the same client answered: nothing was proved again from scratch
   expect(second.state === "selected" && first.state === "selected" && second.binding === first.binding).toBe(true);
-});
+}, SLOW);
 
 it.skipIf(process.platform !== "linux")("starts over with a new connection when the process's start differs from the one proved", async () => {
   const pid = child!.pid;
@@ -106,7 +111,7 @@ it.skipIf(process.platform !== "linux")("starts over with a new connection when 
     expect(again).toMatchObject({ state: "selected", sessionId: session });
     if (again.state === "selected") expect(again.binding.split(":")[0]).not.toBe(first.binding.split(":")[0]);
   } finally { other.mockRestore(); }
-});
+}, SLOW);
 
 it.skipIf(process.platform !== "linux")("fails closed when the process's start changes during a read", async () => {
   const pid = child!.pid;
@@ -124,7 +129,7 @@ it.skipIf(process.platform !== "linux")("fails closed when the process's start c
     expect(await readCopilotForeground(pid)).toEqual({ state: "unavailable", diagnostic: "process_changed" });
   } finally { swapped.mockRestore(); }
   expect(await answered(pid)).toMatchObject({ state: "selected" });
-});
+}, SLOW);
 
 it.skipIf(process.platform !== "linux")("is unavailable for a process that was not started with --ui-server or has ended", async () => {
   expect(await readCopilotForeground(process.pid)).toEqual({ state: "unavailable", diagnostic: "not_opted_in" });
