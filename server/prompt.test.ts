@@ -12,6 +12,32 @@ import { gjcCustomEditorMatches } from "./dialogs/fallback.ts";
 import { ANSI_RE, parsedByPublicPrompt } from "./dialogs/shared.ts";
 
 const labels = (prompt: InteractivePrompt | null) => prompt?.options.map((option) => option.label);
+
+/** the last fixture still holding HERDR_SOCKET: a later one starts only after it has let go */
+let herdrSocketHeld: Promise<void> = Promise.resolve();
+
+/**
+ * Run `run` with HERDR_SOCKET naming a fixture's socket, one fixture at a time.
+ * The server reads the process-global variable, and bun cannot cancel a test callback that timed
+ * out: its `run` goes on in the background. Without the queue, that leftover would restore the
+ * variable over the next test's socket (or leave its own pointing at the next fixture), so a
+ * slow test under load would fail the one after it too. Queued, the next fixture waits for the
+ * leftover to finish and restore the variable first.
+ */
+async function withHerdrSocket<T>(path: string, run: () => Promise<T>): Promise<T> {
+  const before = herdrSocketHeld;
+  let release!: () => void;
+  herdrSocketHeld = new Promise<void>((resolve) => { release = resolve; });
+  await before;
+  const previous = process.env["HERDR_SOCKET"];
+  process.env["HERDR_SOCKET"] = path;
+  try { return await run(); } finally {
+    if (previous === undefined) delete process.env["HERDR_SOCKET"];
+    else process.env["HERDR_SOCKET"] = previous;
+    release();
+  }
+}
+
 // Real omo-ai 5.1.30 pane.read captures at 120 and 45 columns, with the recorded open calls.
 const omoPendingFixture = (name: string) => readFileSync(new URL(`./fixtures/omo-pending-5.1.30-${name}`, import.meta.url), "utf8");
 const omoExtensionTail = omoPendingFixture("extension-tail.txt");
@@ -3033,11 +3059,7 @@ describe("Claude's suggestion on a prompt poll", () => {
       });
     });
     await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, resolve); });
-    const previous = process.env["HERDR_SOCKET"];
-    process.env["HERDR_SOCKET"] = path;
-    try { await run(reads); } finally {
-      if (previous === undefined) delete process.env["HERDR_SOCKET"];
-      else process.env["HERDR_SOCKET"] = previous;
+    try { await withHerdrSocket(path, () => run(reads)); } finally {
       for (const socket of sockets) socket.destroy();
       server.close();
       rmSync(root, { recursive: true, force: true });
@@ -3114,11 +3136,7 @@ Claude has written up a plan and is ready to execute. Would you like to proceed?
       });
     });
     await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, resolve); });
-    const previous = process.env["HERDR_SOCKET"];
-    process.env["HERDR_SOCKET"] = path;
-    try { await run(transcript, planFile); } finally {
-      if (previous === undefined) delete process.env["HERDR_SOCKET"];
-      else process.env["HERDR_SOCKET"] = previous;
+    try { await withHerdrSocket(path, () => run(transcript, planFile)); } finally {
       for (const socket of sockets) socket.destroy();
       server.close();
       rmSync(root, { recursive: true, force: true });
@@ -4360,11 +4378,7 @@ describe("an answer and the menu it was made for", () => {
       });
     });
     await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, resolve); });
-    const previous = process.env["HERDR_SOCKET"];
-    process.env["HERDR_SOCKET"] = path;
-    try { await run(pane); } finally {
-      if (previous === undefined) delete process.env["HERDR_SOCKET"];
-      else process.env["HERDR_SOCKET"] = previous;
+    try { await withHerdrSocket(path, () => run(pane)); } finally {
       for (const socket of sockets) socket.destroy();
       server.close();
       rmSync(root, { recursive: true, force: true });
